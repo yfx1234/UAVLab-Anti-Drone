@@ -236,6 +236,8 @@ def dispatch(request):
         elif action in ('set_detector','start_raw_record','stop_raw_record','save_calibration'):
             if action=='set_detector' and params['enabled']:
                 model=model_by_id(s.get('model_id') or None)
+                if s.get('pipeline',{}).get('record_state')=='recording' and model['model_id']!=s.get('model_id'):
+                    raise Conflict('finish recording before changing model identity')
                 params=dict(params,engine_path=stage_model(model),model_id=model['model_id'])
             result=node_command(s,action,params,rid)
             if action=='set_detector' and params['enabled']:s['model_id']=params['model_id']

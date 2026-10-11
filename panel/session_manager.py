@@ -22,7 +22,8 @@ class SessionManager:
         if not re.fullmatch('[a-zA-Z0-9_-]{1,80}',session_id):raise ValueError('采集场次 ID 无效')
         sessions=self.board.call('list_sessions');session=next((s for s in sessions if s['session_id']==session_id),None)
         if session is None:raise ValueError('采集场次未登记')
-        if session['summary'].get('state') in ('recording','finalizing'):raise ValueError('先结束场次，再下载')
+        if session['summary'].get('state') in ('recording','finalizing') or session['summary'].get('tail_metadata_may_arrive') is not False:
+            raise ValueError('场次元数据尚未可靠收尾；先结束并校验场次，再下载')
         with self.lock,self.board.connection() as client:
             sftp=client.open_sftp();base='/home/uavlab/Jetson_ROS2_V0/perception_records/'+session_id
             dest=self.root/session_id;dest.mkdir(parents=True,exist_ok=True);done=0;total=session['bytes'];checks=[]

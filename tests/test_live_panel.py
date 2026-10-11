@@ -7,6 +7,9 @@ def run(seconds=300):
     page=urllib.request.urlopen(URL,timeout=10).read().decode()
     token=re.search(r"const TOKEN='([^']+)'",page).group(1)
     evidence={'duration_requested_s':seconds,'actions':[],'samples':[],'checks':{}}
+    out=pathlib.Path(__file__).resolve().parents[1]/'test-results';out.mkdir(exist_ok=True)
+    def checkpoint():
+        (out/'live_panel.json').write_text(json.dumps(evidence,ensure_ascii=False,indent=2),encoding='utf-8')
     owned=None;local=False;session=None
     def call(action,params=None,expect_error=False):
         s=get('/api/status');b=s.get('state',{})
@@ -21,6 +24,7 @@ def run(seconds=300):
             job=get('/api/jobs/'+jobid)
             if job['state'] in ('complete','error'):
                 evidence['actions'].append({'action':action,'job':job})
+                checkpoint()
                 if expect_error:
                     if job['state']!='error':raise AssertionError(action+' incorrectly accepted')
                     return job
@@ -53,6 +57,7 @@ def run(seconds=300):
         while time.monotonic()<end:
             elapsed=seconds-(end-time.monotonic());s=get('/api/status');p=s['state'].get('pipeline',{})
             evidence['samples'].append({'phase':'parallel','elapsed_s':elapsed,'status':s})
+            checkpoint()
             if p.get('record_state')!='recording':raise AssertionError('raw recording unexpectedly stopped')
             if elapsed>35 and not disconnected:
                 call('disconnect');time.sleep(5);call('connect');disconnected=True

@@ -2,6 +2,7 @@
 #include <cmath>
 #include <limits>
 #include <iostream>
+#include <thread>
 #include "zed_tracking/depth_stats.hpp"
 #if __has_include("zed_tracking/perception_quality.hpp")
 #include "zed_tracking/perception_quality.hpp"
@@ -52,6 +53,18 @@ int main() {
   assert(zed_tracking::calibration_matches(old,old));
   auto changed=old;changed.model_id="model_b";assert(!zed_tracking::calibration_matches(old,changed));
   changed=old;changed.serial=43;assert(!zed_tracking::calibration_matches(old,changed));
+  zed_tracking::TargetAssociation tracks;
+  zed_tracking::Detection box;box.x1=10;box.y1=10;box.x2=30;box.y2=30;box.class_id=0;
+  auto first=tracks.assign({box},1)[0];tracks.reset();
+  assert(tracks.assign({box},2)[0]>first);
+  assert(!zed_tracking::model_change_allowed(true,"","new_model"));
+  assert(zed_tracking::model_change_allowed(true,"same","same"));
+  zed_tracking::SessionWorkCounter pending;
+  pending.acquire("first");pending.acquire("first");
+  assert(!pending.wait("first",std::chrono::milliseconds(5)));
+  pending.release("first");assert(!pending.wait("first",std::chrono::milliseconds(5)));
+  std::thread delayed([&]{std::this_thread::sleep_for(std::chrono::milliseconds(20));pending.release("first");});
+  assert(pending.wait("first",std::chrono::milliseconds(100)));delayed.join();
 #endif
   std::cout<<"PASS: sparse/background/mixed rejection and camera projection\n";
 }

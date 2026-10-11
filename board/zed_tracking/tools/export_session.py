@@ -5,6 +5,38 @@ import hashlib
 import json
 import pathlib
 import subprocess
+from collections import Counter
+
+def timestamp_frame_plan(stamps,fps):
+    if not stamps:return []
+    plan=[0]
+    for i,stamp in enumerate(stamps[1:],1):
+        slot=round((stamp-stamps[0])*fps/1e9)
+        while len(plan)<slot:plan.append(i-1)
+        if len(plan)==slot:plan.append(i)
+    return plan
+
+def validate_session_integrity(summary,reports,frames):
+    errors=[]
+    expected={s['segment_id'] for s in summary.get('segments',[])}
+    actual={s['segment_id']:s['frames'] for s in reports}
+    if not expected or expected!=set(actual):errors.append('missing/unexpected SVO segment')
+    counts=Counter();digests={}
+    for f in frames:
+        if f.get('submitted') is not True and f.get('recorded') is not True:continue
+        sid=f.get('segment_id');counts[sid]+=1
+        digests.setdefault(sid,hashlib.sha256()).update((str(f['stamp_ns'])+'\n').encode())
+    if sum(counts.values())!=summary.get('submitted_frames',summary.get('recorded_frames')) or sum(counts.values())!=sum(actual.values()):
+        errors.append('recorded frame log count mismatch')
+    for sid,count in actual.items():
+        if counts[sid]!=count:errors.append(f'segment {sid} metadata count mismatch')
+        report=next(r for r in reports if r['segment_id']==sid)
+        if sid not in digests or digests[sid].hexdigest()!=report.get('timestamp_sha256'):
+            errors.append(f'segment {sid} capture/playback timestamp mismatch')
+    if summary.get('metadata_complete') is not True or summary.get('tail_metadata_may_arrive') is not False:
+        errors.append('metadata finalization unverified')
+    if summary.get('dropped_metadata',0):errors.append('metadata dropped')
+    return errors
 
 def grouped_split(groups):
     names=sorted(groups,key=lambda name:hashlib.sha256(name.encode()).hexdigest())
@@ -45,22 +77,33 @@ def export(session_id,fps=2,mode='frames'):
         cmd=[str(exe),str(path),str(out/path.stem),str(fps),'verify' if mode=='verify' else 'frames']
         p=subprocess.run(cmd,capture_output=True,text=True,timeout=3600)
         if p.returncode:raise ValueError('SVO playback failed: '+p.stderr[-1000:])
-        reports.append(json.loads(p.stdout.strip().splitlines()[-1]))
+        report=json.loads(p.stdout.strip().splitlines()[-1]);report['segment_id']=int(path.stem.removeprefix('segment_'))
+        reports.append(report)
     if not reports:raise ValueError('no SVO segments')
     if mode in ('rgb_video','yolo_video'):
         try:import cv2
         except ImportError:raise ValueError('OpenCV Python unavailable for offline MP4 export')
-        observations={}
+        import sqlite3,tempfile
+        database=tempfile.TemporaryDirectory(prefix='observations_',dir=out)
+        observations=sqlite3.connect(str(pathlib.Path(database.name)/'lookup.sqlite'))
+        observations.execute('CREATE TABLE observations(stamp INTEGER PRIMARY KEY, targets TEXT)')
         if mode=='yolo_video' and (folder/'observations.jsonl').exists():
-            for line in (folder/'observations.jsonl').read_text().splitlines():
-                frame=json.loads(line);observations[frame['stamp_ns']]=frame.get('targets',[])
+            with (folder/'observations.jsonl').open() as stream:
+                for line in stream:
+                    frame=json.loads(line);observations.execute('INSERT OR REPLACE INTO observations VALUES(?,?)',
+                        (frame['stamp_ns'],json.dumps(frame.get('targets',[]))))
+            observations.commit()
         for report in reports:
             mapping=pathlib.Path(report['mapping']);writer=None
             try:
-                for line in mapping.read_text().splitlines():
-                    row=json.loads(line);image=cv2.imread(row['file'])
+                rows=[json.loads(line) for line in mapping.read_text().splitlines()]
+                plan=timestamp_frame_plan([r['stamp_ns'] for r in rows],fps);previous_index=None;image=None
+                for index in plan:
+                    if index==previous_index:writer.write(image);continue
+                    previous_index=index;row=rows[index];image=cv2.imread(row['file'])
                     if image is None:raise ValueError('exported frame missing')
-                    for target in observations.get(row['stamp_ns'],[]):
+                    found=observations.execute('SELECT targets FROM observations WHERE stamp=?',(row['stamp_ns'],)).fetchone()
+                    for target in json.loads(found[0]) if found else []:
                         x1,y1,x2,y2=map(int,target['bbox_xyxy']);cv2.rectangle(image,(x1,y1),(x2,y2),(0,220,0),2)
                         cv2.putText(image,target['mode'],(x1,max(20,y1-5)),cv2.FONT_HERSHEY_SIMPLEX,.6,(0,220,0),1)
                     if writer is None:
@@ -69,10 +112,25 @@ def export(session_id,fps=2,mode='frames'):
                     writer.write(image)
             finally:
                 if writer is not None:writer.release()
+            if writer is None:raise ValueError('no frames for MP4 export')
+            reader=cv2.VideoCapture(str(output));decoded=0
+            while True:
+                ok,_=reader.read()
+                if not ok:break
+                decoded+=1
+            reader.release()
+            if decoded!=len(plan):raise ValueError('MP4 playback count mismatch')
+            report.update(video=str(output),video_frames=decoded,video_fps=fps,
+                          video_duration_s=decoded/fps,video_timebase='capture_timestamp_with_repeated_frames')
+        observations.close();database.cleanup()
     recorded=sum(r['frames'] for r in reports)
-    summary.update(state='complete',verified_frames=recorded,verification=reports)
+    issues=['recorded frame log missing']
+    if (folder/'frames.jsonl').is_file():
+        with (folder/'frames.jsonl').open() as stream:
+            issues=validate_session_integrity(summary,reports,(json.loads(line) for line in stream))
+    summary.update(state='incomplete' if issues else 'complete',recorded_frames=recorded,verified_frames=recorded,verification=reports,integrity_errors=issues)
     atomic_json(folder/'session_summary.json',summary)
-    return {'session_id':session_id,'mode':mode,'segments':reports,'verified_frames':recorded}
+    return {'session_id':session_id,'mode':mode,'segments':reports,'verified_frames':recorded,'state':summary['state'],'integrity_errors':issues}
 
 if __name__=='__main__':
     a=argparse.ArgumentParser();a.add_argument('--session',required=True);a.add_argument('--fps',type=float,default=2);a.add_argument('--mode',default='frames')

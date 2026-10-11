@@ -5,9 +5,25 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#include <mutex>
+#include <condition_variable>
+#include <chrono>
+#include <map>
 #include "zed_tracking/yolo_decode.hpp"
 
 namespace zed_tracking {
+inline bool model_change_allowed(bool recording,const std::string& current,const std::string& proposed) {
+  return !recording||current==proposed;
+}
+class SessionWorkCounter {
+  std::mutex mutex_;std::condition_variable cv_;std::map<std::string,size_t> pending_;
+public:
+  void acquire(const std::string& id){if(id.empty())return;std::lock_guard<std::mutex> l(mutex_);++pending_[id];}
+  void release(const std::string& id){if(id.empty())return;std::lock_guard<std::mutex> l(mutex_);auto it=pending_.find(id);
+    if(it!=pending_.end()&&--it->second==0)pending_.erase(it);cv_.notify_all();}
+  bool wait(const std::string& id,std::chrono::milliseconds timeout){std::unique_lock<std::mutex> l(mutex_);
+    return cv_.wait_for(l,timeout,[&]{return pending_.count(id)==0;});}
+};
 struct CalibrationBinding {std::string model_id;unsigned int serial;int width,height;double fx,fy;};
 inline bool calibration_matches(const CalibrationBinding& a,const CalibrationBinding& b) {
   return a.model_id==b.model_id&&a.serial==b.serial&&a.width==b.width&&a.height==b.height&&
@@ -104,6 +120,7 @@ class TargetAssociation {
   struct Track {std::uint32_t id;Detection box;double seen;int streak;};
   std::vector<Track> tracks_;std::uint32_t next_{1};
 public:
+  void reset(){tracks_.clear();} // ID allocator remains monotonic within a run.
   std::vector<std::uint32_t> assign(const std::vector<Detection>& boxes,double now) {
     tracks_.erase(std::remove_if(tracks_.begin(),tracks_.end(),[&](const Track& t){return now-t.seen>.5;}),tracks_.end());
     std::vector<std::uint32_t> ids;std::vector<std::uint32_t> used;

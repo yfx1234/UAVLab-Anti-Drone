@@ -87,6 +87,27 @@ class PlatformTests(unittest.TestCase):
         self.assertEqual(set(flattened),set(groups));self.assertEqual(len(flattened),10)
         self.assertTrue(splits['validation'] and splits['test'])
 
+    def test_session_integrity_rejects_missing_segments_and_tail_metadata(self):
+        from export_session import validate_session_integrity
+        import hashlib
+        summary={'submitted_frames':4,'segments':[{'segment_id':1,'ingested':1},{'segment_id':2,'ingested':2}],
+                 'metadata_complete':True,'tail_metadata_may_arrive':False,'dropped_metadata':0}
+        frames=[{'segment_id':(i-1)//2+1,'submitted':True,'stamp_ns':i} for i in range(1,5)]
+        reports=[{'segment_id':sid,'frames':2,'timestamp_sha256':hashlib.sha256(stamps).hexdigest()}
+                 for sid,stamps in [(1,b'1\n2\n'),(2,b'3\n4\n')]]
+        self.assertEqual(validate_session_integrity(summary,reports,frames),[])
+        self.assertTrue(validate_session_integrity(summary,reports[:1],frames))
+        self.assertTrue(validate_session_integrity(summary,reports,frames[:-1]))
+        incomplete=dict(summary,metadata_complete=False,dropped_metadata=1)
+        self.assertTrue(validate_session_integrity(incomplete,reports,frames))
+        changed=frames[:-1]+[dict(frames[-1],stamp_ns=5)]
+        self.assertTrue(validate_session_integrity(summary,reports,changed))
+
+    def test_video_export_preserves_capture_timing_above_source_fps(self):
+        from export_session import timestamp_frame_plan
+        self.assertEqual(timestamp_frame_plan([0,66666667,133333334],30),[0,0,1,1,2])
+        self.assertEqual(timestamp_frame_plan([100,1000000100],2),[0,0,1])
+
     def test_dataset_index_keeps_unknown_annotations_and_session_groups(self):
         from export_session import prepare_dataset_index
         with tempfile.TemporaryDirectory() as folder:

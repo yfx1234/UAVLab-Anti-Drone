@@ -14,6 +14,7 @@ find_package(std_msgs REQUIRED)
 find_package(zed_perception_interfaces REQUIRED)
 find_package(OpenCV REQUIRED COMPONENTS core imgproc imgcodecs)
 find_package(CUDAToolkit REQUIRED)
+find_package(OpenSSL REQUIRED)
 
 # TensorRT(apt 安装,无 CMake 配置文件)
 find_library(NVINFER_LIBRARY nvinfer REQUIRED)
@@ -46,13 +47,13 @@ set_target_properties(zed_perception_node PROPERTIES
 install(TARGETS zed_perception_node DESTINATION lib/${PROJECT_NAME})
 add_executable(zed_perception_standalone src/zed_perception_standalone.cpp)
 target_include_directories(zed_perception_standalone PRIVATE include src ${ZED_INCLUDE_DIR})
-target_link_libraries(zed_perception_standalone ${NVINFER_LIBRARY} CUDA::cudart ${OpenCV_LIBS}
+target_link_libraries(zed_perception_standalone OpenSSL::Crypto ${NVINFER_LIBRARY} CUDA::cudart ${OpenCV_LIBS}
   ${ZED_LIBRARY_DIR}/libsl_zed.so ${ZED_LIBRARY_DIR}/libsl_ai.so)
 ament_target_dependencies(zed_perception_standalone rclcpp std_msgs zed_perception_interfaces)
 set_target_properties(zed_perception_standalone PROPERTIES BUILD_RPATH "${ZED_LIBRARY_DIR}" INSTALL_RPATH "${ZED_LIBRARY_DIR}")
 add_executable(export_svo_rgb tools/export_svo_rgb.cpp)
 target_include_directories(export_svo_rgb PRIVATE include ${ZED_INCLUDE_DIR})
-target_link_libraries(export_svo_rgb ${OpenCV_LIBS} CUDA::cudart ${ZED_LIBRARY_DIR}/libsl_zed.so)
+target_link_libraries(export_svo_rgb OpenSSL::Crypto ${OpenCV_LIBS} CUDA::cudart ${ZED_LIBRARY_DIR}/libsl_zed.so)
 set_target_properties(export_svo_rgb PROPERTIES BUILD_RPATH "${ZED_LIBRARY_DIR}" INSTALL_RPATH "${ZED_LIBRARY_DIR}")
 install(TARGETS zed_perception_standalone export_svo_rgb DESTINATION lib/${PROJECT_NAME})
 install(PROGRAMS tools/perception_supervisor.py tools/export_session.py DESTINATION lib/${PROJECT_NAME})

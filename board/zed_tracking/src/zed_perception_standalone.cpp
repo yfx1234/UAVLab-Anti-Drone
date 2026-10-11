@@ -8,6 +8,9 @@
 #include <fcntl.h>
 #include <cstring>
 #include <iostream>
+#include <iomanip>
+#include <sstream>
+#include <openssl/sha.h>
 #include <mutex>
 #include <thread>
 #include <arpa/inet.h>
@@ -39,10 +42,14 @@ static void atomic_json(const fs::path& path,const Json& j){
 }
 static Json read_json(const fs::path& path){std::ifstream f(path);if(!f)return Json::object();Json j;f>>j;return j;}
 static std::string read_line(const char* path){std::ifstream f(path);std::string s;std::getline(f,s);return s;}
+static std::string content_sha256(const std::string& text){unsigned char hash[SHA256_DIGEST_LENGTH];
+  SHA256(reinterpret_cast<const unsigned char*>(text.data()),text.size(),hash);std::ostringstream out;
+  for(unsigned char c:hash)out<<std::hex<<std::setfill('0')<<std::setw(2)<<unsigned(c);return out.str();}
 struct Frame {
   uint32_t sequence{0};int64_t stamp{0};double acquired{0};int w{0},h{0};
   std::vector<unsigned char> bgra;std::vector<float> depth,confidence;
   std::string session;uint32_t segment{0};bool recorded{false};uint64_t detector_generation{0};
+  double effective_size{.30};std::string model,calibration_id;bool calibrated{false};
 };
 struct PreviewJob {std::shared_ptr<const Frame> frame;Json metadata;};
 
@@ -110,6 +117,7 @@ class Perception final:public rclcpp::Node {
   std::thread capture_,infer_,writer_;std::mutex state_mutex_,queue_mutex_,log_mutex_,command_mutex_,status_io_mutex_;
   std::condition_variable queue_cv_,log_cv_;std::shared_ptr<const Frame> latest_;
   std::deque<std::pair<fs::path,Json>> logs_;std::atomic<uint64_t> dropped_logs_{0};bool writer_stop_{false};
+  zed_tracking::SessionWorkCounter pending_work_;uint64_t session_dropped_start_{0};
   std::deque<Json> commands_;int owner_lock_{-1};zed_tracking::CameraIntrinsics intrinsics_;
   Json status_{{"camera_state","starting"},{"record_state","idle"},{"errors",Json::array()}};
   fs::path session_;std::string session_id_;int segment_{0};double segment_start_{0};uint64_t recorded_frames_{0};
@@ -143,15 +151,16 @@ class Perception final:public rclcpp::Node {
     std::lock_guard<std::mutex> config_lock(state_mutex_);
     Json j={{"schema_version",1},{"run_id",run_},{"boot_id",boot_},{"frame_id","zed_left_camera_optical_frame"},
       {"frame_key",run_+"_"+std::to_string(f.sequence)},{"sequence",f.sequence},{"stamp_ns",f.stamp},
-      {"monotonic_s",f.acquired},{"image_width",f.w},{"image_height",f.h},{"model_id",model_},{"camera_serial",intrinsics_.serial_number},
+      {"monotonic_s",f.acquired},{"image_width",f.w},{"image_height",f.h},{"model_id",f.model},{"camera_serial",intrinsics_.serial_number},
       {"detector_enabled",detector_state_==2},{"detector_state",detector_state_.load()},
-      {"session_id",f.session},{"segment_id",f.segment},{"recorded",f.recorded},{"targets",Json::array()}};
+      {"session_id",f.session},{"segment_id",f.segment},{"recorded",nullptr},{"record_submitted",f.recorded},{"targets",Json::array()}};
     j["intrinsics"]={{"fx",intrinsics_.fx},{"fy",intrinsics_.fy},{"cx",intrinsics_.cx},{"cy",intrinsics_.cy}};
     return j;
   }
   void log(const fs::path& file,Json value){
     std::lock_guard<std::mutex> l(log_mutex_);
-    if(logs_.size()>=1024){++dropped_logs_;return;}logs_.emplace_back(file,std::move(value));log_cv_.notify_one();
+    if(logs_.size()>=1024){++dropped_logs_;metadata_failed_=true;return;}
+    pending_work_.acquire(file.parent_path().filename().string());logs_.emplace_back(file,std::move(value));log_cv_.notify_one();
   }
   void writer_loop(){
     while(true){std::pair<fs::path,Json> item;
@@ -159,6 +168,7 @@ class Perception final:public rclcpp::Node {
        if(logs_.empty()&&writer_stop_)break;item=std::move(logs_.front());logs_.pop_front();}
       try{std::ofstream f(item.first,std::ios::app);f.exceptions(std::ios::badbit|std::ios::failbit);f<<item.second.dump()<<'\n';}
       catch(const std::exception& e){++dropped_logs_;if(!metadata_failed_.exchange(true))error("metadata",e.what());}
+      pending_work_.release(item.first.parent_path().filename().string());
     }
   }
   void publish_status(){
@@ -199,10 +209,14 @@ class Perception final:public rclcpp::Node {
   void finish_record(zed_tracking::ZedSource& source,const std::string& reason="user_stop"){
     if(session_id_.empty())return;set_status("record_state","finalizing");
     close_segment(source);
-    atomic_json(session_/"session_summary.json",{{"session_id",session_id_},{"state","closed_pending_validation"},
-      {"recorded_frames",recorded_frames_},{"segments",segment_summaries_},{"reason",reason},
-      {"dropped_metadata",dropped_logs_.load()},{"tail_metadata_may_arrive",true}});
+    const std::string closing_id=session_id_;
+    if(stop_){std::lock_guard<std::mutex> l(queue_mutex_);if(latest_&&latest_->session==closing_id){pending_work_.release(latest_->session);latest_.reset();}}
     log(session_/"events.jsonl",{{"event","record_stop"},{"reason",reason},{"monotonic_s",monotonic_s()}});
+    bool drained=pending_work_.wait(closing_id,std::chrono::seconds(10));
+    atomic_json(session_/"session_summary.json",{{"session_id",session_id_},{"state","closed_pending_validation"},
+      {"submitted_frames",recorded_frames_},{"recorded_frames",nullptr},{"segments",segment_summaries_},{"reason",reason},
+      {"dropped_metadata",dropped_logs_.load()-session_dropped_start_},{"metadata_complete",drained&&!metadata_failed_},
+      {"tail_metadata_may_arrive",!drained}});
     session_id_.clear();session_.clear();set_status("record_state","idle");set_status("session_id",nullptr);
   }
   void process_command(zed_tracking::ZedSource& source,const Json& cmd){
@@ -214,9 +228,11 @@ class Perception final:public rclcpp::Node {
       std::string action=cmd.at("operation");Json p=cmd.value("params",Json::object());
       if(action=="set_detector"){
         bool enabled=p.at("enabled");
+        if(enabled&&!zed_tracking::model_change_allowed(!session_id_.empty(),model_,p.value("model_id",model_)))
+          throw std::runtime_error("finish recording before changing model identity");
         if(enabled){{std::lock_guard<std::mutex> l(state_mutex_);engine_=p.value("engine_path",engine_);model_=p.value("model_id",model_);}apply_range_calibration();}
         ++detector_generation_;detector_=enabled;detector_state_=enabled?1:0;
-        {std::lock_guard<std::mutex> l(queue_mutex_);latest_.reset();}queue_cv_.notify_all();
+        {std::lock_guard<std::mutex> l(queue_mutex_);if(latest_)pending_work_.release(latest_->session);latest_.reset();}queue_cv_.notify_all();
       }else if(action=="start_raw_record"){
         if(!session_id_.empty())throw std::runtime_error("recording already active");
         if(fs::space(records_.parent_path()).available<disk_reserve_)throw std::runtime_error("disk below measured recording reserve");
@@ -224,7 +240,7 @@ class Perception final:public rclcpp::Node {
         session_id_="session_"+read_line("/proc/sys/kernel/random/uuid");session_=records_/session_id_;
         if(fs::exists(session_))throw std::runtime_error("session collision; existing recordings are never overwritten");
         fs::create_directories(session_/"segments");
-        segment_=0;recorded_frames_=0;segment_summaries_.clear();
+        segment_=0;recorded_frames_=0;segment_summaries_.clear();session_dropped_start_=dropped_logs_;
         Json manifest={{"schema_version",1},{"session_id",session_id_},{"request_id",rid},{"run_id",run_},{"boot_id",boot_},
           {"profile",profile_},{"codec","LOSSLESS"},{"segment_seconds",60},{"model_id",model_},
           {"camera_serial",intrinsics_.serial_number},{"sdk_version",std::string(sl::Camera::getSDKVersion().c_str())},
@@ -233,8 +249,12 @@ class Perception final:public rclcpp::Node {
           {"intrinsics",{{"fx",intrinsics_.fx},{"fy",intrinsics_.fy},{"cx",intrinsics_.cx},{"cy",intrinsics_.cy},
                          {"width",intrinsics_.width},{"height",intrinsics_.height},{"baseline_m",intrinsics_.baseline_m}}},
           {"warnings",{"recording rotation may create a gap; use timestamp mapping","model recognition and physical-center accuracy not field validated"}}};
-        atomic_json(session_/"manifest.json",manifest);
-        atomic_json(session_/"calibration.json",{{"target_size_m",target_size_},{"effective_size_m",effective_size_},{"calibration_id",calibration_id_},{"size_definition",size_definition_}});
+        Json snapshot={{"target_size_m",target_size_},{"effective_size_m",effective_size_},
+          {"calibration_id",calibration_id_},{"size_definition",size_definition_},{"calibrated",calibrated_},
+          {"model_id",model_},{"camera_serial",intrinsics_.serial_number},{"image_width",intrinsics_.width},{"image_height",intrinsics_.height},
+          {"fx",intrinsics_.fx},{"fy",intrinsics_.fy},{"saved_calibration",calibration_data_}};
+        manifest["calibration_sha256"]=content_sha256(snapshot.dump());
+        atomic_json(session_/"manifest.json",manifest);atomic_json(session_/"calibration.json",snapshot);
         try{begin_segment(source);}catch(...){session_id_.clear();session_.clear();throw;}
         atomic_json(session_/"session_summary.json",{{"state","recording"},{"session_id",session_id_}});
         set_status("record_state","recording");set_status("session_id",session_id_);answer["session_id"]=session_id_;
@@ -282,8 +302,9 @@ class Perception final:public rclcpp::Node {
   void capture_loop(){
     zed_tracking::ZedSource source;
     try{
-      zed_tracking::ZedAcquireConfig cfg;cfg.depth_mode=profile_=="perception"?"NEURAL_LIGHT":"NONE";source.open(cfg);
+      zed_tracking::ZedAcquireConfig cfg;cfg.fps=15;cfg.depth_mode=profile_=="perception"?"NEURAL_LIGHT":"NONE";source.open(cfg);
       intrinsics_=source.intrinsics();apply_range_calibration();set_status("camera_state","running");
+      set_status("configured_capture_fps",cfg.fps);
       int failures=0;double last_resource=0;uint64_t previous_free=fs::space(records_.parent_path()).available;
       while(!stop_&&rclcpp::ok()){
         commands(source);
@@ -295,15 +316,17 @@ class Perception final:public rclcpp::Node {
         bool recorded=false;int64_t stamp=source.image_timestamp_ns();
         std::string sid=session_id_;int seg=segment_;
         if(!sid.empty()){
-          auto rs=source.recording_status();recorded=rs.status;
-          if(recorded){++recorded_frames_;recording_failures_=0;}else ++recording_failures_;
+          auto rs=source.recording_status();recorded=true;++recorded_frames_;
+          if(rs.status)recording_failures_=0;else ++recording_failures_;
           log(session_/"frames.jsonl",{{"sequence",seq},{"stamp_ns",stamp},{"monotonic_s",now},{"segment_id",seg},
-            {"recorded",recorded},{"sdk_frames_ingested",rs.number_frames_ingested},{"sdk_frames_encoded",rs.number_frames_encoded}});
+            {"submitted",true},{"recorded",nullptr},{"sdk_recording_status",rs.status},
+            {"sdk_frames_ingested",rs.number_frames_ingested},{"sdk_frames_encoded",rs.number_frames_encoded}});
           if(recording_failures_>=10)finish_record(source,"sdk_recording_failed");
           else if(metadata_failed_)finish_record(source,"metadata_writer_failed");
           else if(fs::space(records_.parent_path()).available<disk_reserve_)finish_record(source,"disk_reserve");
           else if(now-segment_start_>=60){close_segment(source);begin_segment(source);}
         }
+        if(sid!=session_id_){sid.clear();recorded=false;}
         if(now-last_resource>=1){double resource_window=last_resource>0?now-last_resource:1;last_resource=now;
           uint64_t free=fs::space(records_.parent_path()).available;
           if(!session_id_.empty()&&previous_free>free){double rate=double(previous_free-free)/resource_window;write_rate_=std::max(rate,write_rate_.load()*.95);disk_reserve_=zed_tracking::disk_reserve_bytes(write_rate_);}
@@ -321,8 +344,9 @@ class Perception final:public rclcpp::Node {
           if(available&&available<1500000)throw std::runtime_error("memory safety reserve reached");
           if(max_temp>=80)throw std::runtime_error("conservative temperature guard 80 C reached");
         }
-        if(seq%2)continue; // 15 Hz downstream on a 30 Hz capture; SDK records every grab.
+        // Current Nano uses 15 Hz acquisition, SDK records every grab.
         auto f=std::make_shared<Frame>();f->sequence=seq;f->stamp=stamp;f->acquired=now;f->session=sid;f->segment=seg;f->recorded=recorded;f->detector_generation=detector_generation_;
+        {std::lock_guard<std::mutex> l(state_mutex_);f->model=model_;f->effective_size=effective_size_;f->calibration_id=calibration_id_;f->calibrated=calibrated_;}
         const sl::Mat& left=source.retrieve_left();f->w=int(left.getWidth());f->h=int(left.getHeight());
         size_t rowbytes=size_t(f->w)*4;f->bgra.resize(rowbytes*f->h);auto ptr=left.getPtr<sl::uchar1>();
         for(int y=0;y<f->h;++y)std::memcpy(f->bgra.data()+y*rowbytes,reinterpret_cast<const unsigned char*>(ptr)+y*left.getStepBytes(),rowbytes);
@@ -336,7 +360,8 @@ class Perception final:public rclcpp::Node {
         }
         if(!detector_||detector_state_==3){preview_.offer(f,base(*f));continue;}
         if(detector_state_!=2)preview_.offer(f,base(*f));
-        {std::lock_guard<std::mutex> l(queue_mutex_);if(latest_)++dropped_;latest_=std::move(f);}queue_cv_.notify_one();
+        {std::lock_guard<std::mutex> l(queue_mutex_);if(latest_){++dropped_;pending_work_.release(latest_->session);}
+          pending_work_.acquire(f->session);latest_=std::move(f);}queue_cv_.notify_one();
       }
       set_status("camera_state","stopping");finish_record(source,"capture_stop");source.close();set_status("camera_state","stopped");
     }catch(const std::exception& e){error("camera",e.what());set_status("camera_state","error");
@@ -367,8 +392,10 @@ class Perception final:public rclcpp::Node {
     while(!stop_){std::shared_ptr<const Frame> f;
       {std::unique_lock<std::mutex> l(queue_mutex_);queue_cv_.wait_for(l,std::chrono::milliseconds(100),[&]{return stop_||bool(latest_);});
        if(stop_)break;if(!latest_)continue;f=std::move(latest_);}
-      if(!detector_||f->detector_generation!=detector_generation_){runner.reset();association=zed_tracking::TargetAssociation{};continue;}
-      if(applied_generation!=f->detector_generation){association=zed_tracking::TargetAssociation{};applied_generation=f->detector_generation;}
+      auto release_work=[this](const Frame* frame){pending_work_.release(frame->session);};
+      std::unique_ptr<const Frame,decltype(release_work)> work_guard(f.get(),release_work);
+      if(!detector_||f->detector_generation!=detector_generation_){runner.reset();association.reset();continue;}
+      if(applied_generation!=f->detector_generation){association.reset();applied_generation=f->detector_generation;}
       try{
         if(!runner){detector_state_=1;runner=std::make_unique<zed_tracking::TrtRunner>();std::string engine;
           {std::lock_guard<std::mutex> l(state_mutex_);engine=engine_;}runner->load(engine);}
@@ -380,7 +407,7 @@ class Perception final:public rclcpp::Node {
         zed_perception_interfaces::msg::PerceptionFrame msg;
         msg.header.stamp=rclcpp::Time(f->stamp);msg.header.frame_id="zed_left_camera_optical_frame";
         msg.run_id=run_;msg.model_id=packet["model_id"];msg.sequence=f->sequence;msg.image_width=f->w;msg.image_height=f->h;msg.detector_enabled=true;
-        double extent;std::string cid;bool calibrated;{std::lock_guard<std::mutex> l(state_mutex_);extent=effective_size_;cid=calibration_id_;calibrated=calibrated_;}
+        double extent=f->effective_size;std::string cid=f->calibration_id;bool calibrated=f->calibrated;
         for(size_t i=0;i<boxes.size();++i){const auto& b=boxes[i];double u=(b.x1+b.x2)/2,v=(b.y1+b.y2)/2;
           bool clipped=b.x1<=1||b.y1<=1||b.x2>=f->w-2||b.y2>=f->h-2;
           auto q=zed_tracking::assess_target_depth(f->depth.empty()?nullptr:f->depth.data(),f->confidence.empty()?nullptr:f->confidence.data(),f->w,f->h,b.x1,b.y1,b.x2,b.y2);
