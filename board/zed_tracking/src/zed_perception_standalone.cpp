@@ -264,6 +264,9 @@ class Perception final:public rclcpp::Node {
       answer["ok"]=true;answer["node_config_revision"]=++config_revision_;
       atomic_json(root_/"node_revision.json",{{"run_id",run_},{"node_config_revision",config_revision_.load()}});
     }catch(const std::exception& e){answer["error"]=e.what();error("command",e.what());}
+    // Publish authoritative lifecycle state before acknowledging a command.
+    // Otherwise an immediate model switch can see the previous idle snapshot.
+    publish_status();
     if(!rid.empty()&&rid.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-")==std::string::npos)
       atomic_json(root_/"responses"/(rid+".json"),answer);
     if(rclcpp::ok()){answer["operation_id"]=rid;std_msgs::msg::String msg;msg.data=answer.dump();command_results_->publish(msg);}
