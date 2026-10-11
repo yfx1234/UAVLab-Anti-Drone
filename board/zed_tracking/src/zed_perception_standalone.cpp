@@ -112,6 +112,7 @@ class Perception final:public rclcpp::Node {
   Json calibration_data_;
   std::atomic<double> write_rate_{0};std::atomic<uint64_t> disk_reserve_{10ull*1024*1024*1024};
   std::atomic<bool> metadata_failed_{false};
+  int capture_fps_{15};
   std::atomic<uint32_t> sequence_{0};std::atomic<uint64_t> inferred_{0},dropped_{0};
   std::atomic<double> last_frame_{0},last_infer_{0};double started_{monotonic_s()};
   std::thread capture_,infer_,writer_;std::mutex state_mutex_,queue_mutex_,log_mutex_,command_mutex_,status_io_mutex_;
@@ -302,7 +303,7 @@ class Perception final:public rclcpp::Node {
   void capture_loop(){
     zed_tracking::ZedSource source;
     try{
-      zed_tracking::ZedAcquireConfig cfg;cfg.fps=15;cfg.depth_mode=profile_=="perception"?"NEURAL_LIGHT":"NONE";source.open(cfg);
+      zed_tracking::ZedAcquireConfig cfg;cfg.fps=capture_fps_;cfg.depth_mode=profile_=="perception"?"NEURAL_LIGHT":"NONE";source.open(cfg);
       intrinsics_=source.intrinsics();apply_range_calibration();set_status("camera_state","running");
       set_status("configured_capture_fps",cfg.fps);
       int failures=0;double last_resource=0;uint64_t previous_free=fs::space(records_.parent_path()).available;
@@ -344,7 +345,7 @@ class Perception final:public rclcpp::Node {
           if(available&&available<1500000)throw std::runtime_error("memory safety reserve reached");
           if(max_temp>=80)throw std::runtime_error("conservative temperature guard 80 C reached");
         }
-        // Current Nano uses 15 Hz acquisition, SDK records every grab.
+        // SDK records every grab; FPS is separately selected from YOLO input size.
         auto f=std::make_shared<Frame>();f->sequence=seq;f->stamp=stamp;f->acquired=now;f->session=sid;f->segment=seg;f->recorded=recorded;f->detector_generation=detector_generation_;
         {std::lock_guard<std::mutex> l(state_mutex_);f->model=model_;f->effective_size=effective_size_;f->calibration_id=calibration_id_;f->calibrated=calibrated_;}
         const sl::Mat& left=source.retrieve_left();f->w=int(left.getWidth());f->h=int(left.getHeight());
@@ -450,6 +451,8 @@ public:
   Perception():Node("zed_perception_standalone"){
     run_=declare_parameter<std::string>("run_id",std::to_string(getpid()));boot_=read_line("/proc/sys/kernel/random/boot_id");
     profile_=declare_parameter<std::string>("profile","rgb");engine_=declare_parameter<std::string>("engine_path","");model_=declare_parameter<std::string>("model_id","");
+    capture_fps_=declare_parameter<int>("capture_fps",15);
+    if(capture_fps_!=15&&capture_fps_!=30)throw std::runtime_error("capture FPS must be15/30");
     if(profile_!="rgb"&&profile_!="perception")throw std::runtime_error("invalid profile");
     fs::create_directories(root_);fs::create_directories(records_);
     owner_lock_=::open((root_/"camera.lock").c_str(),O_CREAT|O_RDWR,0600);

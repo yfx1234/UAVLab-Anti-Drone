@@ -63,24 +63,47 @@ def prepare_dataset_index(root):
     (root/'dataset_index.json').write_text(json.dumps(result,ensure_ascii=False,indent=2),encoding='utf-8')
     return result
 
+def ready_media(session_id,mode):
+    """Read-only cache check; never opens the camera or rewrites recordings."""
+    from perception_supervisor import RECORDS,session_path,read_json
+    if mode not in ('rgb_video','depth_video'):raise ValueError('invalid media mode')
+    folder=session_path(RECORDS,session_id);summary=read_json(folder/'session_summary.json')
+    result={'ready':False,'session_id':session_id,'mode':mode}
+    cached=read_json(folder/'media_assets.json').get(mode,{})
+    sources=[{'name':p.name,'bytes':p.stat().st_size,'mtime_ns':p.stat().st_mtime_ns} for p in sorted((folder/'segments').glob('*.svo*'))]
+    if not sources or summary.get('state')!='complete' or summary.get('metadata_complete') is not True or summary.get('tail_metadata_may_arrive') is not False:return result
+    if cached.get('sources')!=sources or cached.get('contract')!='native_stream_v1' or not cached.get('reports'):return result
+    try:
+        for r in cached['reports']:
+            path=pathlib.Path(r['video'])
+            if not path.resolve().is_relative_to((folder/'exports').resolve()) or path.name!=mode+'.mp4' or not path.is_file() or path.stat().st_size!=r['video_bytes']:return result
+    except (OSError,KeyError,TypeError):return result
+    return dict(result,ready=True,segments=cached['reports'],verified_frames=summary['verified_frames'],state='complete',integrity_errors=[],cached=True)
+
 def export(session_id,fps=2,mode='frames'):
     from perception_supervisor import RECORDS,WS,session_path,read_json,atomic_json
     folder=session_path(RECORDS,session_id)
     if not folder.is_dir():raise ValueError('session missing')
-    if not .2<=fps<=30 or mode not in ('frames','rgb_video','yolo_video','verify'):raise ValueError('invalid export options')
+    if not .2<=fps<=30 or mode not in ('frames','rgb_video','depth_video','yolo_video','verify'):raise ValueError('invalid export options')
     summary=read_json(folder/'session_summary.json')
     if summary.get('state') in ('recording','finalizing'):raise ValueError('session still active')
     exe=WS/'install_perception/zed_tracking/lib/zed_tracking/export_svo_rgb'
     out=folder/'exports';out.mkdir(exist_ok=True)
+    direct=mode in ('rgb_video','depth_video')
+    sources=[{'name':p.name,'bytes':p.stat().st_size,'mtime_ns':p.stat().st_mtime_ns} for p in sorted((folder/'segments').glob('*.svo*'))]
+    assets=read_json(folder/'media_assets.json');cached=assets.get(mode,{})
+    if direct:
+        ready=ready_media(session_id,mode)
+        if ready['ready']:return ready
     reports=[]
     for path in sorted((folder/'segments').glob('*.svo*')):
-        cmd=[str(exe),str(path),str(out/path.stem),str(fps),'verify' if mode=='verify' else 'frames']
+        cmd=[str(exe),str(path),str(out/path.stem),'0' if direct else str(fps),mode if direct or mode=='verify' else 'frames']
         p=subprocess.run(cmd,capture_output=True,text=True,timeout=3600)
         if p.returncode:raise ValueError('SVO playback failed: '+p.stderr[-1000:])
         report=json.loads(p.stdout.strip().splitlines()[-1]);report['segment_id']=int(path.stem.removeprefix('segment_'))
         reports.append(report)
     if not reports:raise ValueError('no SVO segments')
-    if mode in ('rgb_video','yolo_video'):
+    if mode=='yolo_video':
         try:import cv2
         except ImportError:raise ValueError('OpenCV Python unavailable for offline MP4 export')
         import sqlite3,tempfile
@@ -130,6 +153,9 @@ def export(session_id,fps=2,mode='frames'):
             issues=validate_session_integrity(summary,reports,(json.loads(line) for line in stream))
     summary.update(state='incomplete' if issues else 'complete',recorded_frames=recorded,verified_frames=recorded,verification=reports,integrity_errors=issues)
     atomic_json(folder/'session_summary.json',summary)
+    if direct and not issues:
+        for report in reports:report['video_bytes']=pathlib.Path(report['video']).stat().st_size
+        assets[mode]={'contract':'native_stream_v1','sources':sources,'reports':reports};atomic_json(folder/'media_assets.json',assets)
     return {'session_id':session_id,'mode':mode,'segments':reports,'verified_frames':recorded,'state':summary['state'],'integrity_errors':issues}
 
 if __name__=='__main__':

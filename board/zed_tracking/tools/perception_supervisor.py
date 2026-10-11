@@ -21,12 +21,12 @@ RECORDS=WS.parent/'perception_records'
 EXE=WS/'install_perception/zed_tracking/lib/zed_tracking/zed_perception_standalone'
 BOOT_FILE=pathlib.Path('/proc/sys/kernel/random/boot_id')
 SCHEMAS={
- 'status':set(),'check_device':set(),'start_capture':{'profile','model_id'},'stop_capture':set(),
+ 'status':set(),'check_device':set(),'start_capture':{'profile','model_id','capture_fps'},'stop_capture':set(),
  'set_detector':{'enabled'},'start_raw_record':{'label','scene','lighting','size_definition','known_distance_m','distance_source'},
  'stop_raw_record':set(),'list_sessions':set(),'list_models':set(),'test_model':{'model_id'},
  'select_model':{'model_id'},'save_calibration':{'target_size_m','size_definition','samples'},
  'export_session':{'session_id','fps','mode'},'export_diagnostics':set(),
- 'session_checksum':{'session_id','file'},
+ 'session_checksum':{'session_id','file'},'ready_media':{'session_id','mode'},
  'prepare_dataset':set(),
 }
 class Conflict(ValueError):pass
@@ -34,6 +34,8 @@ class Conflict(ValueError):pass
 def validate_action(action,params):
     if action not in SCHEMAS or not isinstance(params,dict) or set(params)-SCHEMAS[action]:raise ValueError('unsupported perception action/fields')
     if action=='start_capture' and params.get('profile') not in ('rgb','perception'):raise ValueError('profile must be rgb/perception')
+    if action=='start_capture' and (type(params.get('capture_fps',15)) is not int or params.get('capture_fps',15) not in (15,30)):
+        raise ValueError('capture FPS must be15/30')
     if action=='set_detector' and type(params.get('enabled')) is not bool:raise ValueError('enabled must be bool')
     if 'known_distance_m' in params:
         d=params['known_distance_m']
@@ -156,7 +158,8 @@ def start(s,params):
     if not EXE.is_file():raise ValueError('standalone executable not built')
     m=model_by_id(params.get('model_id')) if params['profile']=='perception' else None
     run=uuid.uuid4().hex
-    args=[str(EXE),'--ros-args','-p',f'run_id:={run}','-p',f'profile:={params["profile"]}']
+    args=[str(EXE),'--ros-args','-p',f'run_id:={run}','-p',f'profile:={params["profile"]}',
+          '-p',f'capture_fps:={params.get("capture_fps",15)}']
     if m:args.extend(['-p',f'engine_path:={stage_model(m)}','-p',f'model_id:={m["model_id"]}'])
     command=f'source /opt/ros/humble/setup.bash && source {shlex.quote(str(WS/"install/setup.bash"))} && source {shlex.quote(str(WS/"install_perception/setup.bash"))} && exec '+shlex.join(args)
     log=ROOT/f'capture_{run}.log'
@@ -209,12 +212,15 @@ def dispatch(request):
     action=request.get('action');params=request.get('params',{});validate_action(action,params)
     rid=request.get('request_id',uuid.uuid4().hex)
     if not isinstance(rid,str) or not re.fullmatch('[a-zA-Z0-9_-]{1,80}',rid):raise ValueError('invalid request ID')
-    readonly={'status','check_device','list_sessions','list_models','export_diagnostics','session_checksum'}
+    readonly={'status','check_device','list_sessions','list_models','export_diagnostics','session_checksum','ready_media'}
     if action in readonly:
         if action=='status':return state()
         if action=='check_device':return device_info()
         if action=='list_sessions':return sessions()
         if action=='list_models':return models()
+        if action=='ready_media':
+            from export_session import ready_media
+            return ready_media(params.get('session_id'),params.get('mode'))
         if action=='session_checksum':
             folder=session_path(RECORDS,params.get('session_id'))
             rel=pathlib.PurePosixPath(params.get('file',''))

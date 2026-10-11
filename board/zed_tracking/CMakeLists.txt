@@ -12,7 +12,7 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(zed_perception_interfaces REQUIRED)
-find_package(OpenCV REQUIRED COMPONENTS core imgproc imgcodecs)
+find_package(OpenCV REQUIRED COMPONENTS core imgproc imgcodecs videoio)
 find_package(CUDAToolkit REQUIRED)
 find_package(OpenSSL REQUIRED)
 

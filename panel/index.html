@@ -21,7 +21,7 @@
 <aside class="controls" aria-label="采集与录像控制">
 <section class="group"><h2>连接板子</h2><p class="help">优先使用本机已有 SSH 密钥。连接不会自动启动相机。</p><div class="row"><button id="connect" class="primary">连接板子</button><button id="disconnect">断开连接</button></div>
 <details><summary>使用会话密码连接</summary><label for="password">SSH 密码</label><input id="password" type="password" autocomplete="current-password" placeholder="仅保存在当前会话内"></details></section>
-<section class="group"><h2>相机与识别</h2><label for="profile">运行模式</label><select id="profile"><option value="rgb">纯采集：RGB，无深度</option><option value="perception">感知：YOLO + 深度与估距</option></select><div class="row"><button id="startCapture" class="primary">启动相机</button><button id="stopCapture" class="danger">停止并释放相机</button></div><div class="row"><button id="enableDetector">启用 YOLO</button><button id="disableDetector">暂停 YOLO</button></div><p class="help">当前 Nano 默认 1080p / 15 fps。纯采集可独立运行。暂停识别不会停止原始录像；需要启用深度时，先停止相机并切到感知模式。</p></section>
+<section class="group"><h2>相机与识别</h2><label for="profile">运行模式</label><select id="profile"><option value="rgb">纯采集：RGB，无深度</option><option value="perception">感知：YOLO + 深度与估距</option></select><label for="captureFps">原始采集帧率</label><select id="captureFps"><option value="15">15 fps（当前稳定档）</option><option value="30">30 fps（实验档）</option></select><div class="row"><button id="startCapture" class="primary">启动相机</button><button id="stopCapture" class="danger">停止并释放相机</button></div><div class="row"><button id="enableDetector">启用 YOLO</button><button id="disableDetector">暂停 YOLO</button></div><p class="help">原始图像 1920×1080；YOLO 输入 1280×736。当前 Nano 默认 15 fps；30 fps 无损试录实得约 18.2 fps，尚未达标。纯采集可独立运行。暂停识别不会停止原始录像；需要启用深度时，先停止相机并切到感知模式。</p></section>
 <section class="group"><h2>板上原始素材录像</h2><p class="help">用于后续训练。保存无框双目 SVO，包含完整采集信息，之后可导出无框 RGB 视频或图片。</p><label for="sessionLabel">场次名称</label><input id="sessionLabel" placeholder="例如：室外逆光、近距悬停" maxlength="100"><label for="scene">场景 / 背景</label><input id="scene" placeholder="草地、建筑、天空等" maxlength="200"><label for="lighting">光照</label><input id="lighting" placeholder="顺光、逆光、阴天等" maxlength="100"><div class="row"><button id="startRaw" class="primary">开始原始素材录像</button><button id="stopRaw">停止原始素材录像</button></div><p id="sessionInfo" class="help">板上录像不依赖浏览器或图传连接；关闭页面后仍会继续。</p></section>
 <section class="group"><h2>电脑预览录像</h2><label for="recordView">保存画面</label><select id="recordView"><option value="yolo">YOLO 框与定位结果</option><option value="rgb">纯 RGB 预览</option></select><div class="row"><button id="startLocal">开始本机预览录像</button><button id="stopLocal">停止本机预览录像</button></div><p class="help">仅保存收到的低带宽画面。断链会分段记录，不代替板上训练素材；开始后录像样式固定。</p></section>
 </aside>
@@ -30,17 +30,26 @@
 <div id="viewer" class="viewer"><canvas id="canvas" aria-label="实时相机画面及识别框"></canvas><div class="empty"><strong id="emptyTitle">相机尚未启动</strong><span id="emptyHelp">连接板子后选择纯采集或感知模式，再启动相机。页面只查看 RGB，不显示深度图。</span></div></div>
 <div class="measurements"><span>采集 <b id="captureHz">—</b> Hz</span><span>识别 <b id="inferHz">—</b> Hz</span><span>画面年龄 <b id="frameAge">—</b> s</span><span>图传 <b id="bandwidth">—</b> Mbps</span><span>可用内存 <b id="memory">—</b> GiB</span><span>板上磁盘 <b id="disk">—</b> GiB</span></div></section>
 <section class="section"><div class="section-head"><h2>目标与相机坐标</h2><span class="help">X 向右 · Y 向下 · Z 向前 · 单位米</span></div><div class="table-wrap"><table><thead><tr><th>目标 / 分数</th><th>定位来源</th><th>水平 / 垂直角（度）</th><th>X / Y / Z</th><th>轴向 Z / 空间距离</th><th>深度支持 / 降级原因</th></tr></thead><tbody id="targets"><tr><td colspan="6" class="empty-row">暂无有效的同帧识别结果。</td></tr></tbody></table></div><div class="section-body"><p class="help">水平角右为正，垂直角下为正。“尺寸估计”是近似坐标；“仅方向”不输出位置。深度坐标表示有像素支持的目标表面，未标定为四旋翼几何中心。</p></div></section>
-<section class="section"><div class="tabs" role="tablist" aria-label="素材与配置"><button data-tab="sessions" role="tab" aria-selected="true">视频与数据</button><button data-tab="models" role="tab" aria-selected="false">模型</button><button data-tab="calibration" role="tab" aria-selected="false">尺寸标定</button><button data-tab="diagnostics" role="tab" aria-selected="false">运行诊断</button></div>
-<div id="sessionsTab" class="tabbody"><h2>板上采集场次</h2><div class="row tight"><button id="refreshSessions">刷新场次列表</button><select id="sessionSelect" aria-label="选择采集场次" style="min-width:240px;flex:1"><option value="">先刷新场次列表</option></select></div><div class="row tight"><button id="downloadSession">下载到电脑</button><button id="verifySession">校验 SVO 回放</button><button id="exportFrames">导出训练图片</button><button id="exportRgb">导出无框 RGB 视频</button><button id="exportYolo">导出带框复盘视频</button><button id="prepareDataset">生成按场次分组清单</button></div><label for="exportFps">离线导出帧率</label><input id="exportFps" type="number" min="0.2" max="30" step="0.1" value="2" style="max-width:130px"><p class="help">默认 2 fps 用于抽帧；需要流畅视频时可设置为 30。导出需先停止相机。下载默认限速 256 KiB/s，可取消并续传；大文件建议采集结束后传输。分组清单包含已导出的完整场次，图片仍需人工标注，未标注不等于负样本。</p><div id="downloadProgress" hidden><progress id="progressBar" max="1" value="0"></progress><p id="progressText" class="help"></p><button id="cancelDownload">取消下载并保留续传文件</button></div><pre id="sessionDetails">尚未读取场次。</pre><h3>电脑录像与下载目录</h3><p id="outputDir" class="help"></p><pre id="localFiles">暂无本机预览录像。</pre></div>
-<div id="modelsTab" class="tabbody" hidden><h2>模型版本与检查</h2><div class="row"><button id="refreshModels">读取模型列表</button><select id="modelSelect" aria-label="选择 YOLO 模型"><option value="">当前默认横版模型</option></select></div><div class="row tight"><button id="testModel">检查选中引擎</button><button id="selectModel">切换到选中模型</button></div><p class="help">引擎检查需要相机停止；录像期间不能切换模型。只支持已批准的静态 float32、RGB 输入、end-to-end 输出合同。更换 NX 后重新构建并验证引擎。</p><pre id="modelDetails">旧模型已接入；识别精度仍需使用真实四旋翼与负样本验收。</pre></div>
-<div id="calibrationTab" class="tabbody" hidden><h2>30 cm 先验与尺寸估距标定</h2><div class="form-grid"><div><label for="targetSize">实际外廓尺寸（米）</label><input id="targetSize" type="number" min="0.01" max="5" step="0.01" value="0.30"></div><div><label for="sizeDefinition">尺寸定义</label><input id="sizeDefinition" placeholder="例如：含桨叶最大外廓" value="约 30 cm，外廓定义待确认"></div><div><label for="calibrationTarget">当前标定目标</label><select id="calibrationTarget"><option value="">暂无目标</option></select></div><div><label for="knownDistance">人工量得的轴向 Z（米）</label><input id="knownDistance" type="number" min="0.1" step="0.1" placeholder="将目标放在相机正前方量距"></div></div><div class="row tight"><button id="addSample">添加当前目标量距样本</button><button id="clearSamples">清空待保存样本</button><button id="saveCalibration">保存尺寸与标定</button></div><p class="help">只对真实四旋翼采样，至少 3 个样本，并覆盖不同距离与姿态；人工量距不使用 YOLO 估计距离代替。录像中不能更改标定。只保存尺寸时仍视为未完成估距标定。</p><pre id="calibrationSamples">尚未添加样本。</pre></div>
-<div id="diagnosticsTab" class="tabbody" hidden><h2>设备与子模块状态</h2><div class="row tight"><button id="checkDevice">检查设备能力</button><button id="exportDiagnostics">保存诊断 JSON</button></div><p class="help">当前 Nano 优先使用 LOSSLESS 原始录像和低带宽 JPEG 预览。只有实测通过后才批准更高负载配置。</p><pre id="diagnosticDetails">连接后显示设备与感知状态。</pre></div>
+<section class="section"><div class="section-head"><h2>视频下载与本机素材</h2></div>
+<div class="tabbody"><div class="row tight"><button id="refreshSessions">刷新场次列表</button><select id="sessionSelect" aria-label="选择采集场次" style="min-width:200px;flex:1"><option value="">先刷新场次列表</option></select></div>
+<div class="row tight"><button id="downloadRgb" class="primary">下载原始 RGB 视频</button><button id="downloadDepth">下载深度展示视频</button></div>
+<p class="help">RGB 视频保持单目 1920×1080 与采集时间长度；缺帧处重复前帧，无识别框；MP4 是观看版本。深度视频仅在点击时从双目素材计算，默认不生成。首次生成需先停止并释放相机。</p>
+<div class="row tight"><button id="downloadStereo">下载原始双目素材（SVO）</button><button id="extractFrames">本机抽训练图片</button></div>
+<p class="help">SVO 保留原始双目素材，供重新计算深度。抽图片先下载 RGB 视频，后续在本机标注、整理和训练。采集中下载限速；相机停止后自动高速，实际速度受图传信号、网络和磁盘影响。</p>
+<label for="extractFps">本机抽帧频率（每秒张数）</label><input id="extractFps" type="number" min="0.2" max="15" step="0.1" value="2" style="max-width:130px">
+<div id="downloadProgress" hidden><progress id="progressBar" max="1" value="0"></progress><p id="progressText" class="help"></p><button id="cancelDownload">取消并保留续传文件</button></div>
+<p id="sessionDetails" class="help">尚未读取场次。</p>
+<h3>本机视频</h3><select id="mediaSelect" aria-label="选择本机视频"><option value="">暂无下载视频</option></select>
+<video id="localVideo" controls playsinline preload="metadata" style="width:100%;max-height:500px;background:#102235;margin-top:12px" hidden></video>
+<p id="mediaPath" class="help"></p><h3>电脑保存目录</h3><p id="outputDir" class="help"></p><pre id="localFiles">暂无本机预览录像。</pre></div>
 </section></div></div>
 <footer><span>唯一相机采集 · 原始素材与显示叠加分开 · 不启动飞行控制链路</span><span>NX 16GB 为后续迁移目标，当前采集使用 Nano</span></footer>
 </main>
 <script>
-const TOKEN='__TOKEN__',byId=id=>document.getElementById(id);
-let state={},meta=null,image=null,overlay=true,busy=false,sessions=[],models=[],samples=[],lastKey='',downloadRequest=null;
+const TOKEN='__TOKEN__',INSTANCE='__INSTANCE__',byId=id=>document.getElementById(id);
+let state={},meta=null,image=null,overlay=true,busy=false,controlBusy=false,restarted=false,mediaPhase='',sessions=[],localMedia=[],lastKey='',downloadRequest=null;
+const stopActions=['stop_capture','stop_raw_record','stop_preview_record'],stopButtons=['stopCapture','stopRaw','stopLocal'];
+function restartNotice(){restarted=true;busy=false;controlBusy=false;downloadRequest=null;message('面板服务已重启，请刷新页面后重新连接；板上录像继续，下载临时文件可续传。',true);update();}
 const cameraNames={stopped:'相机未启动',starting:'相机启动中',running:'相机采集中',stopping:'相机结束中',error:'相机故障',unresponsive:'相机状态过期'};
 const recordNames={idle:'原始录像未启动',starting:'原始录像启动中',recording:'板上原始录像中',finalizing:'原始录像结束中',error:'原始录像失败'};
 const modeNames={depth:'有效深度',size_estimate:'尺寸估计',bearing_only:'仅方向'};
@@ -48,11 +57,11 @@ const reasonNames={heuristic_center_support:'中心深度一致',clipped_box:'�
 function message(text,error=false){byId('message').textContent=text;byId('message').classList.toggle('error',error);}
 function number(value,digits=2){return typeof value==='number'&&Number.isFinite(value)?value.toFixed(digits):'—';}
 function downloadJson(value,name){const blob=new Blob([JSON.stringify(value,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();URL.revokeObjectURL(url);}
-async function refresh(){try{const r=await fetch('/api/status');state=await r.json();update();}catch(e){message('面板连接失败：'+e.message,true);}}
+async function refresh(){try{const r=await fetch('/api/status');if(!r.ok)throw new Error('状态读取失败');state=await r.json();if(state.instance_id!==INSTANCE){restartNotice();return;}update();}catch(e){message('面板连接失败：'+e.message,true);}}
 function update(){
  const s=state.state||{},p=s.pipeline||{},running=s.camera_state==='running',recording=p.record_state==='recording';
  if(s.pid&&s.profile)byId('profile').value=s.profile;
- byId('profile').disabled=busy||!!s.pid;
+ byId('profile').disabled=busy||!!s.pid;byId('captureFps').disabled=busy||!!s.pid;if(p.configured_capture_fps)byId('captureFps').value=String(p.configured_capture_fps);
  byId('connection').textContent=state.connected?'板子已连接':'未连接板子';byId('connection').classList.toggle('good',state.connected&&!state.error);
  byId('cameraState').textContent=cameraNames[s.camera_state]||'相机未启动';byId('recordState').textContent=recordNames[p.record_state]||'原始录像未启动';
  const local=state.preview_recording||{};byId('localState').textContent=local.active?'电脑预览录像中':(local.finalizing?'电脑录像结束中':'本机录像未启动');
@@ -60,48 +69,53 @@ function update(){
  byId('memory').textContent=number(p.mem_available_kib/1048576,2);byId('disk').textContent=number(p.disk_free_bytes/1073741824,1);
  byId('sessionInfo').textContent=p.session_id?'当前场次：'+p.session_id:'关闭浏览器或图传断开，板上录像仍会继续。';
  byId('outputDir').textContent=state.output_directory||'';byId('localFiles').textContent=local.files?.length?JSON.stringify(local,null,2):'暂无本机预览录像。';
- byId('diagnosticDetails').textContent=JSON.stringify({state:s,preview:state.preview,error:state.error},null,2);
- for(const button of document.querySelectorAll('button'))if(!button.dataset.tab && !['viewRgb','viewYolo','cancelDownload'].includes(button.id))button.disabled=busy;
- const disable=(id,condition)=>byId(id).disabled=busy||condition;
+ for(const button of document.querySelectorAll('button'))if(!button.dataset.tab && !['viewRgb','viewYolo','cancelDownload'].includes(button.id))button.disabled=busy||restarted||controlBusy;
+ const disable=(id,condition)=>byId(id).disabled=restarted||controlBusy||(busy&&!stopButtons.includes(id)&&!(id==='startCapture'&&['transfer','local'].includes(mediaPhase)))||condition;
  disable('connect',state.connected);disable('disconnect',!state.connected);disable('startCapture',!state.connected||!!s.pid);
  disable('stopCapture',!state.connected||!s.pid);disable('startRaw',!running||recording||p.record_state==='finalizing');disable('stopRaw',!running||!recording);
  disable('enableDetector',!running||p.detector_enabled);disable('disableDetector',!running||!p.detector_enabled);
  disable('startLocal',local.active||local.finalizing||state.preview?.frame_age_s==null||state.preview?.frame_age_s>3);
- disable('stopLocal',!local.active);disable('testModel',!state.connected||!!s.pid);disable('selectModel',!state.connected||recording);
- disable('saveCalibration',!running||recording);disable('addSample',!meta?.targets?.length);
+ disable('stopLocal',!local.active);for(const id of ['downloadRgb','downloadDepth'])disable(id,!state.connected||!selectedSession());disable('downloadStereo',!state.connected||!selectedSession());disable('extractFrames',!selectedSession());
+ byId('cancelDownload').disabled=restarted||!downloadRequest;
  const age=state.preview?.frame_age_s;byId('frameAge').textContent=number(age,2);
  if(!s.pid||age==null||age>3){byId('viewer').classList.remove('live');byId('emptyTitle').textContent=s.pid?'等待新鲜图像':'相机尚未启动';byId('emptyHelp').textContent=(s.pid?(state.error||state.preview?.error):null)||'连接并启动相机后，这里显示 RGB 或同帧 YOLO 画面。';renderTargets([]);}
  if(state.error&&!busy)message('连接状态异常：'+state.error,true);
 }
 async function action(actionName,params={},options={}){
- if(busy)return null;busy=true;update();message('正在执行：'+(options.label||actionName));
+ const independent=busy&&(stopActions.includes(actionName)||(actionName==='start_capture'&&['transfer','local'].includes(mediaPhase)));
+ if(restarted||controlBusy||(busy&&!independent))return null;
+ if(independent){controlBusy=true;await refresh();}else busy=true;
+ update();message('正在执行：'+(options.label||actionName));
  const rid=crypto.randomUUID().replaceAll('-',''),s=state.state||{};
  const body={action:actionName,params,request_id:rid,expected_boot_id:s.boot_id,expected_run_id:s.run_id,expected_revision:s.revision,expected_local_revision:state.local_revision};
  if(actionName==='connect'&&byId('password').value)body.password=byId('password').value;
- if(actionName==='download_session'){downloadRequest=rid;byId('downloadProgress').hidden=false;}
+ const isDownload=['download_session','download_asset'].includes(actionName);
+ if(isDownload){downloadRequest=rid;mediaPhase='checking';byId('downloadProgress').hidden=false;}
  try{
    const response=await fetch('/api/action',{method:'POST',headers:{'Content-Type':'application/json','X-Panel-Token':TOKEN},body:JSON.stringify(body)}),start=await response.json();
+   if(response.status===403){restartNotice();throw new Error('请刷新页面恢复会话');}
    if(!response.ok)throw new Error(start.error);
    let job;
-   while(true){await new Promise(resolve=>setTimeout(resolve,400));const r=await fetch('/api/jobs/'+start.operation_id);job=await r.json();
-     if(job.progress){byId('progressBar').value=job.progress.downloaded_bytes/Math.max(1,job.progress.total_bytes);byId('progressText').textContent=job.progress.file+' · '+number(job.progress.downloaded_bytes/1048576,1)+' MiB';}
+   while(true){await new Promise(resolve=>setTimeout(resolve,400));if(restarted)throw new Error('服务已重启，请刷新后续传');const r=await fetch('/api/jobs/'+start.operation_id);job=await r.json();
+     if(!r.ok)throw new Error(r.status===404?'后台任务已失效，请刷新页面后重试；续传文件已保留':job.error||'任务读取失败');
+     if(isDownload&&job.progress){const p=job.progress;mediaPhase=p.phase?(p.phase.includes('电脑')?'local':'conversion'):'transfer';byId('progressBar').value=(p.downloaded_bytes||0)/Math.max(1,p.total_bytes||1);byId('progressText').textContent=p.phase||p.file+' · '+number(p.downloaded_bytes/1048576,1)+' / '+number(p.total_bytes/1048576,1)+' MiB · '+number(p.bytes_s/1048576,2)+' MiB/s · '+p.speed_mode+' · 约剩 '+number(p.eta_s/60,1)+' 分钟';update();}
      if(['complete','error'].includes(job.state))break;
    }
    if(job.state==='error')throw new Error(job.error);
    if(job.result?.result?.state==='incomplete')message('场次不完整：'+job.result.result.integrity_errors.join('；'),true);
    else message('已完成：'+(options.label||actionName));
-   if(actionName==='export_session')byId('sessionDetails').textContent=JSON.stringify(job.result.result,null,2);
+   if(actionName==='download_asset'){byId('progressBar').value=1;byId('progressText').textContent='视频下载与本机播放准备完成';byId('mediaPath').textContent='保存到：'+job.result.folder;await loadMedia();}if(actionName==='extract_local_frames')byId('mediaPath').textContent='已抽取 '+job.result.images+' 张，保存到：'+job.result.folder;
    byId('password').value='';return job.result;
  }catch(e){message('操作未完成：'+e.message,true);return null;}
- finally{busy=false;await refresh();}
+ finally{if(independent)controlBusy=false;else busy=false;if(isDownload){downloadRequest=null;mediaPhase='';}await refresh();}
 }
 function selectedSession(){return byId('sessionSelect').value;}
-function selectedModel(){return byId('modelSelect').value;}
+function selectedModel(){return '';}
 byId('connect').onclick=()=>action('connect',{}, {label:'连接板子'});byId('disconnect').onclick=()=>action('disconnect',{}, {label:'断开本机连接'});
-byId('startCapture').onclick=()=>{const params={profile:byId('profile').value};if(selectedModel())params.model_id=selectedModel();return action('start_capture',params,{label:'启动相机'});};
+byId('startCapture').onclick=()=>{const params={profile:byId('profile').value,capture_fps:Number(byId('captureFps').value)};if(selectedModel())params.model_id=selectedModel();return action('start_capture',params,{label:'启动相机'});};
 byId('stopCapture').onclick=()=>action('stop_capture',{}, {label:'结束录像并释放相机'});
 byId('enableDetector').onclick=()=>action('set_detector',{enabled:true},{label:'启用 YOLO'});byId('disableDetector').onclick=()=>action('set_detector',{enabled:false},{label:'暂停 YOLO'});
-byId('startRaw').onclick=()=>action('start_raw_record',{label:byId('sessionLabel').value,scene:byId('scene').value,lighting:byId('lighting').value,size_definition:byId('sizeDefinition').value},{label:'开始原始素材录像'});
+byId('startRaw').onclick=()=>action('start_raw_record',{label:byId('sessionLabel').value,scene:byId('scene').value,lighting:byId('lighting').value},{label:'开始原始素材录像'});
 byId('stopRaw').onclick=()=>action('stop_raw_record',{}, {label:'结束原始素材录像'});
 byId('startLocal').onclick=()=>action('start_preview_record',{view_mode:byId('recordView').value},{label:'开始电脑预览录像'});
 byId('stopLocal').onclick=()=>action('stop_preview_record',{}, {label:'结束电脑预览录像'});
@@ -114,30 +128,21 @@ function draw(){if(!image||!meta)return;const canvas=byId('canvas'),ctx=canvas.g
 function renderTargets(targets){const tbody=byId('targets');tbody.replaceChildren();
  if(!targets.length){const row=tbody.insertRow(),cell=row.insertCell();cell.colSpan=6;cell.className='empty-row';cell.textContent='当前没有有效的同帧识别结果。';}
  for(const t of targets){const row=tbody.insertRow(),xyz=t.position_camera;const values=['#'+t.track_id+' / '+number(t.confidence,2),modeNames[t.mode],number(t.horizontal_angle_rad*180/Math.PI)+' / '+number(t.vertical_angle_rad*180/Math.PI),xyz?xyz.map(v=>number(v)).join(' / '):'位置无效',number(t.depth_z_m??t.estimated_depth_z_m)+' / '+number(t.distance_m),'像素有效 '+number(t.depth_valid_ratio*100,1)+'% · '+(reasonNames[t.reason]||t.reason)];for(const value of values)row.insertCell().textContent=value;}
- const choose=byId('calibrationTarget'),previous=choose.value;choose.replaceChildren();for(const t of targets){const option=new Option('#'+t.track_id+' · '+modeNames[t.mode],String(t.track_id));choose.add(option);}if(!targets.length)choose.add(new Option('暂无目标',''));if([...choose.options].some(o=>o.value===previous))choose.value=previous;
+
 }
 async function frames(){try{const response=await fetch('/api/frame/meta');if(!response.ok)return;const next=await response.json();if(next.frame_key===lastKey)return;
  const fresh=new Image();fresh.src=next.image_url;await fresh.decode();meta=next;image=fresh;lastKey=next.frame_key;byId('viewer').classList.add('live');draw();renderTargets(meta.targets||[]);
  }catch(e){}finally{setTimeout(frames,160);}}
-for(const button of document.querySelectorAll('[data-tab]'))button.onclick=()=>{for(const tab of document.querySelectorAll('[data-tab]'))tab.setAttribute('aria-selected',tab===button);for(const content of document.querySelectorAll('.tabbody'))content.hidden=content.id!==button.dataset.tab+'Tab';};
 byId('refreshSessions').onclick=async()=>{const result=await action('list_sessions',{}, {label:'读取采集场次'});if(!result)return;sessions=result;byId('sessionSelect').replaceChildren();for(const s of sessions)byId('sessionSelect').add(new Option((s.manifest.metadata?.label||s.session_id)+' · '+(s.summary.state||'未知')+' · '+number(s.bytes/1073741824,2)+' GiB',s.session_id));if(!sessions.length)byId('sessionSelect').add(new Option('没有采集场次',''));showSession();};
-function showSession(){byId('sessionDetails').textContent=JSON.stringify(sessions.find(s=>s.session_id===selectedSession())||'暂无场次',null,2);}
+function showSession(){const s=sessions.find(s=>s.session_id===selectedSession());byId('sessionDetails').textContent=s?'该场次总素材 '+number(s.bytes/1073741824,2)+' GiB。各下载按钮只传输所选类型，不下载全部场次。'+(s.summary.state==='incomplete'?'场次不完整，请通过 SSH 复盘。':''):'暂无场次';update();}
 byId('sessionSelect').onchange=showSession;
-byId('prepareDataset').onclick=async()=>{const result=await action('prepare_dataset',{}, {label:'生成场次分组清单'});if(result)byId('sessionDetails').textContent=JSON.stringify(result,null,2);};
-byId('downloadSession').onclick=()=>selectedSession()?action('download_session',{session_id:selectedSession()},{label:'下载原始采集场次'}):message('请先选择采集场次',true);
-byId('cancelDownload').onclick=async()=>{if(!downloadRequest)return;await fetch('/api/action',{method:'POST',headers:{'Content-Type':'application/json','X-Panel-Token':TOKEN},body:JSON.stringify({action:'cancel_job',request_id:crypto.randomUUID().replaceAll('-',''),params:{request_id:downloadRequest}})});message('已请求取消下载，保留续传文件');};
-for(const [id,mode] of [['verifySession','verify'],['exportFrames','frames'],['exportRgb','rgb_video'],['exportYolo','yolo_video']])byId(id).onclick=()=>selectedSession()?action('export_session',{session_id:selectedSession(),fps:Number(byId('exportFps').value),mode},{label:byId(id).textContent}):message('请先选择采集场次',true);
-byId('refreshModels').onclick=async()=>{const result=await action('list_models',{}, {label:'读取模型版本'});if(!result)return;models=result;byId('modelSelect').replaceChildren();for(const m of models)byId('modelSelect').add(new Option(m.name+(m.default?' · 当前默认':''),m.model_id));const def=models.find(m=>m.default);if(def)byId('modelSelect').value=def.model_id;showModel();};
-function showModel(){byId('modelDetails').textContent=JSON.stringify(models.find(m=>m.model_id===selectedModel())||'当前默认横版模型',null,2);}
-byId('modelSelect').onchange=showModel;
-byId('testModel').onclick=async()=>{const result=await action('test_model',{model_id:selectedModel()},{label:'检查引擎合同'});if(result)byId('modelDetails').textContent=JSON.stringify(result,null,2);};
-byId('selectModel').onclick=()=>action('select_model',{model_id:selectedModel()},{label:'切换模型并重启感知'});
-byId('addSample').onclick=()=>{const target=meta?.targets?.find(t=>String(t.track_id)===byId('calibrationTarget').value),z=Number(byId('knownDistance').value);if(!target||!Number.isFinite(z)||z<=0){message('请选择真实四旋翼，并填写人工量得的轴向 Z',true);return;}
- const [x1,y1,x2,y2]=target.bbox_xyxy;samples.push({known_distance_m:z,bbox_width:x2-x1,bbox_height:y2-y1,fx:meta.intrinsics.fx,fy:meta.intrinsics.fy,frame_key:meta.frame_key,source:'manual_axial_Z',model_id:meta.model_id,camera_serial:meta.camera_serial,image_width:meta.image_width,image_height:meta.image_height});byId('calibrationSamples').textContent=JSON.stringify(samples,null,2);};
-byId('clearSamples').onclick=()=>{samples=[];byId('calibrationSamples').textContent='尚未添加样本。';};
-byId('saveCalibration').onclick=()=>action('save_calibration',{target_size_m:Number(byId('targetSize').value),size_definition:byId('sizeDefinition').value,samples},{label:'保存尺寸与标定版本'});
-byId('checkDevice').onclick=async()=>{const result=await action('check_device',{}, {label:'检查当前硬件能力'});if(result)byId('diagnosticDetails').textContent=JSON.stringify(result,null,2);};
-byId('exportDiagnostics').onclick=async()=>{const result=await action('export_diagnostics',{}, {label:'读取诊断材料'});if(result)downloadJson(result,'ZED感知诊断.json');};
+for(const [id,kind] of [['downloadRgb','rgb'],['downloadDepth','depth'],['downloadStereo','stereo']])byId(id).onclick=()=>selectedSession()?action('download_asset',{session_id:selectedSession(),kind},{label:byId(id).textContent}):message('请先选择采集场次',true);
+byId('extractFrames').onclick=()=>action('extract_local_frames',{session_id:selectedSession(),fps:Number(byId('extractFps').value)},{label:'在电脑抽训练图片'});
+byId('cancelDownload').onclick=async()=>{if(!downloadRequest)return;try{const r=await fetch('/api/action',{method:'POST',headers:{'Content-Type':'application/json','X-Panel-Token':TOKEN},body:JSON.stringify({action:'cancel_job',request_id:crypto.randomUUID().replaceAll('-',''),params:{request_id:downloadRequest}})});if(r.status===403){restartNotice();return;}if(!r.ok)throw new Error((await r.json()).error);message(mediaPhase==='conversion'?'取消将在板上转换结束后生效，转换结果保留':'已请求取消下载，保留续传文件');}catch(e){message('取消未提交：'+e.message,true);}};
+async function loadMedia(){const response=await fetch('/api/media-list');localMedia=await response.json();const select=byId('mediaSelect');select.replaceChildren();for(const m of localMedia)select.add(new Option(m.name,m.url));if(!localMedia.length)select.add(new Option('暂无下载视频',''));showMedia();}
+function showMedia(){const value=byId('mediaSelect').value,video=byId('localVideo');video.hidden=!value;if(value){video.src=value;video.load();}}
+byId('mediaSelect').onchange=showMedia;
+loadMedia();
 refresh();setInterval(refresh,1000);frames();
 </script>
 </body></html>

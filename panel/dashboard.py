@@ -9,27 +9,30 @@ import secrets
 import threading
 import time
 import uuid
+import urllib.parse
 from board_client import BoardClient,HOST
 from frame_receiver import FrameReceiver
 from job_manager import JobManager
 from preview_recorder import PreviewRecorder
 from session_manager import SessionManager
+from media_library import MediaLibrary
 
 BASE=pathlib.Path(__file__).resolve().parent
 OUTPUT=BASE.parents[1]/'outputs'/'perception_data'
 BOARD_ACTIONS={'check_device','start_capture','stop_capture','set_detector','start_raw_record','stop_raw_record',
                'list_sessions','list_models','test_model','select_model','save_calibration','export_session','export_diagnostics','prepare_dataset'}
-LOCAL_ACTIONS={'connect','disconnect','start_preview_record','stop_preview_record','download_session','cancel_job'}
+LOCAL_ACTIONS={'connect','disconnect','start_preview_record','stop_preview_record','download_session','download_asset','extract_local_frames','cancel_job'}
 
 def valid_request(host,origin,token,expected):
     return host in ('127.0.0.1:8767','localhost:8767') and origin=='http://'+host and isinstance(token,str) and hmac.compare_digest(token,expected)
 
 class Panel:
     def __init__(self):
-        self.token=secrets.token_urlsafe(32);self.lock=threading.RLock();self.board=BoardClient();self.jobs=JobManager()
+        self.token=secrets.token_urlsafe(32);self.instance_id=uuid.uuid4().hex;self.lock=threading.RLock();self.board=BoardClient();self.jobs=JobManager()
         self.connected=False;self.state={};self.error=None;self.closed=threading.Event();self.local_revision=0
         self.receiver=FrameReceiver();self.recorder=PreviewRecorder(OUTPUT/'preview_videos');self.receiver.listener=self.recorder.consume
         self.sessions=SessionManager(self.board,OUTPUT/'board_sessions')
+        self.media=MediaLibrary(OUTPUT/'board_sessions')
         self.cancelled=set();self.progress={};self.events=[]
         self.thread=threading.Thread(target=self._poll,daemon=True);self.thread.start()
     def _poll(self):
@@ -51,7 +54,7 @@ class Panel:
         if self.recorder.active:self.recorder.stop()
     def snapshot(self):
         with self.lock:
-            return {'api_version':2,'host':HOST,'connected':self.connected,'state':self.state,'error':self.error,
+            return {'api_version':2,'instance_id':self.instance_id,'host':HOST,'connected':self.connected,'state':self.state,'error':self.error,
                     'local_revision':self.local_revision,'preview':self.receiver.snapshot(),'preview_recording':self.recorder.snapshot(),
                     'events':self.events[-15:],'output_directory':str(OUTPUT)}
     def submit(self,data):
@@ -83,11 +86,28 @@ class Panel:
                     if p is None or time.monotonic()-p.received_at>3:raise ValueError('当前没有新鲜图像')
                     return self.recorder.start(params.get('view_mode','rgb'))
                 return self.recorder.stop()
+            if action=='extract_local_frames':return self.media.extract(params['session_id'],params.get('fps',2))
             if not self.connected:raise ValueError('请先连接板子')
-            if action=='download_session':
+            if action in ('download_session','download_asset'):
                 def progress(value):
                     with self.lock:self.progress[rid]=value
-                return self.sessions.download(params['session_id'],progress,lambda:rid in self.cancelled)
+                kind=params.get('kind','all') if action=='download_asset' else 'all'
+                self.sessions.select_files([],kind)
+                if kind in ('rgb','depth'):
+                    ready=self.board.call('ready_media',{'session_id':params['session_id'],'mode':kind+'_video'})
+                    if not ready['ready']:
+                        fresh=self.board.call('status')
+                        if fresh.get('pid'):raise ValueError('该视频尚未生成；请先停止相机，再下载。已生成的视频可在采集中下载。')
+                        progress({'phase':'正在板上生成'+('RGB' if kind=='rgb' else '深度展示')+'视频；首次转换可能较慢。此阶段取消将在转换结束后生效。'})
+                        request=dict(request_id=uuid.uuid4().hex,**{'expected_'+k:fresh[k] for k in ('boot_id','run_id','revision')})
+                        converted=self.board.call('export_session',{'session_id':params['session_id'],'mode':kind+'_video','fps':15},request,timeout=3700)
+                        if converted['result']['state']!='complete':raise ValueError('场次不完整，不能作为有效素材下载：'+'；'.join(converted['result']['integrity_errors']))
+                if rid in self.cancelled:raise ValueError('已取消下载；板上转换结果保留')
+                result=self.sessions.download(params['session_id'],progress,lambda:rid in self.cancelled,kind)
+                if kind in ('rgb','depth'):
+                    progress({'phase':'下载完成，正在电脑准备播放版本；保持原分辨率和帧率'})
+                    result=self.media.prepare(result,lambda:rid in self.cancelled)
+                return result
             allowed={'action','request_id','expected_boot_id','expected_run_id','expected_revision','params'}
             request={key:value for key,value in data.items() if key in allowed}
             result=self.board.call(action,params,request,timeout=3700 if action=='export_session' else 60)
@@ -110,8 +130,32 @@ def make_handler(panel):
         def do_GET(self):
             if self.headers.get('Host') not in ('127.0.0.1:8767','localhost:8767'):self.js({'error':'仅接受本机访问'},403);return
             path=self.path.split('?',1)[0]
-            if path=='/':self.send((BASE/'index.html').read_text(encoding='utf-8').replace('__TOKEN__',panel.token).encode(),'text/html; charset=utf-8')
+            if path=='/':self.send((BASE/'index.html').read_text(encoding='utf-8').replace('__TOKEN__',panel.token).replace('__INSTANCE__',panel.instance_id).encode(),'text/html; charset=utf-8')
             elif path=='/api/status':self.js(panel.snapshot())
+            elif path=='/api/media-list':self.js(panel.media.list())
+            elif path.startswith('/api/media/'):
+                try:
+                    media=panel.media.path(urllib.parse.unquote(path.removeprefix('/api/media/')))
+                    size=media.stat().st_size;start=0;end=size-1
+                    byte_range=self.headers.get('Range')
+                    if byte_range:
+                        match=re.fullmatch(r'bytes=(\d+)-(\d*)',byte_range)
+                        if not match:raise ValueError('无效视频范围')
+                        start=int(match[1]);end=min(end,int(match[2])) if match[2] else end
+                        if start>end:raise ValueError('视频范围越界')
+                    self.send_response(206 if byte_range else 200);self.send_header('Content-Type','video/mp4')
+                    self.send_header('Accept-Ranges','bytes');self.send_header('Content-Length',str(end-start+1))
+                    self.send_header('X-Content-Type-Options','nosniff')
+                    if byte_range:self.send_header('Content-Range',f'bytes {start}-{end}/{size}')
+                    self.end_headers()
+                    with media.open('rb') as stream:
+                        stream.seek(start);remaining=end-start+1
+                        while remaining:
+                            chunk=stream.read(min(262144,remaining))
+                            if not chunk:break
+                            self.wfile.write(chunk);remaining-=len(chunk)
+                except (BrokenPipeError,ConnectionResetError):pass
+                except (ValueError,OSError):self.js({'error':'媒体读取失败'},404)
             elif path=='/api/frame/meta':
                 p=panel.receiver.cache.latest()
                 if p is None or time.monotonic()-p.received_at>3:self.js({'error':'无新鲜图像'},503);return
