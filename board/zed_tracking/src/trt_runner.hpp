@@ -149,8 +149,8 @@ private:
       if (dtype != nvinfer1::DataType::kFLOAT) {
         throw std::runtime_error(std::string("tensor ") + name + " is not float32");
       }
-      for (const auto dim : shape.d) {
-        if (dim < 0) {
+      for (int axis = 0; axis < shape.nbDims; ++axis) {
+        if (shape.d[axis] <= 0) {
           throw std::runtime_error(
             std::string("dynamic shape not supported for tensor ") + name);
         }
@@ -172,6 +172,9 @@ private:
     }
     if (input_name_.empty() || output_name_.empty()) {
       throw std::runtime_error("engine must expose one input and one output");
+    }
+    if (input_shape_.size() != 4 || input_shape_[0] != 1 || input_shape_[1] != 3) {
+      throw std::runtime_error("input must be static [1,3,H,W]");
     }
   }
 

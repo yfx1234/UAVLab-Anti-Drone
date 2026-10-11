@@ -71,6 +71,7 @@ struct CameraIntrinsics
   int width{0};
   int height{0};
   double baseline_m{0.0};
+  unsigned int serial_number{0};
 };
 
 class ZedSource
@@ -101,6 +102,7 @@ public:
     }
     runtime_.confidence_threshold = config.runtime_confidence;
     const sl::CameraInformation information = camera_.getCameraInformation();
+    intrinsics_.serial_number = information.serial_number;
     // retrieveImage/retrieveMeasure 输出的是校正后图像,配 calibration_parameters。
     const auto & calibration =
       information.camera_configuration.calibration_parameters;
@@ -182,6 +184,8 @@ public:
   }
 
   bool recording() const {return recording_.load();}
+
+  sl::RecordingStatus recording_status() {return camera_.getRecordingStatus();}
 
   void close()
   {

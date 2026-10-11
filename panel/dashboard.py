@@ -1,0 +1,147 @@
+"""Perception platform on loopback 8767. Camera lifetime belongs to the board."""
+import hmac
+import http.server
+import json
+import os
+import pathlib
+import re
+import secrets
+import threading
+import time
+import uuid
+from board_client import BoardClient,HOST
+from frame_receiver import FrameReceiver
+from job_manager import JobManager
+from preview_recorder import PreviewRecorder
+from session_manager import SessionManager
+
+BASE=pathlib.Path(__file__).resolve().parent
+OUTPUT=BASE.parents[1]/'outputs'/'perception_data'
+BOARD_ACTIONS={'check_device','start_capture','stop_capture','set_detector','start_raw_record','stop_raw_record',
+               'list_sessions','list_models','test_model','select_model','save_calibration','export_session','export_diagnostics','prepare_dataset'}
+LOCAL_ACTIONS={'connect','disconnect','start_preview_record','stop_preview_record','download_session','cancel_job'}
+
+def valid_request(host,origin,token,expected):
+    return host in ('127.0.0.1:8767','localhost:8767') and origin=='http://'+host and isinstance(token,str) and hmac.compare_digest(token,expected)
+
+class Panel:
+    def __init__(self):
+        self.token=secrets.token_urlsafe(32);self.lock=threading.RLock();self.board=BoardClient();self.jobs=JobManager()
+        self.connected=False;self.state={};self.error=None;self.closed=threading.Event();self.local_revision=0
+        self.receiver=FrameReceiver();self.recorder=PreviewRecorder(OUTPUT/'preview_videos');self.receiver.listener=self.recorder.consume
+        self.sessions=SessionManager(self.board,OUTPUT/'board_sessions')
+        self.cancelled=set();self.progress={};self.events=[]
+        self.thread=threading.Thread(target=self._poll,daemon=True);self.thread.start()
+    def _poll(self):
+        while not self.closed.wait(1):
+            if not self.connected:continue
+            try:
+                state=self.board.call('status',timeout=12)
+                with self.lock:
+                    if not self.connected:continue
+                    if state.get('boot_id')==self.state.get('boot_id') and state.get('revision',0)<self.state.get('revision',0):continue
+                    changed=state.get('run_id')!=self.state.get('run_id')
+                    self.state=state;self.error=None
+                if changed:self.receiver.cache.clear()
+                self.receiver.set_enabled(bool(state.get('pid')))
+            except Exception as e:
+                with self.lock:self.error=str(e)
+    def close(self):
+        self.closed.set();self.receiver.close()
+        if self.recorder.active:self.recorder.stop()
+    def snapshot(self):
+        with self.lock:
+            return {'api_version':2,'host':HOST,'connected':self.connected,'state':self.state,'error':self.error,
+                    'local_revision':self.local_revision,'preview':self.receiver.snapshot(),'preview_recording':self.recorder.snapshot(),
+                    'events':self.events[-15:],'output_directory':str(OUTPUT)}
+    def submit(self,data):
+        action=data.get('action');params=data.get('params',{})
+        if action not in BOARD_ACTIONS|LOCAL_ACTIONS:raise ValueError('仅支持已批准的感知动作；旧飞行动作已移除')
+        if not isinstance(params,dict):raise ValueError('参数必须是对象')
+        rid=data.get('request_id',uuid.uuid4().hex)
+        if not isinstance(rid,str) or not re.fullmatch('[a-zA-Z0-9_-]{1,80}',rid):raise ValueError('请求 ID 无效')
+        def work():
+            if action=='connect':
+                password=data.get('password')
+                if password is not None and not isinstance(password,str):raise ValueError('密码字段无效')
+                self.board.password=password
+                state=self.board.call('status')
+                with self.lock:self.connected=True;self.state=state;self.error=None
+                self.receiver.set_enabled(bool(state.get('pid')));return {'connected':True}
+            if action=='disconnect':
+                with self.lock:self.connected=False;self.board.password=None
+                self.receiver.set_enabled(False);return {'connected':False,'board_capture_continues':True}
+            if action=='cancel_job':
+                with self.lock:self.cancelled.add(params['request_id'])
+                return {'cancel_requested':True}
+            if action in ('start_preview_record','stop_preview_record'):
+                with self.lock:
+                    if data.get('expected_local_revision')!=self.local_revision:raise ValueError('本机录像状态已改变，请刷新')
+                    self.local_revision+=1
+                if action=='start_preview_record':
+                    p=self.receiver.cache.latest()
+                    if p is None or time.monotonic()-p.received_at>3:raise ValueError('当前没有新鲜图像')
+                    return self.recorder.start(params.get('view_mode','rgb'))
+                return self.recorder.stop()
+            if not self.connected:raise ValueError('请先连接板子')
+            if action=='download_session':
+                def progress(value):
+                    with self.lock:self.progress[rid]=value
+                return self.sessions.download(params['session_id'],progress,lambda:rid in self.cancelled)
+            allowed={'action','request_id','expected_boot_id','expected_run_id','expected_revision','params'}
+            request={key:value for key,value in data.items() if key in allowed}
+            result=self.board.call(action,params,request,timeout=3700 if action=='export_session' else 60)
+            if action=='prepare_dataset':
+                result['result']=self.sessions.fetch_dataset_index(result['result'])
+            with self.lock:
+                if isinstance(result,dict) and 'state' in result:self.state=result['state']
+            return result
+        return self.jobs.submit(rid,work)
+
+def make_handler(panel):
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def log_message(self,*args):pass
+        def send(self,body,kind='application/json; charset=utf-8',code=200):
+            self.send_response(code);self.send_header('Content-Type',kind);self.send_header('Content-Length',str(len(body)))
+            self.send_header('Cache-Control','no-store');self.send_header('X-Content-Type-Options','nosniff');self.send_header('Referrer-Policy','no-referrer');self.end_headers()
+            try:self.wfile.write(body)
+            except (BrokenPipeError,ConnectionResetError):pass
+        def js(self,value,code=200):self.send(json.dumps(value,ensure_ascii=False,allow_nan=False).encode(),code=code)
+        def do_GET(self):
+            if self.headers.get('Host') not in ('127.0.0.1:8767','localhost:8767'):self.js({'error':'仅接受本机访问'},403);return
+            path=self.path.split('?',1)[0]
+            if path=='/':self.send((BASE/'index.html').read_text(encoding='utf-8').replace('__TOKEN__',panel.token).encode(),'text/html; charset=utf-8')
+            elif path=='/api/status':self.js(panel.snapshot())
+            elif path=='/api/frame/meta':
+                p=panel.receiver.cache.latest()
+                if p is None or time.monotonic()-p.received_at>3:self.js({'error':'无新鲜图像'},503);return
+                meta=p.metadata.copy();meta['image_url']='/api/frame/'+meta['frame_key']+'.jpg';meta['received_age_s']=time.monotonic()-p.received_at;self.js(meta)
+            elif re.fullmatch(r'/api/frame/[a-zA-Z0-9_-]+\.jpg',path):
+                p=panel.receiver.cache.get(path.removeprefix('/api/frame/').removesuffix('.jpg'))
+                if p is None:self.js({'error':'帧已过期，请重新读取元数据'},410)
+                else:self.send(p.jpeg,'image/jpeg')
+            elif path.startswith('/api/jobs/'):
+                try:
+                    job=panel.jobs.get(path.rsplit('/',1)[1]);job['progress']=panel.progress.get(job['request_id']);self.js(job)
+                except KeyError:self.js({'error':'任务不存在'},404)
+            elif path=='/api/export':self.js(panel.snapshot())
+            else:self.js({'error':'未找到'},404)
+        def do_POST(self):
+            if not valid_request(self.headers.get('Host'),self.headers.get('Origin'),self.headers.get('X-Panel-Token'),panel.token):self.js({'error':'请求来源或会话校验失败'},403);return
+            try:
+                if self.path!='/api/action':self.js({'error':'未找到'},404);return
+                size=int(self.headers.get('Content-Length','0'))
+                if self.headers.get('Content-Type')!='application/json' or not 0<size<=65536:raise ValueError('请求类型/长度无效')
+                data=json.loads(self.rfile.read(size))
+                allowed={'action','params','request_id','expected_revision','expected_boot_id','expected_run_id','expected_local_revision','password'}
+                if not isinstance(data,dict) or set(data)-allowed:raise ValueError('请求字段无效')
+                if 'password' in data and data.get('action')!='connect':raise ValueError('仅连接动作接受密码')
+                jid=panel.submit(data);self.js({'operation_id':jid},202)
+            except Exception as e:self.js({'error':str(e)},400)
+    return Handler
+
+if __name__=='__main__':
+    panel=Panel();server=http.server.ThreadingHTTPServer(('127.0.0.1',8767),make_handler(panel))
+    print('PERCEPTION_PANEL http://127.0.0.1:8767/ api_version=2',flush=True)
+    try:server.serve_forever()
+    finally:server.server_close();panel.close()

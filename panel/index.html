@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>UAVLab · ZED 感知与采集</title>
+<style>
+:root{color-scheme:light;--bg:#edf1f5;--paper:#fff;--ink:#182a3d;--muted:#526579;--line:#d5dfe9;--blue:#1857c7;--green:#13714e;--red:#ad2933;--amber:#865000}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.6 "Segoe UI","Microsoft YaHei",sans-serif}button,input,select,textarea{font:inherit}button{border:1px solid #bbcbdc;border-radius:5px;background:#fff;color:var(--ink);padding:9px 13px;cursor:pointer;min-height:42px;font-weight:600}button:hover{background:#edf3fc;border-color:#8fa9cc}button.primary{background:var(--blue);color:#fff;border-color:var(--blue)}button.danger{color:var(--red)}button:disabled{opacity:.48;cursor:default}button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible,a:focus-visible{outline:3px solid #5d94ec;outline-offset:3px}input,select,textarea{background:#fff;color:var(--ink);border:1px solid #bbcbdc;border-radius:5px;padding:8px 10px;width:100%;min-height:42px}input{caret-color:var(--blue)}::selection{background:#c3d9ff;color:var(--ink)}label{display:block;font-size:13px;margin:10px 0 5px}h1{font-size:26px;margin:0;font-weight:650;line-height:1.3}h2{font-size:17px;margin:0;font-weight:650}h3{font-size:14px;margin:20px 0 6px}p{margin:7px 0;color:var(--muted)}small,.help{font-size:12px;color:var(--muted)}header{background:#13283f;color:#fff;padding:19px 28px;display:flex;align-items:center;justify-content:space-between;gap:20px}header p{color:#c1d0e2;margin:5px 0 0}main{max-width:1500px;margin:auto;padding:22px 28px 38px}.topline{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:16px}.topline b{font-weight:650}.status-pill{padding:4px 9px;border:1px solid var(--line);border-radius:4px;background:#fff;font-size:13px}.good{color:var(--green)}.bad{color:var(--red)}.warn{color:var(--amber)}.layout{display:grid;grid-template-columns:320px minmax(0,1fr);gap:20px;align-items:start}.controls{background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:20px}.group{padding:20px 0;border-bottom:1px solid var(--line)}.group:first-child{padding-top:0}.group:last-child{border:0;padding-bottom:0}.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px}.row>*{flex:1;min-width:110px}.row.tight>*{flex:0 1 auto;min-width:0}.section{background:var(--paper);border:1px solid var(--line);border-radius:8px;margin-bottom:20px;overflow:hidden}.section-head{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:17px 20px;flex-wrap:wrap}.section-body{padding:0 20px 20px}.viewer{background:#102235;position:relative;aspect-ratio:16/9;display:flex;align-items:center;justify-content:center;max-height:620px}.viewer canvas{width:100%;height:100%;object-fit:contain;display:none}.empty{text-align:center;color:#c1d0e2;padding:25px;max-width:440px}.empty strong{display:block;font-weight:600;font-size:18px;margin-bottom:8px}.viewer.live canvas{display:block}.viewer.live .empty{display:none}.view-switch{display:flex;gap:7px}.view-switch button[aria-pressed=true]{border-color:var(--blue);color:var(--blue);background:#edf3fc}.measurements{display:flex;flex-wrap:wrap;gap:16px 26px;padding:12px 20px;border-top:1px solid var(--line);font-variant-numeric:tabular-nums}.measurements span{color:var(--muted)}.measurements b{color:var(--ink);font-weight:600}.notice{border:1px solid #e8c998;background:#fff7e8;color:var(--amber);padding:11px 14px;margin:0 0 17px;border-radius:5px}.message{padding:11px 14px;border:1px solid var(--line);border-radius:5px;margin:0 0 16px;background:#fff;overflow-wrap:anywhere}.message:empty{display:none}#message.error{background:#fff1f2;border-color:#e3b1b6;color:var(--red)}.table-wrap{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:13px;font-variant-numeric:tabular-nums}th,td{padding:10px 12px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}th{font-weight:600;color:var(--muted);background:#f5f8fb}td code{font-family:Consolas,monospace;font-size:12px}.empty-row{white-space:normal;color:var(--muted)}details{margin-top:12px}summary{cursor:pointer;color:var(--blue);padding:4px 0}pre{background:#f5f8fb;border:1px solid var(--line);border-radius:5px;padding:13px;font:12px/1.6 Consolas,"Microsoft YaHei",monospace;white-space:pre-wrap;overflow-wrap:anywhere;max-height:380px;overflow:auto;margin:12px 0 0}.tabs{display:flex;gap:8px;border-bottom:1px solid var(--line);padding:0 20px;overflow-x:auto}.tabs button{border:0;border-radius:0;padding:13px 12px;color:var(--muted);background:transparent;white-space:nowrap}.tabs button[aria-selected=true]{color:var(--blue);border-bottom:2px solid var(--blue)}.tabbody{padding:20px}.tabbody[hidden]{display:none}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px 20px}.form-grid label{margin-top:0}.form-grid .wide{grid-column:1/-1}footer{font-size:12px;color:var(--muted);padding-top:7px;display:flex;gap:20px;justify-content:space-between}progress{width:100%;accent-color:var(--blue);height:12px}a{color:var(--blue);text-underline-offset:3px}button,summary{transition:background .12s ease-out}
+@media(max-width:1000px){.layout{grid-template-columns:290px minmax(0,1fr)}main{padding:20px}header{padding:18px 20px}.controls{padding:16px}}
+@media(max-width:720px){.layout{grid-template-columns:1fr}header{align-items:start}h1{font-size:23px}header .help{display:none}.controls{order:2}.content{order:1}.form-grid{grid-template-columns:1fr}.form-grid .wide{grid-column:auto}.measurements{gap:8px 18px}.section-head{padding:14px 16px}.section-body,.tabbody{padding:0 16px 16px}.tabbody{padding-top:16px}main{padding:16px}footer{flex-direction:column;gap:5px}.viewer{min-height:190px}}
+@media(prefers-reduced-motion:reduce){button,summary{transition:none}}
+</style>
+</head>
+<body>
+<header><div><h1>相机采集与目标感知</h1><p>UAVLab · ZED X Mini 4mm · 当前 Nano 8GB</p></div><div class="help" style="color:#c1d0e2">板子 192.168.50.100<br>H100 图传 · 本机 8767</div></header>
+<main>
+<div class="topline"><span id="connection" class="status-pill">未连接板子</span><span id="cameraState" class="status-pill">相机未启动</span><span id="recordState" class="status-pill">原始录像未启动</span><span id="localState" class="status-pill">本机录像未启动</span></div>
+<div class="notice">当前 YOLO 模型已接入，但尚未通过真实四旋翼识别与定位精度验收。尺寸估距使用约 30 cm 先验；有深度时也需要确认深度属于目标。</div>
+<div id="message" class="message" role="status" aria-live="polite"></div>
+<div class="layout">
+<aside class="controls" aria-label="采集与录像控制">
+<section class="group"><h2>连接板子</h2><p class="help">优先使用本机已有 SSH 密钥。连接不会自动启动相机。</p><div class="row"><button id="connect" class="primary">连接板子</button><button id="disconnect">断开连接</button></div>
+<details><summary>使用会话密码连接</summary><label for="password">SSH 密码</label><input id="password" type="password" autocomplete="current-password" placeholder="仅保存在当前会话内"></details></section>
+<section class="group"><h2>相机与识别</h2><label for="profile">运行模式</label><select id="profile"><option value="rgb">纯采集：RGB，无深度</option><option value="perception">感知：YOLO + 深度与估距</option></select><div class="row"><button id="startCapture" class="primary">启动相机</button><button id="stopCapture" class="danger">停止并释放相机</button></div><div class="row"><button id="enableDetector">启用 YOLO</button><button id="disableDetector">暂停 YOLO</button></div><p class="help">纯采集可独立运行。暂停识别不会停止原始录像；需要启用深度时，先停止相机并切到感知模式。</p></section>
+<section class="group"><h2>板上原始素材录像</h2><p class="help">用于后续训练。保存无框双目 SVO，包含完整采集信息，之后可导出无框 RGB 视频或图片。</p><label for="sessionLabel">场次名称</label><input id="sessionLabel" placeholder="例如：室外逆光、近距悬停" maxlength="100"><label for="scene">场景 / 背景</label><input id="scene" placeholder="草地、建筑、天空等" maxlength="200"><label for="lighting">光照</label><input id="lighting" placeholder="顺光、逆光、阴天等" maxlength="100"><div class="row"><button id="startRaw" class="primary">开始原始素材录像</button><button id="stopRaw">停止原始素材录像</button></div><p id="sessionInfo" class="help">板上录像不依赖浏览器或图传连接；关闭页面后仍会继续。</p></section>
+<section class="group"><h2>电脑预览录像</h2><label for="recordView">保存画面</label><select id="recordView"><option value="yolo">YOLO 框与定位结果</option><option value="rgb">纯 RGB 预览</option></select><div class="row"><button id="startLocal">开始本机预览录像</button><button id="stopLocal">停止本机预览录像</button></div><p class="help">仅保存收到的低带宽画面。断链会分段记录，不代替板上训练素材；开始后录像样式固定。</p></section>
+</aside>
+<div class="content">
+<section class="section"><div class="section-head"><h2>实时画面</h2><div class="view-switch" aria-label="显示方式"><button id="viewRgb" aria-pressed="false">RGB</button><button id="viewYolo" aria-pressed="true">YOLO 识别</button></div></div>
+<div id="viewer" class="viewer"><canvas id="canvas" aria-label="实时相机画面及识别框"></canvas><div class="empty"><strong id="emptyTitle">相机尚未启动</strong><span id="emptyHelp">连接板子后选择纯采集或感知模式，再启动相机。页面只查看 RGB，不显示深度图。</span></div></div>
+<div class="measurements"><span>采集 <b id="captureHz">—</b> Hz</span><span>识别 <b id="inferHz">—</b> Hz</span><span>画面年龄 <b id="frameAge">—</b> s</span><span>图传 <b id="bandwidth">—</b> Mbps</span><span>可用内存 <b id="memory">—</b> GiB</span><span>板上磁盘 <b id="disk">—</b> GiB</span></div></section>
+<section class="section"><div class="section-head"><h2>目标与相机坐标</h2><span class="help">X 向右 · Y 向下 · Z 向前 · 单位米</span></div><div class="table-wrap"><table><thead><tr><th>目标 / 分数</th><th>定位来源</th><th>水平 / 垂直角（度）</th><th>X / Y / Z</th><th>轴向 Z / 空间距离</th><th>深度支持 / 降级原因</th></tr></thead><tbody id="targets"><tr><td colspan="6" class="empty-row">暂无有效的同帧识别结果。</td></tr></tbody></table></div><div class="section-body"><p class="help">水平角右为正，垂直角下为正。“尺寸估计”是近似坐标；“仅方向”不输出位置。深度坐标表示有像素支持的目标表面，未标定为四旋翼几何中心。</p></div></section>
+<section class="section"><div class="tabs" role="tablist" aria-label="素材与配置"><button data-tab="sessions" role="tab" aria-selected="true">视频与数据</button><button data-tab="models" role="tab" aria-selected="false">模型</button><button data-tab="calibration" role="tab" aria-selected="false">尺寸标定</button><button data-tab="diagnostics" role="tab" aria-selected="false">运行诊断</button></div>
+<div id="sessionsTab" class="tabbody"><h2>板上采集场次</h2><div class="row tight"><button id="refreshSessions">刷新场次列表</button><select id="sessionSelect" aria-label="选择采集场次" style="min-width:240px;flex:1"><option value="">先刷新场次列表</option></select></div><div class="row tight"><button id="downloadSession">下载到电脑</button><button id="verifySession">校验 SVO 回放</button><button id="exportFrames">导出训练图片</button><button id="exportRgb">导出无框 RGB 视频</button><button id="exportYolo">导出带框复盘视频</button><button id="prepareDataset">生成按场次分组清单</button></div><label for="exportFps">离线导出帧率</label><input id="exportFps" type="number" min="0.2" max="30" step="0.1" value="2" style="max-width:130px"><p class="help">默认 2 fps 用于抽帧；需要流畅视频时可设置为 30。导出需先停止相机。下载默认限速 256 KiB/s，可取消并续传；大文件建议采集结束后传输。分组清单包含已导出的完整场次，图片仍需人工标注，未标注不等于负样本。</p><div id="downloadProgress" hidden><progress id="progressBar" max="1" value="0"></progress><p id="progressText" class="help"></p><button id="cancelDownload">取消下载并保留续传文件</button></div><pre id="sessionDetails">尚未读取场次。</pre><h3>电脑录像与下载目录</h3><p id="outputDir" class="help"></p><pre id="localFiles">暂无本机预览录像。</pre></div>
+<div id="modelsTab" class="tabbody" hidden><h2>模型版本与检查</h2><div class="row"><button id="refreshModels">读取模型列表</button><select id="modelSelect" aria-label="选择 YOLO 模型"><option value="">当前默认横版模型</option></select></div><div class="row tight"><button id="testModel">检查选中引擎</button><button id="selectModel">切换到选中模型</button></div><p class="help">引擎检查需要相机停止；录像期间不能切换模型。只支持已批准的静态 float32、RGB 输入、end-to-end 输出合同。更换 NX 后重新构建并验证引擎。</p><pre id="modelDetails">旧模型已接入；识别精度仍需使用真实四旋翼与负样本验收。</pre></div>
+<div id="calibrationTab" class="tabbody" hidden><h2>30 cm 先验与尺寸估距标定</h2><div class="form-grid"><div><label for="targetSize">实际外廓尺寸（米）</label><input id="targetSize" type="number" min="0.01" max="5" step="0.01" value="0.30"></div><div><label for="sizeDefinition">尺寸定义</label><input id="sizeDefinition" placeholder="例如：含桨叶最大外廓" value="约 30 cm，外廓定义待确认"></div><div><label for="calibrationTarget">当前标定目标</label><select id="calibrationTarget"><option value="">暂无目标</option></select></div><div><label for="knownDistance">人工量得的轴向 Z（米）</label><input id="knownDistance" type="number" min="0.1" step="0.1" placeholder="将目标放在相机正前方量距"></div></div><div class="row tight"><button id="addSample">添加当前目标量距样本</button><button id="clearSamples">清空待保存样本</button><button id="saveCalibration">保存尺寸与标定</button></div><p class="help">只对真实四旋翼采样，至少 3 个样本，并覆盖不同距离与姿态；人工量距不使用 YOLO 估计距离代替。录像中不能更改标定。只保存尺寸时仍视为未完成估距标定。</p><pre id="calibrationSamples">尚未添加样本。</pre></div>
+<div id="diagnosticsTab" class="tabbody" hidden><h2>设备与子模块状态</h2><div class="row tight"><button id="checkDevice">检查设备能力</button><button id="exportDiagnostics">保存诊断 JSON</button></div><p class="help">当前 Nano 优先使用 LOSSLESS 原始录像和低带宽 JPEG 预览。只有实测通过后才批准更高负载配置。</p><pre id="diagnosticDetails">连接后显示设备与感知状态。</pre></div>
+</section></div></div>
+<footer><span>唯一相机采集 · 原始素材与显示叠加分开 · 不启动飞行控制链路</span><span>NX 16GB 为后续迁移目标，当前采集使用 Nano</span></footer>
+</main>
+<script>
+const TOKEN='__TOKEN__',byId=id=>document.getElementById(id);
+let state={},meta=null,image=null,overlay=true,busy=false,sessions=[],models=[],samples=[],lastKey='',downloadRequest=null;
+const cameraNames={stopped:'相机未启动',starting:'相机启动中',running:'相机采集中',stopping:'相机结束中',error:'相机故障',unresponsive:'相机状态过期'};
+const recordNames={idle:'原始录像未启动',starting:'原始录像启动中',recording:'板上原始录像中',finalizing:'原始录像结束中',error:'原始录像失败'};
+const modeNames={depth:'有效深度',size_estimate:'尺寸估计',bearing_only:'仅方向'};
+const reasonNames={heuristic_center_support:'中心深度一致',clipped_box:'目标框触边',sparse_depth:'有效深度过少',mixed_surfaces:'存在多个深度面',no_center_support:'中心缺少深度支持',center_background_disagreement:'中心与周围深度不一致',depth_temporal_warmup:'深度稳定性检查中',no_depth:'没有有效深度',box_too_small:'目标太小',depth_size_disagreement:'深度与尺寸先验明显不符',background_depth_ambiguous:'深度与背景无法区分',sparse_target_cluster:'目标深度点过少'};
+function message(text,error=false){byId('message').textContent=text;byId('message').classList.toggle('error',error);}
+function number(value,digits=2){return typeof value==='number'&&Number.isFinite(value)?value.toFixed(digits):'—';}
+function downloadJson(value,name){const blob=new Blob([JSON.stringify(value,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();URL.revokeObjectURL(url);}
+async function refresh(){try{const r=await fetch('/api/status');state=await r.json();update();}catch(e){message('面板连接失败：'+e.message,true);}}
+function update(){
+ const s=state.state||{},p=s.pipeline||{},running=s.camera_state==='running',recording=p.record_state==='recording';
+ if(s.pid&&s.profile)byId('profile').value=s.profile;
+ byId('profile').disabled=busy||!!s.pid;
+ byId('connection').textContent=state.connected?'板子已连接':'未连接板子';byId('connection').classList.toggle('good',state.connected&&!state.error);
+ byId('cameraState').textContent=cameraNames[s.camera_state]||'相机未启动';byId('recordState').textContent=recordNames[p.record_state]||'原始录像未启动';
+ const local=state.preview_recording||{};byId('localState').textContent=local.active?'电脑预览录像中':(local.finalizing?'电脑录像结束中':'本机录像未启动');
+ byId('captureHz').textContent=number(p.capture_hz,1);byId('inferHz').textContent=number(p.inference_hz,1);byId('bandwidth').textContent=number(p.preview_mbps,2);
+ byId('memory').textContent=number(p.mem_available_kib/1048576,2);byId('disk').textContent=number(p.disk_free_bytes/1073741824,1);
+ byId('sessionInfo').textContent=p.session_id?'当前场次：'+p.session_id:'关闭浏览器或图传断开，板上录像仍会继续。';
+ byId('outputDir').textContent=state.output_directory||'';byId('localFiles').textContent=local.files?.length?JSON.stringify(local,null,2):'暂无本机预览录像。';
+ byId('diagnosticDetails').textContent=JSON.stringify({state:s,preview:state.preview,error:state.error},null,2);
+ for(const button of document.querySelectorAll('button'))if(!button.dataset.tab && !['viewRgb','viewYolo','cancelDownload'].includes(button.id))button.disabled=busy;
+ const disable=(id,condition)=>byId(id).disabled=busy||condition;
+ disable('connect',state.connected);disable('disconnect',!state.connected);disable('startCapture',!state.connected||!!s.pid);
+ disable('stopCapture',!state.connected||!s.pid);disable('startRaw',!running||recording||p.record_state==='finalizing');disable('stopRaw',!running||!recording);
+ disable('enableDetector',!running||p.detector_enabled);disable('disableDetector',!running||!p.detector_enabled);
+ disable('startLocal',local.active||local.finalizing||state.preview?.frame_age_s==null||state.preview?.frame_age_s>3);
+ disable('stopLocal',!local.active);disable('testModel',!state.connected||!!s.pid);disable('selectModel',!state.connected||recording);
+ disable('saveCalibration',!running||recording);disable('addSample',!meta?.targets?.length);
+ const age=state.preview?.frame_age_s;byId('frameAge').textContent=number(age,2);
+ if(!s.pid||age==null||age>3){byId('viewer').classList.remove('live');byId('emptyTitle').textContent=s.pid?'等待新鲜图像':'相机尚未启动';byId('emptyHelp').textContent=state.error||state.preview?.error||'连接并启动相机后，这里显示 RGB 或同帧 YOLO 画面。';renderTargets([]);}
+ if(state.error&&!busy)message('连接状态异常：'+state.error,true);
+}
+async function action(actionName,params={},options={}){
+ if(busy)return null;busy=true;update();message('正在执行：'+(options.label||actionName));
+ const rid=crypto.randomUUID().replaceAll('-',''),s=state.state||{};
+ const body={action:actionName,params,request_id:rid,expected_boot_id:s.boot_id,expected_run_id:s.run_id,expected_revision:s.revision,expected_local_revision:state.local_revision};
+ if(actionName==='connect'&&byId('password').value)body.password=byId('password').value;
+ if(actionName==='download_session'){downloadRequest=rid;byId('downloadProgress').hidden=false;}
+ try{
+   const response=await fetch('/api/action',{method:'POST',headers:{'Content-Type':'application/json','X-Panel-Token':TOKEN},body:JSON.stringify(body)}),start=await response.json();
+   if(!response.ok)throw new Error(start.error);
+   let job;
+   while(true){await new Promise(resolve=>setTimeout(resolve,400));const r=await fetch('/api/jobs/'+start.operation_id);job=await r.json();
+     if(job.progress){byId('progressBar').value=job.progress.downloaded_bytes/Math.max(1,job.progress.total_bytes);byId('progressText').textContent=job.progress.file+' · '+number(job.progress.downloaded_bytes/1048576,1)+' MiB';}
+     if(['complete','error'].includes(job.state))break;
+   }
+   if(job.state==='error')throw new Error(job.error);
+   message('已完成：'+(options.label||actionName));byId('password').value='';return job.result;
+ }catch(e){message('操作未完成：'+e.message,true);return null;}
+ finally{busy=false;await refresh();}
+}
+function selectedSession(){return byId('sessionSelect').value;}
+function selectedModel(){return byId('modelSelect').value;}
+byId('connect').onclick=()=>action('connect',{}, {label:'连接板子'});byId('disconnect').onclick=()=>action('disconnect',{}, {label:'断开本机连接'});
+byId('startCapture').onclick=()=>{const params={profile:byId('profile').value};if(selectedModel())params.model_id=selectedModel();return action('start_capture',params,{label:'启动相机'});};
+byId('stopCapture').onclick=()=>action('stop_capture',{}, {label:'结束录像并释放相机'});
+byId('enableDetector').onclick=()=>action('set_detector',{enabled:true},{label:'启用 YOLO'});byId('disableDetector').onclick=()=>action('set_detector',{enabled:false},{label:'暂停 YOLO'});
+byId('startRaw').onclick=()=>action('start_raw_record',{label:byId('sessionLabel').value,scene:byId('scene').value,lighting:byId('lighting').value,size_definition:byId('sizeDefinition').value},{label:'开始原始素材录像'});
+byId('stopRaw').onclick=()=>action('stop_raw_record',{}, {label:'结束原始素材录像'});
+byId('startLocal').onclick=()=>action('start_preview_record',{view_mode:byId('recordView').value},{label:'开始电脑预览录像'});
+byId('stopLocal').onclick=()=>action('stop_preview_record',{}, {label:'结束电脑预览录像'});
+byId('viewRgb').onclick=()=>setView(false);byId('viewYolo').onclick=()=>setView(true);
+function setView(value){overlay=value;byId('viewRgb').setAttribute('aria-pressed',!value);byId('viewYolo').setAttribute('aria-pressed',value);draw();}
+function draw(){if(!image||!meta)return;const canvas=byId('canvas'),ctx=canvas.getContext('2d');canvas.width=image.naturalWidth;canvas.height=image.naturalHeight;ctx.drawImage(image,0,0);
+ if(overlay){const sx=canvas.width/meta.image_width,sy=canvas.height/meta.image_height;ctx.strokeStyle='#00ed78';ctx.fillStyle='#00ed78';ctx.lineWidth=2;ctx.font='14px Segoe UI';
+   for(const t of meta.targets||[]){const [x1,y1,x2,y2]=t.bbox_xyxy;ctx.strokeRect(x1*sx,y1*sy,(x2-x1)*sx,(y2-y1)*sy);ctx.fillText('#'+t.track_id+' '+modeNames[t.mode]+' '+number(t.confidence,2),x1*sx,Math.max(16,y1*sy-4));}}
+}
+function renderTargets(targets){const tbody=byId('targets');tbody.replaceChildren();
+ if(!targets.length){const row=tbody.insertRow(),cell=row.insertCell();cell.colSpan=5;cell.className='empty-row';cell.textContent='当前没有有效的同帧识别结果。';}
+ for(const t of targets){const row=tbody.insertRow(),xyz=t.position_camera;const values=['#'+t.track_id+' / '+number(t.confidence,2),modeNames[t.mode],number(t.horizontal_angle_rad*180/Math.PI)+' / '+number(t.vertical_angle_rad*180/Math.PI),xyz?xyz.map(v=>number(v)).join(' / '):'位置无效',number(t.depth_z_m??t.estimated_depth_z_m)+' / '+number(t.distance_m),'像素有效 '+number(t.depth_valid_ratio*100,1)+'% · '+(reasonNames[t.reason]||t.reason)];for(const value of values)row.insertCell().textContent=value;}
+ const choose=byId('calibrationTarget'),previous=choose.value;choose.replaceChildren();for(const t of targets){const option=new Option('#'+t.track_id+' · '+modeNames[t.mode],String(t.track_id));choose.add(option);}if(!targets.length)choose.add(new Option('暂无目标',''));if([...choose.options].some(o=>o.value===previous))choose.value=previous;
+}
+async function frames(){try{const response=await fetch('/api/frame/meta');if(!response.ok)return;const next=await response.json();if(next.frame_key===lastKey)return;
+ const fresh=new Image();fresh.src=next.image_url;await fresh.decode();meta=next;image=fresh;lastKey=next.frame_key;byId('viewer').classList.add('live');draw();renderTargets(meta.targets||[]);
+ }catch(e){}finally{setTimeout(frames,160);}}
+for(const button of document.querySelectorAll('[data-tab]'))button.onclick=()=>{for(const tab of document.querySelectorAll('[data-tab]'))tab.setAttribute('aria-selected',tab===button);for(const content of document.querySelectorAll('.tabbody'))content.hidden=content.id!==button.dataset.tab+'Tab';};
+byId('refreshSessions').onclick=async()=>{const result=await action('list_sessions',{}, {label:'读取采集场次'});if(!result)return;sessions=result;byId('sessionSelect').replaceChildren();for(const s of sessions)byId('sessionSelect').add(new Option((s.manifest.metadata?.label||s.session_id)+' · '+(s.summary.state||'未知')+' · '+number(s.bytes/1073741824,2)+' GiB',s.session_id));if(!sessions.length)byId('sessionSelect').add(new Option('没有采集场次',''));showSession();};
+function showSession(){byId('sessionDetails').textContent=JSON.stringify(sessions.find(s=>s.session_id===selectedSession())||'暂无场次',null,2);}
+byId('sessionSelect').onchange=showSession;
+byId('prepareDataset').onclick=async()=>{const result=await action('prepare_dataset',{}, {label:'生成场次分组清单'});if(result)byId('sessionDetails').textContent=JSON.stringify(result,null,2);};
+byId('downloadSession').onclick=()=>selectedSession()?action('download_session',{session_id:selectedSession()},{label:'下载原始采集场次'}):message('请先选择采集场次',true);
+byId('cancelDownload').onclick=async()=>{if(!downloadRequest)return;await fetch('/api/action',{method:'POST',headers:{'Content-Type':'application/json','X-Panel-Token':TOKEN},body:JSON.stringify({action:'cancel_job',request_id:crypto.randomUUID().replaceAll('-',''),params:{request_id:downloadRequest}})});message('已请求取消下载，保留续传文件');};
+for(const [id,mode] of [['verifySession','verify'],['exportFrames','frames'],['exportRgb','rgb_video'],['exportYolo','yolo_video']])byId(id).onclick=()=>selectedSession()?action('export_session',{session_id:selectedSession(),fps:Number(byId('exportFps').value),mode},{label:byId(id).textContent}):message('请先选择采集场次',true);
+byId('refreshModels').onclick=async()=>{const result=await action('list_models',{}, {label:'读取模型版本'});if(!result)return;models=result;byId('modelSelect').replaceChildren();for(const m of models)byId('modelSelect').add(new Option(m.name+(m.default?' · 当前默认':''),m.model_id));const def=models.find(m=>m.default);if(def)byId('modelSelect').value=def.model_id;showModel();};
+function showModel(){byId('modelDetails').textContent=JSON.stringify(models.find(m=>m.model_id===selectedModel())||'当前默认横版模型',null,2);}
+byId('modelSelect').onchange=showModel;
+byId('testModel').onclick=async()=>{const result=await action('test_model',{model_id:selectedModel()},{label:'检查引擎合同'});if(result)byId('modelDetails').textContent=JSON.stringify(result,null,2);};
+byId('selectModel').onclick=()=>action('select_model',{model_id:selectedModel()},{label:'切换模型并重启感知'});
+byId('addSample').onclick=()=>{const target=meta?.targets?.find(t=>String(t.track_id)===byId('calibrationTarget').value),z=Number(byId('knownDistance').value);if(!target||!Number.isFinite(z)||z<=0){message('请选择真实四旋翼，并填写人工量得的轴向 Z',true);return;}
+ const [x1,y1,x2,y2]=target.bbox_xyxy;samples.push({known_distance_m:z,bbox_width:x2-x1,bbox_height:y2-y1,fx:meta.intrinsics.fx,fy:meta.intrinsics.fy,frame_key:meta.frame_key,source:'manual_axial_Z',model_id:meta.model_id,camera_serial:meta.camera_serial,image_width:meta.image_width,image_height:meta.image_height});byId('calibrationSamples').textContent=JSON.stringify(samples,null,2);};
+byId('clearSamples').onclick=()=>{samples=[];byId('calibrationSamples').textContent='尚未添加样本。';};
+byId('saveCalibration').onclick=()=>action('save_calibration',{target_size_m:Number(byId('targetSize').value),size_definition:byId('sizeDefinition').value,samples},{label:'保存尺寸与标定版本'});
+byId('checkDevice').onclick=async()=>{const result=await action('check_device',{}, {label:'检查当前硬件能力'});if(result)byId('diagnosticDetails').textContent=JSON.stringify(result,null,2);};
+byId('exportDiagnostics').onclick=async()=>{const result=await action('export_diagnostics',{}, {label:'读取诊断材料'});if(result)downloadJson(result,'ZED感知诊断.json');};
+refresh();setInterval(refresh,1000);frames();
+</script>
+</body></html>

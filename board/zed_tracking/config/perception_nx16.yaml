@@ -1,0 +1,7 @@
+zed_perception_standalone:
+  ros__parameters:
+    profile: rgb
+    engine_path: ''
+    model_id: ''
+# Migration placeholder only; no NX installed/accepted, no NVENC profile approved.
+# Build target-module engines and verify GMSL, power and recording before enabling.

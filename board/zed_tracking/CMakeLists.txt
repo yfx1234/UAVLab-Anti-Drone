@@ -11,6 +11,7 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(zed_perception_interfaces REQUIRED)
 find_package(OpenCV REQUIRED COMPONENTS core imgproc imgcodecs)
 find_package(CUDAToolkit REQUIRED)
 
@@ -43,6 +44,18 @@ set_target_properties(zed_perception_node PROPERTIES
 )
 
 install(TARGETS zed_perception_node DESTINATION lib/${PROJECT_NAME})
+add_executable(zed_perception_standalone src/zed_perception_standalone.cpp)
+target_include_directories(zed_perception_standalone PRIVATE include src ${ZED_INCLUDE_DIR})
+target_link_libraries(zed_perception_standalone ${NVINFER_LIBRARY} CUDA::cudart ${OpenCV_LIBS}
+  ${ZED_LIBRARY_DIR}/libsl_zed.so ${ZED_LIBRARY_DIR}/libsl_ai.so)
+ament_target_dependencies(zed_perception_standalone rclcpp std_msgs zed_perception_interfaces)
+set_target_properties(zed_perception_standalone PROPERTIES BUILD_RPATH "${ZED_LIBRARY_DIR}" INSTALL_RPATH "${ZED_LIBRARY_DIR}")
+add_executable(export_svo_rgb tools/export_svo_rgb.cpp)
+target_include_directories(export_svo_rgb PRIVATE include ${ZED_INCLUDE_DIR})
+target_link_libraries(export_svo_rgb ${OpenCV_LIBS} CUDA::cudart ${ZED_LIBRARY_DIR}/libsl_zed.so)
+set_target_properties(export_svo_rgb PROPERTIES BUILD_RPATH "${ZED_LIBRARY_DIR}" INSTALL_RPATH "${ZED_LIBRARY_DIR}")
+install(TARGETS zed_perception_standalone export_svo_rgb DESTINATION lib/${PROJECT_NAME})
+install(PROGRAMS tools/perception_supervisor.py tools/export_session.py DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY config launch DESTINATION share/${PROJECT_NAME})
 install(PROGRAMS
   scripts/zed_track_filter_node.py
@@ -57,6 +70,10 @@ install(PROGRAMS
   DESTINATION lib/${PROJECT_NAME})
 
 if(BUILD_TESTING)
+  add_executable(test_perception_quality test/test_perception_quality.cpp)
+  target_include_directories(test_perception_quality PRIVATE include)
+  target_compile_options(test_perception_quality PRIVATE -UNDEBUG)
+  add_test(NAME test_perception_quality COMMAND test_perception_quality)
   find_package(ament_cmake_gtest REQUIRED)
   ament_add_gtest(test_geometry test/test_geometry.cpp)
   target_include_directories(test_geometry PRIVATE include)

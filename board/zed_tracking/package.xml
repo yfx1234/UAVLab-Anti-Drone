@@ -14,6 +14,7 @@
 
   <depend>rclcpp</depend>
   <depend>std_msgs</depend>
+  <depend>zed_perception_interfaces</depend>
   <!-- zed_track_filter_node 复用其 ConstantVelocityKalmanFilter(Python) -->
   <exec_depend>falcon_intercept</exec_depend>
   <test_depend>falcon_intercept</test_depend>
