@@ -3,6 +3,8 @@ __pycache__/
 *.log
 runtime/
 test-results/
+.worktrees/
+.superpowers/
 data/
 build*/
 install*/
