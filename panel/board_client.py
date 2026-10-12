@@ -1,4 +1,4 @@
-"""SSH identity check, one connection per operation, fixed stdin JSON RPC."""
+"""SSH identity check and fixed stdin JSON RPC, with optional transport reuse."""
 import base64
 import hashlib
 import hmac
@@ -31,11 +31,15 @@ class BoardClient:
             return client
         except Exception:client.close();sock.close();raise
     def call(self,action,params=None,request=None,timeout=50):
+        with self.connection() as client:
+            return self.call_on(client,action,params,request,timeout)
+    def call_on(self,client,action,params=None,request=None,timeout=50):
+        """Use a new RPC channel on an already pinned/authenticated connection."""
         data=dict(request or {});data.update(action=action,params=params or {})
         payload=json.dumps(data,ensure_ascii=False,allow_nan=False).encode()
         if len(payload)>65536:raise ValueError('RPC 内容过大')
-        with self.connection() as client:
-            stdin,stdout,stderr=client.exec_command(RPC,timeout=timeout)
+        stdin,stdout,stderr=client.exec_command(RPC,timeout=timeout)
+        try:
             stdin.write(payload);stdin.flush();stdin.channel.shutdown_write()
             raw=stdout.read();error=stderr.read().decode(errors='replace')
             if len(raw)>8*1024*1024:raise ValueError('RPC 响应过大')
@@ -43,3 +47,5 @@ class BoardClient:
             except ValueError:raise ValueError('板上 RPC 响应无效：'+error[-800:])
             if isinstance(result,dict) and result.get('ok') is False:raise ValueError(result.get('error','板上操作失败'))
             return result
+        finally:
+            stdin.close();stdout.close();stderr.close()

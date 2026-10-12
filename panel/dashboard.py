@@ -30,10 +30,10 @@ def valid_request(host,origin,token,expected):
 class Panel:
     def __init__(self):
         self.token=secrets.token_urlsafe(32);self.instance_id=uuid.uuid4().hex;self.lock=threading.RLock();self.board=BoardClient();self.jobs=JobManager()
-        self.connected=False;self.state={};self.error=None;self.closed=threading.Event();self.local_revision=0
+        self.connected=False;self.state={};self.state_observed_at=0.0;self.error=None;self.closed=threading.Event();self.local_revision=0
         registry=SceneRegistry.shared(OUTPUT/'board_sessions',OUTPUT/'preview_videos')
         self.receiver=FrameReceiver();self.recorder=PreviewRecorder(OUTPUT/'preview_videos',registry);self.receiver.listener=self.recorder.consume
-        self.sessions=SessionManager(self.board,OUTPUT/'board_sessions',registry)
+        self.sessions=SessionManager(self.board,OUTPUT/'board_sessions',registry,self.transfer_state)
         self.media=MediaLibrary(OUTPUT/'board_sessions',OUTPUT/'preview_videos',registry)
         self.cancelled=set();self.progress={};self.events=[];self.scene_jobs={}
         self.thread=threading.Thread(target=self._poll,daemon=True);self.thread.start()
@@ -46,11 +46,20 @@ class Panel:
                     if not self.connected:continue
                     if state.get('boot_id')==self.state.get('boot_id') and state.get('revision',0)<self.state.get('revision',0):continue
                     changed=state.get('run_id')!=self.state.get('run_id')
-                    self.state=state;self.error=None
+                    self.state=state;self.state_observed_at=time.monotonic();self.error=None
                 if changed:self.receiver.cache.clear()
                 self.receiver.set_enabled(bool(state.get('pid')))
             except Exception as e:
                 with self.lock:self.error=str(e)
+    def transfer_state(self):
+        """Never trust an idle state after polling stalls or the panel disconnects."""
+        with self.lock:
+            elapsed=time.monotonic()-self.state_observed_at
+            if not self.connected or self.error or elapsed>3:return {}
+            state=self.state.copy();node_age=state.get('last_status_age_s')
+            if isinstance(node_age,(int,float)) and not isinstance(node_age,bool) and node_age>=0:
+                state['last_status_age_s']=node_age+elapsed
+            return state
     def close(self):
         self.closed.set();self.receiver.close()
         if self.recorder.active:self.recorder.stop()
@@ -82,7 +91,7 @@ class Panel:
                 state=self.board.call('status')
                 request=dict(request_id=uuid.uuid4().hex,**{'expected_'+k:state[k] for k in ('boot_id','run_id','revision')})
                 state=self.board.call('set_clock_reference',{'pc_unix_s':time.time()},request)['state']
-                with self.lock:self.connected=True;self.state=state;self.error=None
+                with self.lock:self.connected=True;self.state=state;self.state_observed_at=time.monotonic();self.error=None
                 self.receiver.set_enabled(bool(state.get('pid')));return {'connected':True}
             if action=='disconnect':
                 with self.lock:self.connected=False;self.board.password=None
@@ -106,24 +115,32 @@ class Panel:
             if action=='open_media_folder':return self.media.open_folder(params['relative'])
             if not self.connected:raise ValueError('请先连接板子')
             if action in ('download_session','download_asset'):
+                download_started=time.monotonic();timings={}
                 def progress(value):
                     with self.lock:self.progress[rid]=value
                 kind=params.get('kind','all') if action=='download_asset' else 'all'
                 self.sessions.select_files([],kind)
                 if kind in ('rgb','depth'):
+                    progress({'phase_code':'ready_check','stage':'检查视频'})
+                    tick=time.monotonic()
                     ready=self.board.call('ready_media',{'session_id':params['session_id'],'mode':kind+'_video'})
+                    timings['ready_check_s']=time.monotonic()-tick
                     if not ready['ready']:
                         fresh=self.board.call('status')
                         if fresh.get('pid'):raise ValueError('该视频尚未生成；请先停止相机，再下载。已生成的视频可在采集中下载。')
-                        progress({'phase':'正在板上生成'+('RGB' if kind=='rgb' else '深度展示')+'视频；首次转换可能较慢。此阶段取消将在转换结束后生效。'})
+                        progress({'phase_code':'board_convert','stage':'板上转换','cancel_after_stage':True})
                         request=dict(request_id=uuid.uuid4().hex,**{'expected_'+k:fresh[k] for k in ('boot_id','run_id','revision')})
+                        tick=time.monotonic()
                         converted=self.board.call('export_session',{'session_id':params['session_id'],'mode':kind+'_video','fps':15},request,timeout=3700)
+                        timings['board_convert_s']=time.monotonic()-tick
                         if converted['result']['state']!='complete':raise ValueError('场次不完整，不能作为有效素材下载：'+'；'.join(converted['result']['integrity_errors']))
                 if rid in self.cancelled:raise ValueError('已取消下载；板上转换结果保留')
                 result=self.sessions.download(params['session_id'],progress,lambda:rid in self.cancelled,kind)
+                result.setdefault('timings_s',{}).update(timings)
                 if kind in ('rgb','depth'):
-                    progress({'phase':'下载完成，正在电脑准备播放版本；保持原分辨率和帧率'})
+                    progress({'phase_code':'local_prepare','stage':'本机准备'})
                     result=self.media.prepare(result,lambda:rid in self.cancelled)
+                result.setdefault('timings_s',{})['total_job_s']=time.monotonic()-download_started
                 return result
             allowed={'action','request_id','expected_boot_id','expected_run_id','expected_revision','params'}
             request={key:value for key,value in data.items() if key in allowed}
@@ -136,7 +153,8 @@ class Panel:
             if action=='prepare_dataset':
                 result['result']=self.sessions.fetch_dataset_index(result['result'])
             with self.lock:
-                if isinstance(result,dict) and 'state' in result:self.state=result['state']
+                if isinstance(result,dict) and 'state' in result:
+                    self.state=result['state'];self.state_observed_at=time.monotonic()
             return result
         def guarded_work():
             try:return work()
