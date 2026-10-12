@@ -37,6 +37,7 @@ class SessionManager:
             fresh_node_status and
             state.get('profile')=='rgb' and p.get('profile')=='rgb' and
             p.get('depth_enabled') is False and p.get('detector_enabled') is False and p.get('record_state')=='idle' and
+            p.get('generic_detector_enabled',False) is False and
             number('capture_hz')>=13 and number('mem_available_kib')>=2*1024*1024 and
             0<=number('max_temperature_c')<65 and 0<=number('last_frame_age_s')<1)
         return 768*1024 if healthy_rgb_preview else 256*1024
