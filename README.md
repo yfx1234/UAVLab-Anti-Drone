@@ -1,5 +1,7 @@
 # UAVLab Anti-Drone
 
+私有仓库：<https://github.com/yfx1234/UAVLab-Anti-Drone>，主分支 `main`。
+
 ZED X Mini 四旋翼感知与数据采集平台。当前运行在 Jetson Orin Nano 8GB，准备迁移到 Orin NX 16GB；仓库重点为感知、相机、录像、电脑监看与素材管理。
 
 ## 当前链路
@@ -60,3 +62,5 @@ NX 必须从 ONNX 在目标模块重建 TensorRT 引擎。当前 Nano `.engine` 
 - 默认构建保留 5 组当前感知原生测试；历史滤波/控制的 2 组测试需开启旧工具选项及另外安装原 `falcon_intercept`/飞控相关依赖。
 
 提交前运行 `python -m unittest discover -s tests -v` 和 `python scripts/check_repository.py --history`。每次完成项目改动后提交并推送 GitHub；同步未成功时明确报告。
+
+2026-10-12 迁移工具验收：电脑74项回归（73通过、1跳过）；当前Nano独立目录中成功复制源码与模型、从头构建两个感知包，5组原生测试全部通过。该验证没有覆盖当前运行目录，也不代表NX已验收。摘要见 `environment/migration-tool-validation.json`。
