@@ -23,6 +23,7 @@ struct ZedAcquireConfig
   double depth_min_m{0.3};
   double depth_max_m{12.0};
   int runtime_confidence{80};             // SDK 置信度阈值,越低越严格
+  bool depth_computation_enabled{true};
   std::string input_svo;                  // 非空则回放 SVO 而非实时相机
   bool svo_real_time{true};               // 按录制节拍回放
 };
@@ -101,7 +102,10 @@ public:
         "ZED open failed: " + std::string(sl::toString(status).c_str()));
     }
     runtime_.confidence_threshold = config.runtime_confidence;
+    depth_available_ = config.depth_mode != "NONE";
+    runtime_.enable_depth = depth_available_ && config.depth_computation_enabled;
     const sl::CameraInformation information = camera_.getCameraInformation();
+    configured_fps_ = information.camera_configuration.fps;
     intrinsics_.serial_number = information.serial_number;
     // retrieveImage/retrieveMeasure 输出的是校正后图像,配 calibration_parameters。
     const auto & calibration =
@@ -124,6 +128,14 @@ public:
 
   // 抓一帧。返回 false 表示本次 grab 失败(调用方自行计数容错)。
   bool grab() {return camera_.grab(runtime_) == sl::ERROR_CODE::SUCCESS;}
+
+  // Called only on the camera-owner thread, before its next grab.
+  void set_depth_enabled(bool enabled) {
+    if (enabled && !depth_available_) throw std::runtime_error("depth was not initialized");
+    runtime_.enable_depth = enabled;
+  }
+  bool depth_enabled() const {return runtime_.enable_depth;}
+  float configured_fps() const {return configured_fps_;}
 
   // 左目 BGRA(全分辨率)。目标 Mat 由本类持有,指针在下次 retrieve 前有效。
   const sl::Mat & retrieve_left()
@@ -208,6 +220,8 @@ private:
   sl::Mat depth_;
   sl::Mat confidence_;
   CameraIntrinsics intrinsics_{};
+  bool depth_available_{false};
+  float configured_fps_{0};
   std::atomic<bool> recording_{false};
 };
 

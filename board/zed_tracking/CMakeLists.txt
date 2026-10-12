@@ -72,6 +72,10 @@ install(PROGRAMS
   DESTINATION lib/${PROJECT_NAME})
 
 if(BUILD_TESTING)
+  add_executable(test_camera_modes test/test_camera_modes.cpp)
+  target_include_directories(test_camera_modes PRIVATE include)
+  target_compile_options(test_camera_modes PRIVATE -UNDEBUG)
+  add_test(NAME test_camera_modes COMMAND test_camera_modes)
   add_executable(test_perception_quality test/test_perception_quality.cpp)
   target_include_directories(test_perception_quality PRIVATE include)
   target_compile_options(test_perception_quality PRIVATE -UNDEBUG)

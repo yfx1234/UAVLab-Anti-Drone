@@ -21,7 +21,7 @@ RECORDS=WS.parent/'perception_records'
 EXE=WS/'install_perception/zed_tracking/lib/zed_tracking/zed_perception_standalone'
 BOOT_FILE=pathlib.Path('/proc/sys/kernel/random/boot_id')
 SCHEMAS={
- 'status':set(),'check_device':set(),'start_capture':{'profile','model_id','capture_fps'},'stop_capture':set(),
+ 'status':set(),'check_device':set(),'start_capture':{'profile','model_id','capture_fps','camera_resolution'},'stop_capture':set(),
  'set_detector':{'enabled'},'start_raw_record':{'label','scene','lighting','size_definition','known_distance_m','distance_source','client_started_at_unix_s'},
  'stop_raw_record':set(),'list_sessions':set(),'list_models':set(),'test_model':{'model_id'},
  'select_model':{'model_id'},'save_calibration':{'target_size_m','size_definition','samples'},
@@ -35,8 +35,11 @@ class Conflict(ValueError):pass
 def validate_action(action,params):
     if action not in SCHEMAS or not isinstance(params,dict) or set(params)-SCHEMAS[action]:raise ValueError('unsupported perception action/fields')
     if action=='start_capture' and params.get('profile') not in ('rgb','perception'):raise ValueError('profile must be rgb/perception')
-    if action=='start_capture' and (type(params.get('capture_fps',15)) is not int or params.get('capture_fps',15) not in (15,30)):
-        raise ValueError('capture FPS must be15/30')
+    if action=='start_capture':
+        mode=params.get('camera_resolution','HD1080');fps=params.get('capture_fps',15)
+        rates={'HD1080':(15,30,60),'HD1200':(15,30,60),'SVGA':(15,30,60,120)}
+        if not isinstance(mode,str) or mode not in rates or type(fps) is not int or fps not in rates[mode]:
+            raise ValueError('unsupported ZED X Mini resolution/FPS pair')
     if action=='set_detector' and type(params.get('enabled')) is not bool:raise ValueError('enabled must be bool')
     if 'known_distance_m' in params:
         d=params['known_distance_m']
@@ -164,10 +167,18 @@ def node_command(s,action,params,rid):
 def start(s,params):
     if owns(s):raise Conflict('camera already owned')
     if not EXE.is_file():raise ValueError('standalone executable not built')
-    m=model_by_id(params.get('model_id')) if params['profile']=='perception' else None
+    m=None
+    if params['profile']=='perception' or params.get('model_id'):
+        m=model_by_id(params.get('model_id'))
+    else:
+        # Bind an available default model identity without loading TensorRT.
+        # A later YOLO toggle then preserves a raw session's model identity.
+        try:m=model_by_id(None)
+        except ValueError:pass  # RGB acquisition remains usable without weights.
     run=uuid.uuid4().hex
     args=[str(EXE),'--ros-args','-p',f'run_id:={run}','-p',f'profile:={params["profile"]}',
-          '-p',f'capture_fps:={params.get("capture_fps",15)}']
+          '-p',f'capture_fps:={params.get("capture_fps",15)}',
+          '-p',f'camera_resolution:={params.get("camera_resolution","HD1080")}']
     if m:args.extend(['-p',f'engine_path:={stage_model(m)}','-p',f'model_id:={m["model_id"]}'])
     command=f'source /opt/ros/humble/setup.bash && source {shlex.quote(str(WS/"install/setup.bash"))} && source {shlex.quote(str(WS/"install_perception/setup.bash"))} && exec '+shlex.join(args)
     log=ROOT/f'capture_{run}.log'

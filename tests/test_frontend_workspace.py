@@ -32,6 +32,31 @@ class FrontendWorkspaceTests(unittest.TestCase):
   self.assertIn('.target-viewport{height:264px;overflow:auto;scrollbar-gutter:stable;',HTML)
   self.assertIn('position:sticky;top:0;z-index:1;',HTML)
 
+ def test_rgb_start_uses_selected_sensor_settings_and_removes_optional_recorder(self):
+  parser=IdParser();parser.feed(HTML)
+  for removed in ['profile','startLocal','recordView']:
+   self.assertNotIn(removed,parser.ids)
+  handler="byId('startCapture').onclick="+HTML.split("byId('startCapture').onclick=",1)[1].split("byId('stopCapture').onclick=",1)[0]
+  self.run_node(r'''
+const assert=require('node:assert/strict');const elements={startCapture:{},captureResolution:{value:'SVGA'},captureFps:{value:'120'}};
+const byId=id=>elements[id];let request;const selectedModel=()=>'',action=(name,params)=>{request={name,params};};
+'''+handler+r'''
+byId('startCapture').onclick();assert.equal(request.name,'start_capture');assert.deepEqual(request.params,{profile:'rgb',camera_resolution:'SVGA',capture_fps:120});
+''')
+
+ def test_resolution_change_keeps_supported_rate_and_resets_invalid_pair(self):
+  functions='const cameraModes='+HTML.split('const cameraModes=',1)[1].split("byId('captureResolution').onchange",1)[0]
+  self.run_node(r'''
+const assert=require('node:assert/strict');
+const selector={value:'15',options:[],replaceChildren(){this.options=[];},add(option){this.options.push(option);}},resolution={value:'HD1080'};
+const byId=id=>id==='captureFps'?selector:resolution,Option=class {constructor(text,value){this.text=text;this.value=value;}};
+'''+functions+r'''
+updateCaptureOptions();assert.deepEqual(selector.options.map(o=>o.value),['15','30','60']);
+resolution.value='SVGA';updateCaptureOptions();assert.deepEqual(selector.options.map(o=>o.value),['15','30','60','120']);
+selector.value='120';resolution.value='HD1200';updateCaptureOptions();assert.equal(selector.value,'15');
+selector.value='30';resolution.value='HD1080';updateCaptureOptions();assert.equal(selector.value,'30');
+''')
+
  def test_target_updates_reuse_rows_and_preserve_internal_scroll(self):
   function='function renderTargets('+HTML.split('function renderTargets(',1)[1].split('async function frames()',1)[0]
   self.run_node(r'''
@@ -125,6 +150,7 @@ transferProgress({phase_code:'transfer',downloaded_bytes:1048576,total_bytes:209
  def test_board_conversion_disables_camera_start_and_defers_cancellation(self):
   transfer='function transferProgress('+HTML.split('function transferProgress(',1)[1].split('const beijingFormatter=',1)[0]
   update='function update()'+HTML.split('function update()',1)[1].split('async function action(',1)[0]
+  elapsed='function elapsedTime('+HTML.split('function elapsedTime(',1)[1].split('const headerObserver=',1)[0]
   cancel="byId('cancelDownload').onclick="+HTML.split("byId('cancelDownload').onclick=",1)[1].split('function mediaIdentity(',1)[0]
   self.run_node(r'''
 const assert=require('node:assert/strict'),crypto=require('node:crypto');
@@ -135,7 +161,7 @@ const byId=id=>elements[id]||(elements[id]={id,dataset:{},value:'',textContent:'
 const document={querySelectorAll:()=>['startCapture','stopCapture','stopRaw','stopLocal'].map(byId)};
 const number=(v,d=2)=>typeof v==='number'&&Number.isFinite(v)?v.toFixed(d):'—',beijingTime=()=>'',selectedSession=()=>'',renderTargets=()=>{};
 let notice='';const message=text=>{notice=text;},fetch=async()=>({ok:true,status:200}),restartNotice=()=>{};
-'''+transfer+update+cancel+r'''
+'''+elapsed+transfer+update+cancel+r'''
 (async()=>{
  transferProgress({phase_code:'ready_check'});update();assert.equal(byId('startCapture').disabled,true,'camera cannot start while video readiness is being checked');
  transferProgress({phase_code:'board_convert',cancel_after_stage:true});update();assert.equal(byId('startCapture').disabled,true,'camera cannot start during offline board conversion');

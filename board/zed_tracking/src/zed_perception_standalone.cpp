@@ -27,6 +27,7 @@
 #include <zed_perception_interfaces/srv/perception_command.hpp>
 #include "zed_tracking/geometry.hpp"
 #include "zed_tracking/perception_quality.hpp"
+#include "zed_tracking/camera_modes.hpp"
 #include "trt_runner.hpp"
 #include "zed_source.hpp"
 
@@ -79,9 +80,10 @@ class PreviewStream {
        if(stop_)break;if(!latest_.frame)continue;job=std::move(latest_);latest_=PreviewJob{};}
       double now=monotonic_s();if(now-last<.125)continue;
       cv::Mat bgra(job.frame->h,job.frame->w,CV_8UC4,const_cast<unsigned char*>(job.frame->bgra.data())),small,bgr;
-      cv::resize(bgra,small,cv::Size(640,360));cv::cvtColor(small,bgr,cv::COLOR_BGRA2BGR);
+      const int preview_height=std::max(1,int(std::lround(640.0*job.frame->h/job.frame->w)));
+      cv::resize(bgra,small,cv::Size(640,preview_height));cv::cvtColor(small,bgr,cv::COLOR_BGRA2BGR);
       std::vector<unsigned char> jpeg;cv::imencode(".jpg",bgr,jpeg,{cv::IMWRITE_JPEG_QUALITY,quality});
-      job.metadata["preview_width"]=640;job.metadata["preview_height"]=360;
+      job.metadata["preview_width"]=640;job.metadata["preview_height"]=preview_height;
       job.metadata["source_age_s"]=now-job.frame->acquired;
       std::string meta=job.metadata.dump();size_t bytes=meta.size()+jpeg.size()+8;
       if(meta.size()>65536||jpeg.size()>4194304)continue;
@@ -113,6 +115,9 @@ class Perception final:public rclcpp::Node {
   std::atomic<double> write_rate_{0};std::atomic<uint64_t> disk_reserve_{10ull*1024*1024*1024};
   std::atomic<bool> metadata_failed_{false};
   int capture_fps_{15};
+  std::string camera_resolution_{"HD1080"};
+  std::atomic<bool> depth_enabled_{false};
+  std::atomic<double> record_started_{0};
   std::atomic<uint32_t> sequence_{0};std::atomic<uint64_t> inferred_{0},dropped_{0};
   std::atomic<double> last_frame_{0},last_infer_{0};double started_{monotonic_s()};
   std::thread capture_,infer_,writer_;std::mutex state_mutex_,queue_mutex_,log_mutex_,command_mutex_,status_io_mutex_;
@@ -176,7 +181,7 @@ class Perception final:public rclcpp::Node {
     std::lock_guard<std::mutex> status_guard(status_io_mutex_);
     Json j;{std::lock_guard<std::mutex> l(state_mutex_);j=status_;j["model_id"]=model_;j["target_size_m"]=target_size_;j["calibration_id"]=calibration_id_;}
     double now=monotonic_s();j["run_id"]=run_;j["boot_id"]=boot_;j["monotonic_s"]=now;
-    j["profile"]=profile_;j["depth_enabled"]=profile_=="perception";
+    j["profile"]=profile_;j["depth_enabled"]=depth_enabled_.load();
     j["capture_frames"]=sequence_.load();j["inference_frames"]=inferred_.load();j["dropped_frames"]=dropped_.load();
     j["last_frame_age_s"]=last_frame_>0?Json(now-last_frame_):Json(nullptr);
     j["last_inference_age_s"]=last_infer_>0?Json(now-last_infer_):Json(nullptr);
@@ -193,7 +198,10 @@ class Perception final:public rclcpp::Node {
     j["record_write_bytes_s"]=write_rate_.load();j["disk_reserve_bytes"]=disk_reserve_.load();
     j["targets_valid"]=zed_tracking::targets_are_fresh(running,detector_&&detector_state_==2,
       last_frame_>0?now-last_frame_:-1,last_infer_>0?now-last_infer_:-1);
-    try{j["disk_free_bytes"]=fs::space(records_.parent_path()).available;atomic_json(root_/"status.json",j);}
+    j["record_elapsed_s"]=record_started_>0?Json(now-record_started_):Json(nullptr);
+    try{const uint64_t available=fs::space(records_.parent_path()).available;j["disk_free_bytes"]=available;
+      j["record_remaining_s"]=record_started_>0&&write_rate_>0?Json(double(available>disk_reserve_?available-disk_reserve_.load():0)/write_rate_.load()):Json(nullptr);
+      atomic_json(root_/"status.json",j);}
     catch(const std::exception& e){RCLCPP_WARN(get_logger(),"status write: %s",e.what());}
     if(rclcpp::ok()){std_msgs::msg::String msg;msg.data=j.dump();status_pub_->publish(msg);}
   }
@@ -218,7 +226,7 @@ class Perception final:public rclcpp::Node {
       {"submitted_frames",recorded_frames_},{"recorded_frames",nullptr},{"segments",segment_summaries_},{"reason",reason},
       {"dropped_metadata",dropped_logs_.load()-session_dropped_start_},{"metadata_complete",drained&&!metadata_failed_},
       {"tail_metadata_may_arrive",!drained}});
-    session_id_.clear();session_.clear();set_status("record_state","idle");set_status("session_id",nullptr);
+    session_id_.clear();session_.clear();record_started_=0;set_status("record_state","idle");set_status("session_id",nullptr);
   }
   void process_command(zed_tracking::ZedSource& source,const Json& cmd){
     std::string rid=cmd.value("request_id","");Json answer={{"ok",false}};
@@ -232,6 +240,7 @@ class Perception final:public rclcpp::Node {
         if(enabled&&!zed_tracking::model_change_allowed(!session_id_.empty(),model_,p.value("model_id",model_)))
           throw std::runtime_error("finish recording before changing model identity");
         if(enabled){{std::lock_guard<std::mutex> l(state_mutex_);engine_=p.value("engine_path",engine_);model_=p.value("model_id",model_);}apply_range_calibration();}
+        source.set_depth_enabled(enabled);depth_enabled_=enabled;
         ++detector_generation_;detector_=enabled;detector_state_=enabled?1:0;
         {std::lock_guard<std::mutex> l(queue_mutex_);if(latest_)pending_work_.release(latest_->session);latest_.reset();}queue_cv_.notify_all();
       }else if(action=="start_raw_record"){
@@ -244,6 +253,7 @@ class Perception final:public rclcpp::Node {
         segment_=0;recorded_frames_=0;segment_summaries_.clear();session_dropped_start_=dropped_logs_;
         Json manifest={{"schema_version",1},{"session_id",session_id_},{"request_id",rid},{"run_id",run_},{"boot_id",boot_},
           {"profile",profile_},{"codec","LOSSLESS"},{"segment_seconds",60},{"model_id",model_},
+          {"camera_resolution",camera_resolution_},{"configured_capture_fps",capture_fps_},
           {"camera_serial",intrinsics_.serial_number},{"sdk_version",std::string(sl::Camera::getSDKVersion().c_str())},
           {"tensorrt_version",std::to_string(NV_TENSORRT_MAJOR)+"."+std::to_string(NV_TENSORRT_MINOR)},
           {"target_size_m",target_size_},{"calibration_id",calibration_id_},{"metadata",p},
@@ -266,7 +276,7 @@ class Perception final:public rclcpp::Node {
         atomic_json(session_/"manifest.json",manifest);atomic_json(session_/"calibration.json",snapshot);
         try{begin_segment(source);}catch(...){session_id_.clear();session_.clear();throw;}
         atomic_json(session_/"session_summary.json",{{"state","recording"},{"session_id",session_id_}});
-        set_status("record_state","recording");set_status("session_id",session_id_);answer["session_id"]=session_id_;
+        record_started_=monotonic_s();set_status("record_state","recording");set_status("session_id",session_id_);answer["session_id"]=session_id_;
       }else if(action=="stop_raw_record")finish_record(source);
       else if(action=="save_calibration"){
         if(!session_id_.empty())throw std::runtime_error("finish recording before calibration change");
@@ -311,12 +321,17 @@ class Perception final:public rclcpp::Node {
   void capture_loop(){
     zed_tracking::ZedSource source;
     try{
-      zed_tracking::ZedAcquireConfig cfg;cfg.fps=capture_fps_;cfg.depth_mode=profile_=="perception"?"NEURAL_LIGHT":"NONE";source.open(cfg);
+      zed_tracking::ZedAcquireConfig cfg;cfg.fps=capture_fps_;cfg.resolution=camera_resolution_;
+      cfg.depth_mode="NEURAL_LIGHT";cfg.depth_computation_enabled=detector_.load();source.open(cfg);
+      if(std::abs(source.configured_fps()-capture_fps_)>.5)throw std::runtime_error("camera FPS differs from requested configuration");
+      depth_enabled_=source.depth_enabled();
       intrinsics_=source.intrinsics();apply_range_calibration();set_status("camera_state","running");
       set_status("configured_capture_fps",cfg.fps);
+      set_status("camera_resolution",cfg.resolution);set_status("image_width",intrinsics_.width);set_status("image_height",intrinsics_.height);
       int failures=0;double last_resource=0;uint64_t previous_free=fs::space(records_.parent_path()).available;
       while(!stop_&&rclcpp::ok()){
         commands(source);
+        if(source.depth_enabled()!=detector_.load()){source.set_depth_enabled(detector_.load());depth_enabled_=source.depth_enabled();}
         if(!source.grab()){
           if(++failures>=40)throw std::runtime_error("repeated SDK grab failure");
           std::this_thread::sleep_for(std::chrono::milliseconds(50));continue;
@@ -359,7 +374,7 @@ class Perception final:public rclcpp::Node {
         const sl::Mat& left=source.retrieve_left();f->w=int(left.getWidth());f->h=int(left.getHeight());
         size_t rowbytes=size_t(f->w)*4;f->bgra.resize(rowbytes*f->h);auto ptr=left.getPtr<sl::uchar1>();
         for(int y=0;y<f->h;++y)std::memcpy(f->bgra.data()+y*rowbytes,reinterpret_cast<const unsigned char*>(ptr)+y*left.getStepBytes(),rowbytes);
-        if(detector_&&profile_=="perception"){
+        if(depth_enabled_){
           try{const auto& d=source.retrieve_depth();const auto& c=source.retrieve_confidence();
             f->depth.resize(size_t(f->w)*f->h);f->confidence.resize(f->depth.size());
             for(int y=0;y<f->h;++y){
@@ -372,7 +387,7 @@ class Perception final:public rclcpp::Node {
         {std::lock_guard<std::mutex> l(queue_mutex_);if(latest_){++dropped_;pending_work_.release(latest_->session);}
           pending_work_.acquire(f->session);latest_=std::move(f);}queue_cv_.notify_one();
       }
-      set_status("camera_state","stopping");finish_record(source,"capture_stop");source.close();set_status("camera_state","stopped");
+      set_status("camera_state","stopping");finish_record(source,"capture_stop");source.close();depth_enabled_=false;set_status("camera_state","stopped");
     }catch(const std::exception& e){error("camera",e.what());set_status("camera_state","error");
       try{finish_record(source,"camera_error");source.close();}catch(const std::exception& close_error){error("record_finalize",close_error.what());}}
     stop_=true;queue_cv_.notify_all();preview_.stop();publish_status();
@@ -460,7 +475,8 @@ public:
     run_=declare_parameter<std::string>("run_id",std::to_string(getpid()));boot_=read_line("/proc/sys/kernel/random/boot_id");
     profile_=declare_parameter<std::string>("profile","rgb");engine_=declare_parameter<std::string>("engine_path","");model_=declare_parameter<std::string>("model_id","");
     capture_fps_=declare_parameter<int>("capture_fps",15);
-    if(capture_fps_!=15&&capture_fps_!=30)throw std::runtime_error("capture FPS must be15/30");
+    camera_resolution_=declare_parameter<std::string>("camera_resolution","HD1080");
+    if(!zed_tracking::camera_mode_supported(camera_resolution_,capture_fps_))throw std::runtime_error("unsupported ZED X Mini resolution/FPS pair");
     if(profile_!="rgb"&&profile_!="perception")throw std::runtime_error("invalid profile");
     fs::create_directories(root_);fs::create_directories(records_);
     owner_lock_=::open((root_/"camera.lock").c_str(),O_CREAT|O_RDWR,0600);
