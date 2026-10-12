@@ -181,9 +181,12 @@ byId('stopLocal').onclick=async()=>{const result=await action('stop_preview_reco
 byId('viewRgb').onclick=()=>setView(false);byId('viewYolo').onclick=()=>setView(true);
 function setView(value){overlay=value;byId('viewRgb').setAttribute('aria-pressed',!value);byId('viewYolo').setAttribute('aria-pressed',value);draw();}
 function currentTargets(packet,snapshot,now=performance.now()/1000){
- const s=snapshot?.state||{},p=s.pipeline||{},fresh=value=>typeof value==='number'&&Number.isFinite(value)&&value>=0&&value<=1.5;
+ const s=snapshot?.state||{},p=s.pipeline||{},fresh=(value,limit=1.5)=>typeof value==='number'&&Number.isFinite(value)&&value>=0&&value<=limit;
  const statusElapsed=now-snapshot?.observed_at_browser_s,frameElapsed=now-packet?.observed_at_browser_s;
- if(!packet||!snapshot.connected||snapshot.error||!s.pid||s.camera_state!=='running'||statusElapsed<0||frameElapsed<0||!fresh(s.last_status_age_s+statusElapsed)||!fresh(snapshot.preview?.frame_age_s+statusElapsed)||!fresh(packet.received_age_s+packet.source_age_s+frameElapsed)||!p.targets_valid||!packet.detector_enabled||packet.run_id!==s.run_id||packet.boot_id!==s.boot_id||packet.detector_generation!==p.detector_generation)return [];
+ // Control status traverses three one-second polling stages. A transient control
+ // error cannot invalidate independently fresh image geometry; age/owner/config
+ // checks still expire failed polls and reject obsolete frames.
+ if(!packet||!snapshot.connected||!s.pid||s.camera_state!=='running'||statusElapsed<0||frameElapsed<0||!fresh(s.last_status_age_s+statusElapsed,4)||!fresh(snapshot.preview?.frame_age_s+statusElapsed)||!fresh(packet.received_age_s+packet.source_age_s+frameElapsed)||!p.targets_valid||!packet.detector_enabled||packet.run_id!==s.run_id||packet.boot_id!==s.boot_id||packet.detector_generation!==p.detector_generation)return [];
  return (packet.targets||[]).filter(t=>t.detector_source==='generic'?(p.generic_detector_enabled&&packet.generic_detector_enabled):(p.detector_enabled&&packet.yolo_enabled));
 }
 function expireTargets(){
@@ -194,7 +197,7 @@ function expireTargets(){
  }
  if(!currentTargets(meta,state).length){renderTargets([]);draw();}
 }
-function draw(){if(!image||!meta)return;const canvas=byId('canvas'),ctx=canvas.getContext('2d');canvas.width=image.naturalWidth;canvas.height=image.naturalHeight;ctx.drawImage(image,0,0);
+function draw(){if(!image||!meta)return;const canvas=byId('canvas'),ctx=canvas.getContext('2d');if(canvas.width!==image.naturalWidth)canvas.width=image.naturalWidth;if(canvas.height!==image.naturalHeight)canvas.height=image.naturalHeight;ctx.drawImage(image,0,0);
  if(overlay){const sx=canvas.width/meta.image_width,sy=canvas.height/meta.image_height;ctx.strokeStyle='#00ed78';ctx.fillStyle='#00ed78';ctx.lineWidth=2;ctx.font='14px Segoe UI';
    for(const t of currentTargets(meta,state)){const generic=t.detector_source==='generic',label=generic?'G'+(t.track_id&0x7fffffff)+' 候选':'Y'+t.track_id+(t.detector_source==='yolo+generic'?' 双源':' YOLO');ctx.strokeStyle=ctx.fillStyle=generic?'#ffd166':'#00ed78';const [x1,y1,x2,y2]=t.bbox_xyxy;ctx.strokeRect(x1*sx,y1*sy,(x2-x1)*sx,(y2-y1)*sy);ctx.fillText(label+' '+modeNames[t.mode]+' '+number(t.confidence,2),x1*sx,Math.max(16,y1*sy-4));}}
 }

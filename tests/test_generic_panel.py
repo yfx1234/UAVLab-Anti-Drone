@@ -45,6 +45,7 @@ for(const mutate of [x=>x.connected=false,x=>x.state.camera_state='stopped',x=>x
 now=12;const liveState=structuredClone(s);liveState.observed_at_browser_s=now;
 assert.equal(currentTargets(packet,liveState).length,0,'old browser frame must age even if PC receiver is fresh');
 const newPacket=structuredClone(packet);newPacket.observed_at_browser_s=now;
+now=15;newPacket.observed_at_browser_s=now;
 assert.equal(currentTargets(newPacket,s).length,0,'old status must age even if browser frames arrive');
 now=70;assert.equal(currentTargets(packet,s).length,0,'all local requests failing must expire cached data');
 '''],capture_output=True,text=True,encoding='utf-8',timeout=10)

@@ -65,7 +65,10 @@ class Panel:
         if self.recorder.active:self.recorder.stop()
     def snapshot(self):
         with self.lock:
-            return {'api_version':2,'instance_id':self.instance_id,'host':HOST,'connected':self.connected,'state':self.state,'error':self.error,
+            state=self.state.copy();node_age=state.get('last_status_age_s')
+            if isinstance(node_age,(int,float)) and not isinstance(node_age,bool) and node_age>=0:
+                state['last_status_age_s']=node_age+max(0,time.monotonic()-self.state_observed_at)
+            return {'api_version':2,'instance_id':self.instance_id,'host':HOST,'connected':self.connected,'state':state,'error':self.error,
                     'local_revision':self.local_revision,'preview':self.receiver.snapshot(),'preview_recording':self.recorder.snapshot(),
                     'events':self.events[-15:],'output_directory':str(OUTPUT)}
     def submit(self,data):
