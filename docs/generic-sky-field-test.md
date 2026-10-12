@@ -41,4 +41,6 @@ CPU多尺度 black-hat / top-hat 寻找暗/亮局部目标。9、25像素核使�
 
 板上验收命令：`python tests/generic_live_acceptance.py --live`（在配置好的电脑运行，要求相机已停止）。它仅做室内台架软件负载测试，不操作载机，也不替代实物测试。
 
+2026-10-12修复版台架结果：6组原生测试通过；电脑83项测试（82通过、1项Windows符号链接测试跳过）。同一场SVO回放验证503帧完整、330条检测/比较记录一致；所有记录帧IMU有效。1080p/15fps设置下，通用检测加深度/录像平均约13.7Hz，联合YOLO约7.9Hz；整段原片独立帧率约13.74Hz，未达到稳定满15Hz。内存最低约4.29GiB、最高温度约57.8°C。短测结果不代表长期或NX性能，摘要见 `environment/generic-detection-validation.json`。
+
 接口依据：[Stereolabs图像同步传感器API](https://docs.stereolabs.com/docs/development/zed-sdk/modules/sensors/using-the-api/)、[时间同步](https://docs.stereolabs.com/docs/development/zed-sdk/modules/sensors/time-synchronization)；实际构建接口还核对了板上SDK5.5的`sl/Camera.hpp`。

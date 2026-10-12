@@ -96,6 +96,10 @@ class GenericSkyTracker {
     std::array<double,4> relative{1,0,0,0};
     if(compensated) relative=quaternion_product(quaternion_conjugate(motion.quaternion_wxyz),previous_motion_.quaternion_wxyz);
     for(auto& item:tracks_) {
+      // A matched box does not imply that this frame's depth was assessed.
+      // Fusion can hide it behind YOLO; those gaps break the depth streak.
+      if(!item.depth_checked)item.depth_streak=0;
+      item.depth_checked=false;
       item.used=false;
       item.track.motion_compensated=compensated && warp(item.track,k,relative);
     }
@@ -134,14 +138,16 @@ class GenericSkyTracker {
   }
   bool confirm_depth(uint32_t id,bool accepted) {
     for(auto& item:tracks_)if(item.track.id==id) {
-      item.depth_streak=accepted?std::min(3,item.depth_streak+1):0;return item.depth_streak>=3;
+      if(!accepted)item.depth_streak=0;
+      else if(!item.depth_checked)item.depth_streak=std::min(3,item.depth_streak+1);
+      item.depth_checked=true;return item.depth_streak>=3;
     }
     return false;
   }
   void clear(){tracks_.clear();previous_motion_={};last_seconds_=0;}
   size_t track_count() const {return tracks_.size();}
  private:
-  struct Item {SkyTrack track;double last_seen{0};int depth_streak{0};bool used{false};};
+  struct Item {SkyTrack track;double last_seen{0};int depth_streak{0};bool used{false},depth_checked{false};};
   static bool warp(SkyCandidate& box,const SkyIntrinsics& k,const std::array<double,4>& relative) {
     float x1=1e30f,y1=1e30f,x2=-1e30f,y2=-1e30f;
     for(float x:{box.x1,box.x2})for(float y:{box.y1,box.y2}) {

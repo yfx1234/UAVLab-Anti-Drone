@@ -41,8 +41,21 @@ int main() {
   auto held=hovering.update({box(960,540)},k,1.134,motion(1.134),3);
   assert(held.size()==1 && held[0].id==1);
   assert(!hovering.confirm_depth(1,true)); assert(!hovering.confirm_depth(1,true));
+  hovering.update({box(960,540)},k,1.18,motion(1.18),3);
+  assert(!hovering.confirm_depth(1,true));
+  hovering.update({box(960,540)},k,1.22,motion(1.22),3);
   assert(hovering.confirm_depth(1,true)); assert(!hovering.confirm_depth(1,false));
-  assert(hovering.update({},k,1.201,motion(1.201),3).empty());
+  assert(hovering.update({},k,1.28,motion(1.28),3).empty());
+  // YOLO can suppress the generic output while its spatial track remains matched.
+  // Unassessed depth frames must break the measured-depth confirmation streak.
+  GenericSkyTracker suppressed_depth;
+  for(int i=0;i<8;++i) {
+    double seconds=6+i*.067;
+    suppressed_depth.update({box(960,540)},k,seconds,motion(seconds),3);
+    if(i==3 || i==4)continue;
+    bool measured=suppressed_depth.confirm_depth(1,true);
+    assert(measured==(i==2 || i==7));
+  }
   GenericSkyTracker transient;
   transient.update({box(960,540)},k,1,motion(1),3);
   transient.update({},k,1.067,motion(1.067),3);
