@@ -250,6 +250,14 @@ class Perception final:public rclcpp::Node {
           {"intrinsics",{{"fx",intrinsics_.fx},{"fy",intrinsics_.fy},{"cx",intrinsics_.cx},{"cy",intrinsics_.cy},
                          {"width",intrinsics_.width},{"height",intrinsics_.height},{"baseline_m",intrinsics_.baseline_m}}},
           {"warnings",{"recording rotation may create a gap; use timestamp mapping","model recognition and physical-center accuracy not field validated"}}};
+        const double board_wall=std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch()).count();
+        double created=board_wall;std::string time_source="board_clock";
+        const auto anchor=read_json(root_/"clock_reference.json");
+        if(anchor.value("boot_id",std::string{})==boot_&&anchor.contains("pc_unix_s")&&anchor.contains("board_monotonic_s")){
+          created=anchor["pc_unix_s"].get<double>()+monotonic_s()-anchor["board_monotonic_s"].get<double>();time_source="pc_reference_monotonic";
+        }
+        manifest["created_at_unix_s"]=created;manifest["created_time_source"]=time_source;
+        manifest["created_board_unix_s"]=board_wall;manifest["created_monotonic_s"]=monotonic_s();
         Json snapshot={{"target_size_m",target_size_},{"effective_size_m",effective_size_},
           {"calibration_id",calibration_id_},{"size_definition",size_definition_},{"calibrated",calibrated_},
           {"model_id",model_},{"camera_serial",intrinsics_.serial_number},{"image_width",intrinsics_.width},{"image_height",intrinsics_.height},

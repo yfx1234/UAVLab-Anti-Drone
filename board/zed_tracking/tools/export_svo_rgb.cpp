@@ -20,6 +20,8 @@ int main(int argc,char** argv){
     if(!std::isfinite(fps)||fps<0||fps>30||(!video&&fps==0))throw std::runtime_error("invalid fps");
     sl::Camera camera;sl::InitParameters p;p.input.setFromSVOFile(argv[1]);p.svo_real_time_mode=false;
     p.depth_mode=depth?sl::DEPTH_MODE::NEURAL_LIGHT:sl::DEPTH_MODE::NONE;
+    // Depth limits use coordinate_units; the SDK default is MILLIMETER.
+    p.coordinate_units=sl::UNIT::METER;
     p.depth_minimum_distance=.3f;p.depth_maximum_distance=10.5f;
     auto result=camera.open(p);if(result!=sl::ERROR_CODE::SUCCESS)throw std::runtime_error(sl::toString(result).c_str());
     auto info=camera.getCameraInformation();double native_fps=info.camera_configuration.fps;
@@ -30,7 +32,8 @@ int main(int argc,char** argv){
     fs::path out=fs::absolute(argv[2]);std::ofstream mapping;cv::VideoWriter writer;cv::Mat previous_video;
     fs::path video_path=out/(mode+".mp4"),video_temp=out/(mode+".tmp.mp4");
     if(!verify){fs::create_directories(out);if(!video){mapping.exceptions(std::ios::failbit|std::ios::badbit);mapping.open(out/"mapping.jsonl.tmp");}}
-    sl::Mat left,right;sl::RuntimeParameters runtime;
+    sl::Mat left,right,depth_samples;sl::RuntimeParameters runtime;
+    uint64_t valid_depth_samples=0,total_depth_samples=0;int no_valid_depth_frames=0;
     while(true){result=camera.grab(runtime);if(result==sl::ERROR_CODE::END_OF_SVOFILE_REACHED)break;
       if(result!=sl::ERROR_CODE::SUCCESS)throw std::runtime_error("SVO grab failed during playback");
       ++frames;auto stamp=camera.getTimestamp(sl::TIME_REFERENCE::IMAGE).data_ns;
@@ -48,10 +51,24 @@ int main(int argc,char** argv){
       previous=stamp;
       if(fs::space(out).available<10ull*1024*1024*1024)throw std::runtime_error("export disk reserve below 10 GiB");
       if(camera.retrieveImage(left,depth?sl::VIEW::DEPTH:sl::VIEW::LEFT,sl::MEM::CPU)!=sl::ERROR_CODE::SUCCESS)throw std::runtime_error("image retrieval failed");
+      if(depth){
+        // Validate real metric data, independently of the display color/overlay.
+        if(camera.retrieveMeasure(depth_samples,sl::MEASURE::DEPTH,sl::MEM::CPU,sl::Resolution(160,90))!=sl::ERROR_CODE::SUCCESS)
+          throw std::runtime_error("metric depth retrieval failed");
+        uint64_t frame_valid=0;
+        for(size_t y=0;y<depth_samples.getHeight();++y){
+          auto row=depth_samples.getPtr<float>(sl::MEM::CPU)+y*depth_samples.getStepBytes(sl::MEM::CPU)/sizeof(float);
+          for(size_t x=0;x<depth_samples.getWidth();++x){
+            const float d=row[x];if(std::isfinite(d)&&d>0)++frame_valid;
+          }
+        }
+        valid_depth_samples+=frame_valid;total_depth_samples+=depth_samples.getWidth()*depth_samples.getHeight();
+        if(frame_valid==0)++no_valid_depth_frames;
+      }
       cv::Mat image(left.getHeight(),left.getWidth(),CV_8UC4,left.getPtr<sl::uchar1>(),left.getStepBytes());
       if(video){
         cv::Mat bgr;cv::cvtColor(image,bgr,cv::COLOR_BGRA2BGR);
-        if(depth)cv::putText(bgr,"Recomputed depth visualization | 0.3-10.5m | not metric depth data",{20,35},cv::FONT_HERSHEY_SIMPLEX,.7,{255,255,255},2);
+        if(depth)cv::putText(bgr,"ZED SDK depth view | 0.3-10.5m | black: invalid/out of range",{20,35},cv::FONT_HERSHEY_SIMPLEX,.7,{255,255,255},2);
         if(!writer.isOpened()){
           writer.open(video_temp.string(),cv::VideoWriter::fourcc('m','p','4','v'),fps,bgr.size());
           if(!writer.isOpened())throw std::runtime_error("MP4 writer unavailable");
@@ -71,7 +88,9 @@ int main(int argc,char** argv){
     if(frames<1||frames<expected)throw std::runtime_error("SVO frame count incomplete");
     if(!verify&&!video){mapping.close();fs::rename(out/"mapping.jsonl.tmp",out/"mapping.jsonl");}
     if(video){
-      writer.release();cv::VideoCapture reader(video_temp.string());cv::Mat decoded;int count=0;
+      writer.release();
+      if(depth&&valid_depth_samples==0)throw std::runtime_error("No valid depth in SVO playback; check depth units/range, stereo images and scene texture. Depth video was not published.");
+      cv::VideoCapture reader(video_temp.string());cv::Mat decoded;int count=0;
       while(reader.read(decoded)){
         if(decoded.cols!=int(info.camera_configuration.resolution.width)||decoded.rows!=int(info.camera_configuration.resolution.height))
           throw std::runtime_error("MP4 playback dimensions mismatch");
@@ -91,6 +110,10 @@ int main(int argc,char** argv){
       {"video_width",info.camera_configuration.resolution.width},{"video_height",info.camera_configuration.resolution.height},
       {"video_duration_s",video_frames/fps},{"repeated_video_frames",repeats},{"video_timebase","native_capture_timestamps_with_gap_repeats"},
       {"depth_recomputed",depth},{"depth_mode",depth?"NEURAL_LIGHT":"NONE"},{"depth_visualization_only",depth}});}
+    if(depth){report.update({{"depth_unit","METER"},{"depth_view","SDK_VIEW_DEPTH"},
+      {"depth_minimum_m",.3},{"depth_maximum_m",10.5},
+      {"depth_valid_sample_fraction",double(valid_depth_samples)/double(total_depth_samples)},
+      {"depth_sample_resolution",{160,90}},{"depth_frames_without_valid_samples",no_valid_depth_frames}});}
     std::cout<<report.dump()<<std::endl;
   }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}
 }

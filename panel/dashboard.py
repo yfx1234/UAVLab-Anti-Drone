@@ -20,8 +20,8 @@ from media_library import MediaLibrary
 BASE=pathlib.Path(__file__).resolve().parent
 OUTPUT=BASE.parents[1]/'outputs'/'perception_data'
 BOARD_ACTIONS={'check_device','start_capture','stop_capture','set_detector','start_raw_record','stop_raw_record',
-               'list_sessions','list_models','test_model','select_model','save_calibration','export_session','export_diagnostics','prepare_dataset'}
-LOCAL_ACTIONS={'connect','disconnect','start_preview_record','stop_preview_record','download_session','download_asset','extract_local_frames','cancel_job'}
+               'list_sessions','list_models','test_model','select_model','save_calibration','export_session','export_diagnostics','prepare_dataset','rename_session','delete_session'}
+LOCAL_ACTIONS={'connect','disconnect','start_preview_record','stop_preview_record','download_session','download_asset','extract_local_frames','cancel_job','open_media_folder'}
 
 def valid_request(host,origin,token,expected):
     return host in ('127.0.0.1:8767','localhost:8767') and origin=='http://'+host and isinstance(token,str) and hmac.compare_digest(token,expected)
@@ -32,8 +32,8 @@ class Panel:
         self.connected=False;self.state={};self.error=None;self.closed=threading.Event();self.local_revision=0
         self.receiver=FrameReceiver();self.recorder=PreviewRecorder(OUTPUT/'preview_videos');self.receiver.listener=self.recorder.consume
         self.sessions=SessionManager(self.board,OUTPUT/'board_sessions')
-        self.media=MediaLibrary(OUTPUT/'board_sessions')
-        self.cancelled=set();self.progress={};self.events=[]
+        self.media=MediaLibrary(OUTPUT/'board_sessions',OUTPUT/'preview_videos')
+        self.cancelled=set();self.progress={};self.events=[];self.scene_jobs={}
         self.thread=threading.Thread(target=self._poll,daemon=True);self.thread.start()
     def _poll(self):
         while not self.closed.wait(1):
@@ -63,12 +63,23 @@ class Panel:
         if not isinstance(params,dict):raise ValueError('参数必须是对象')
         rid=data.get('request_id',uuid.uuid4().hex)
         if not isinstance(rid,str) or not re.fullmatch('[a-zA-Z0-9_-]{1,80}',rid):raise ValueError('请求 ID 无效')
+        # Reserve at submission, including queued work, so delete cannot race a transfer.
+        scene_action=action in ('download_session','download_asset','export_session','extract_local_frames','rename_session','delete_session')
+        sid=params.get('session_id') if scene_action else None
+        with self.lock:
+            with self.jobs.lock:
+                if rid in self.jobs.ids:return self.jobs.ids[rid]
+            if sid:
+                if sid in self.scene_jobs:raise ValueError('该场次正在下载、转换或修改，请完成后再操作')
+                self.scene_jobs[sid]=rid
         def work():
             if action=='connect':
                 password=data.get('password')
                 if password is not None and not isinstance(password,str):raise ValueError('密码字段无效')
                 self.board.password=password
                 state=self.board.call('status')
+                request=dict(request_id=uuid.uuid4().hex,**{'expected_'+k:state[k] for k in ('boot_id','run_id','revision')})
+                state=self.board.call('set_clock_reference',{'pc_unix_s':time.time()},request)['state']
                 with self.lock:self.connected=True;self.state=state;self.error=None
                 self.receiver.set_enabled(bool(state.get('pid')));return {'connected':True}
             if action=='disconnect':
@@ -87,6 +98,7 @@ class Panel:
                     return self.recorder.start(params.get('view_mode','rgb'))
                 return self.recorder.stop()
             if action=='extract_local_frames':return self.media.extract(params['session_id'],params.get('fps',2))
+            if action=='open_media_folder':return self.media.open_folder(params['relative'])
             if not self.connected:raise ValueError('请先连接板子')
             if action in ('download_session','download_asset'):
                 def progress(value):
@@ -111,12 +123,28 @@ class Panel:
             allowed={'action','request_id','expected_boot_id','expected_run_id','expected_revision','params'}
             request={key:value for key,value in data.items() if key in allowed}
             result=self.board.call(action,params,request,timeout=3700 if action=='export_session' else 60)
+            if action=='list_sessions':self.media.scene_names(result)
             if action=='prepare_dataset':
                 result['result']=self.sessions.fetch_dataset_index(result['result'])
             with self.lock:
                 if isinstance(result,dict) and 'state' in result:self.state=result['state']
             return result
-        return self.jobs.submit(rid,work)
+        def guarded_work():
+            try:return work()
+            finally:
+                with self.lock:
+                    if sid and self.scene_jobs.get(sid)==rid:self.scene_jobs.pop(sid,None)
+        try:
+            with self.lock:
+                with self.jobs.lock:existing=self.jobs.ids.get(rid)
+                if existing:
+                    if sid and self.scene_jobs.get(sid)==rid:self.scene_jobs.pop(sid,None)
+                    return existing
+                return self.jobs.submit(rid,guarded_work)
+        except Exception:
+            with self.lock:
+                if sid and self.scene_jobs.get(sid)==rid:self.scene_jobs.pop(sid,None)
+            raise
 
 def make_handler(panel):
     class Handler(http.server.BaseHTTPRequestHandler):

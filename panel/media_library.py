@@ -3,10 +3,12 @@ import pathlib,json,subprocess,time,shutil,urllib.parse,uuid,os
 from preview_recorder import PreviewRecorder
 
 class MediaLibrary:
-    def __init__(self,root):self.root=pathlib.Path(root).resolve()
+    def __init__(self,root,preview_root=None):self.root=pathlib.Path(root).resolve();self.preview_root=pathlib.Path(preview_root).resolve() if preview_root else None
     def path(self,relative):
-        p=(self.root/relative).resolve()
-        if not p.is_relative_to(self.root) or not p.is_file():raise ValueError('本机媒体文件不存在或路径越界')
+        rel=pathlib.PurePosixPath(relative);root=self.root
+        if self.preview_root and rel.parts and rel.parts[0]=='preview_videos':root=self.preview_root;rel=pathlib.PurePosixPath(*rel.parts[1:])
+        p=(root/str(rel)).resolve()
+        if not p.is_relative_to(root) or not p.is_file():raise ValueError('本机媒体文件不存在或路径越界')
         if p.suffix!='.mp4':raise ValueError('仅允许播放本机 MP4')
         return p
     def _run(self,args,folder,cancelled=lambda:False):
@@ -40,9 +42,27 @@ class MediaLibrary:
             media.append({'path':str(output),'relative':relative,'url':'/api/media/'+urllib.parse.quote(relative),'name':source.name,'kind':result['kind']})
         return dict(result,media=media)
     def list(self):
-        if not self.root.exists():return []
-        return [{'relative':p.relative_to(self.root).as_posix(),'url':'/api/media/'+urllib.parse.quote(p.relative_to(self.root).as_posix()),
-                 'name':p.parent.parent.parent.name+' / '+p.name} for p in sorted(self.root.glob('*/exports/*/*.view.mp4'))]
+        names={}
+        try:names=json.loads((self.root/'scene_names.json').read_text(encoding='utf-8'))
+        except (ValueError,OSError):pass
+        rows=[{'relative':p.relative_to(self.root).as_posix(),'url':'/api/media/'+urllib.parse.quote(p.relative_to(self.root).as_posix()),
+               'name':names.get(p.parent.parent.parent.name,p.parent.parent.parent.name)+' / '+p.name} for p in sorted(self.root.glob('*/exports/*/*.view.mp4'))]
+        if self.preview_root:
+            for p in sorted(self.preview_root.glob('preview_*/*.mp4')):
+                relative='preview_videos/'+p.relative_to(self.preview_root).as_posix()
+                rows.append({'relative':relative,'url':'/api/media/'+urllib.parse.quote(relative),'name':'电脑预览录像 / '+p.parent.name+' / '+p.name})
+        return rows
+    def scene_names(self,rows):
+        self.root.mkdir(parents=True,exist_ok=True);path=self.root/'scene_names.json';temp=path.with_name('scene_names.'+uuid.uuid4().hex+'.tmp');names={}
+        try:names=json.loads(path.read_text(encoding='utf-8'))
+        except (ValueError,OSError):pass
+        names.update({r['session_id']:r['display_name'] for r in rows})
+        temp.write_text(json.dumps(names,ensure_ascii=False),encoding='utf-8');temp.replace(path)
+    def open_folder(self,relative):
+        source=self.path(relative)
+        if os.name!='nt':raise ValueError('打开文件位置只用于Windows本机')
+        subprocess.Popen(['explorer.exe',f'/select,{source}'],creationflags=0x08000000)
+        return {'folder':str(source.parent),'file':str(source)}
     def extract(self,session_id,fps=2):
         import re
         if not re.fullmatch('[a-zA-Z0-9_-]{1,80}',session_id) or not .2<=fps<=15:raise ValueError('场次或抽帧参数无效')

@@ -11,7 +11,7 @@ class CachedWorkflowTests(unittest.TestCase):
                 calls.append(action)
                 if action=='ready_media':return {'ready':True}
                 raise AssertionError('ready RGB must not invoke idle-only export')
-        panel=Panel.__new__(Panel);panel.lock=threading.RLock();panel.connected=True;panel.jobs=JobManager();panel.board=Board();panel.progress={};panel.cancelled=set()
+        panel=Panel.__new__(Panel);panel.lock=threading.RLock();panel.connected=True;panel.jobs=JobManager();panel.board=Board();panel.progress={};panel.cancelled=set();panel.scene_jobs={}
         panel.sessions=SimpleNamespace(select_files=lambda files,kind:None,download=lambda *args:{'folder':'fixture','kind':'rgb','files':[]})
         panel.media=SimpleNamespace(prepare=lambda result,cancelled:result)
         jid=panel.submit({'action':'download_asset','request_id':'cached_test','params':{'session_id':'fixture','kind':'rgb'}})

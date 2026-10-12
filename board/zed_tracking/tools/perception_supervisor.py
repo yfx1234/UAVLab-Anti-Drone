@@ -22,12 +22,13 @@ EXE=WS/'install_perception/zed_tracking/lib/zed_tracking/zed_perception_standalo
 BOOT_FILE=pathlib.Path('/proc/sys/kernel/random/boot_id')
 SCHEMAS={
  'status':set(),'check_device':set(),'start_capture':{'profile','model_id','capture_fps'},'stop_capture':set(),
- 'set_detector':{'enabled'},'start_raw_record':{'label','scene','lighting','size_definition','known_distance_m','distance_source'},
+ 'set_detector':{'enabled'},'start_raw_record':{'label','scene','lighting','size_definition','known_distance_m','distance_source','client_started_at_unix_s'},
  'stop_raw_record':set(),'list_sessions':set(),'list_models':set(),'test_model':{'model_id'},
  'select_model':{'model_id'},'save_calibration':{'target_size_m','size_definition','samples'},
  'export_session':{'session_id','fps','mode'},'export_diagnostics':set(),
  'session_checksum':{'session_id','file'},'ready_media':{'session_id','mode'},
  'prepare_dataset':set(),
+ 'set_clock_reference':{'pc_unix_s'},'rename_session':{'session_id','name'},'delete_session':{'session_id','confirmation'},
 }
 class Conflict(ValueError):pass
 
@@ -42,6 +43,9 @@ def validate_action(action,params):
         if isinstance(d,bool) or not isinstance(d,(int,float)) or not math.isfinite(d) or d<=0:raise ValueError('distance must be positive finite')
     for key in ('label','scene','lighting','size_definition','distance_source'):
         if key in params and (not isinstance(params[key],str) or len(params[key])>300):raise ValueError('invalid metadata string')
+    if 'client_started_at_unix_s' in params:
+        from clock_reference import reference
+        reference(params['client_started_at_unix_s'],'validate')
 
 def session_path(root,session_id):
     if not isinstance(session_id,str) or not re.fullmatch(r'[a-zA-Z0-9_-]{1,80}',session_id):raise ValueError('invalid session ID')
@@ -93,6 +97,10 @@ def state():
         if s['last_status_age_s']>4:s['camera_state']='unresponsive'
     elif s.get('pid'):s['camera_state']='starting'
     s['api_version']=2
+    from clock_reference import estimate
+    estimated=estimate(read_json(ROOT/'clock_reference.json'),boot)
+    s['clock']={'board_unix_s':time.time(),'estimated_unix_s':estimated,'status':'pc_referenced' if estimated else 'board_clock',
+                'offset_from_pc_s':None if estimated is None else time.time()-estimated}
     return s
 
 def models():
@@ -199,14 +207,8 @@ def device_info():
     return caps
 
 def sessions():
-    if not RECORDS.exists():return []
-    result=[]
-    for folder in sorted(RECORDS.iterdir(),reverse=True):
-        if not folder.is_dir():continue
-        manifest=read_json(folder/'manifest.json');summary=read_json(folder/'session_summary.json')
-        files=[{'name':str(p.relative_to(folder)),'bytes':p.stat().st_size} for p in folder.rglob('*') if p.is_file() and not p.name.endswith('.tmp')]
-        result.append({'session_id':folder.name,'manifest':manifest,'summary':summary,'files':files,'bytes':sum(f['bytes'] for f in files)})
-    return result
+    from session_catalog import list_sessions
+    return list_sessions(RECORDS)
 
 def dispatch(request):
     action=request.get('action');params=request.get('params',{});validate_action(action,params)
@@ -239,6 +241,21 @@ def dispatch(request):
         validate_expectation(s,request)
         if action=='start_capture':result=start(s,params)
         elif action=='stop_capture':result=stop(s)
+        elif action=='set_clock_reference':
+            from clock_reference import reference
+            anchor=reference(params.get('pc_unix_s'),s['boot_id']);atomic_json(ROOT/'clock_reference.json',anchor);result={'clock_reference':anchor}
+            helper=pathlib.Path('/usr/local/libexec/zed-clock-sync')
+            if helper.is_file() and not s.get('pid') and abs(time.time()-anchor['pc_unix_s'])>2:
+                synced=subprocess.run(['sudo','-n',str(helper)],input=json.dumps({'pc_unix_s':anchor['pc_unix_s'],'boot_id':s['boot_id']}),capture_output=True,text=True,timeout=12)
+                try:result['system_clock_sync']=json.loads(synced.stdout)
+                except ValueError:result['system_clock_sync']={'synced':False,'error':synced.stderr[-500:]}
+            else:result['system_clock_sync']={'synced':False,'reason':'camera_active' if s.get('pid') else 'helper_not_installed_or_clock_close'}
+        elif action=='rename_session':
+            from session_catalog import rename
+            result=rename(RECORDS,params.get('session_id'),params.get('name'))
+        elif action=='delete_session':
+            from session_catalog import delete
+            result=delete(RECORDS,params.get('session_id'),params.get('confirmation'),s.get('pipeline',{}).get('session_id',''))
         elif action in ('set_detector','start_raw_record','stop_raw_record','save_calibration'):
             if action=='set_detector' and params['enabled']:
                 model=model_by_id(s.get('model_id') or None)
