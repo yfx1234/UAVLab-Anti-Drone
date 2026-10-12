@@ -255,7 +255,7 @@ def dispatch(request):
             result=rename(RECORDS,params.get('session_id'),params.get('name'))
         elif action=='delete_session':
             from session_catalog import delete
-            result=delete(RECORDS,params.get('session_id'),params.get('confirmation'),s.get('pipeline',{}).get('session_id',''))
+            result=delete(RECORDS,params.get('session_id'),params.get('confirmation'),s.get('pipeline',{}).get('session_id',''),s['boot_id'])
         elif action in ('set_detector','start_raw_record','stop_raw_record','save_calibration'):
             if action=='set_detector' and params['enabled']:
                 model=model_by_id(s.get('model_id') or None)

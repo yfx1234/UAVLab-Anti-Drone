@@ -7,9 +7,12 @@ import stat
 import time
 import threading
 import shutil
+from scene_registry import SceneRegistry
 
 class SessionManager:
-    def __init__(self,board,root):self.board=board;self.root=pathlib.Path(root);self.lock=threading.Lock()
+    def __init__(self,board,root,registry=None):
+        self.board=board;self.root=pathlib.Path(root).resolve();self.lock=threading.Lock()
+        self.registry=registry or SceneRegistry.shared(self.root)
     @staticmethod
     def select_files(files,kind):
         if kind=='all':return files
@@ -33,6 +36,8 @@ class SessionManager:
             part.replace(target)
         return dict(result,local_index=str(target))
     def download(self,session_id,progress=lambda x:None,cancelled=lambda:False,kind='all'):
+        with self.registry.operation(session_id):return self._download(session_id,progress,cancelled,kind)
+    def _download(self,session_id,progress,cancelled,kind):
         if not re.fullmatch('[a-zA-Z0-9_-]{1,80}',session_id):raise ValueError('采集场次 ID 无效')
         sessions=self.board.call('list_sessions');session=next((s for s in sessions if s['session_id']==session_id),None)
         if session is None:raise ValueError('采集场次未登记')
@@ -40,9 +45,10 @@ class SessionManager:
             raise ValueError('场次元数据尚未可靠收尾；先结束并校验场次，再下载')
         files=self.select_files(session['files'],kind)
         if not files:raise ValueError('该场次还没有所选文件，请先停止相机后生成')
+        self.registry.update([dict(session,display_name=session.get('display_name',session_id))])
         with self.lock,self.board.connection() as client:
             sftp=client.open_sftp();base='/home/uavlab/Jetson_ROS2_V0/perception_records/'+session_id
-            dest=self.root/session_id;dest.mkdir(parents=True,exist_ok=True);done=0;total=sum(f['bytes'] for f in files);checks=[]
+            dest=self.registry.folder(session_id,create=True);done=0;total=sum(f['bytes'] for f in files);checks=[]
             started=time.monotonic();last_poll=0;limit=256*1024;transferred=0
             for info in files:
                 rel=pathlib.PurePosixPath(info['name'])
@@ -94,4 +100,4 @@ class SessionManager:
                 if source['sha256']!=sha.hexdigest():raise ValueError('下载校验失败；保留临时文件')
                 part.replace(target);checks.append({'file':str(rel),'sha256':sha.hexdigest()})
             (dest/('download_integrity_'+kind+'.json')).write_text(json.dumps(checks),encoding='utf-8')
-            return {'folder':str(dest),'files':checks,'kind':kind,'bytes':total,'elapsed_s':time.monotonic()-started}
+            return {'folder':str(dest),'session_id':session_id,'files':checks,'kind':kind,'bytes':total,'elapsed_s':time.monotonic()-started}

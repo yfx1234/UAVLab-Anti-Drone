@@ -29,7 +29,8 @@ def scene_info(folder):
     stamp=manifest.get('created_at_unix_s');source=manifest.get('created_time_source','board_clock');uncertain=source=='board_clock'
     if type(stamp) not in (float,int) or not math.isfinite(stamp) or not 0<stamp<4102444800:
         stamp=(folder/'manifest.json').stat().st_mtime;source='legacy_manifest_time';uncertain=True
-    name=display.get('name') or datetime.datetime.fromtimestamp(stamp,datetime.timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')
+    beijing=datetime.timezone(datetime.timedelta(hours=8))
+    name=display.get('name') or datetime.datetime.fromtimestamp(stamp,beijing).strftime('%Y-%m-%d %H:%M:%S 北京时间')
     files=[{'name':p.relative_to(folder).as_posix(),'bytes':p.stat().st_size} for p in folder.rglob('*')
            if not p.is_symlink() and p.is_file() and not p.name.endswith('.tmp') and '.operation' not in p.name]
     return {'session_id':folder.name,'display_name':name,'created_at_unix_s':stamp,'created_time_source':source,
@@ -51,10 +52,13 @@ def rename(root,session_id,name):
     atomic(folder/'display.json',{'name':name.strip()})
     return {'session_id':session_id,'display_name':name.strip()}
 
-def delete(root,session_id,confirmation,active_session):
+def delete(root,session_id,confirmation,active_session,current_boot_id=None):
     folder=folder_for(root,session_id);summary=read(folder/'session_summary.json')
     if confirmation!=session_id:raise ValueError('删除确认与场次不一致')
-    if active_session==session_id or summary.get('state') in ('recording','finalizing') or summary.get('tail_metadata_may_arrive') is True:raise ValueError('录制或收尾中的场次不能删除')
+    recorded_boot=read(folder/'manifest.json').get('boot_id')
+    abandoned=bool(current_boot_id and recorded_boot and recorded_boot!=current_boot_id)
+    writing=summary.get('state') in ('recording','finalizing') or summary.get('tail_metadata_may_arrive') is True
+    if active_session==session_id or (writing and not abandoned):raise ValueError('录制或收尾中的场次不能删除')
     # The resolved absolute target is checked before every recursive delete.
     root=pathlib.Path(root).resolve()
     if folder.resolve().parent!=root:raise ValueError('删除路径越界')

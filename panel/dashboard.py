@@ -16,6 +16,7 @@ from job_manager import JobManager
 from preview_recorder import PreviewRecorder
 from session_manager import SessionManager
 from media_library import MediaLibrary
+from scene_registry import SceneRegistry
 
 BASE=pathlib.Path(__file__).resolve().parent
 OUTPUT=BASE.parents[1]/'outputs'/'perception_data'
@@ -30,9 +31,10 @@ class Panel:
     def __init__(self):
         self.token=secrets.token_urlsafe(32);self.instance_id=uuid.uuid4().hex;self.lock=threading.RLock();self.board=BoardClient();self.jobs=JobManager()
         self.connected=False;self.state={};self.error=None;self.closed=threading.Event();self.local_revision=0
-        self.receiver=FrameReceiver();self.recorder=PreviewRecorder(OUTPUT/'preview_videos');self.receiver.listener=self.recorder.consume
-        self.sessions=SessionManager(self.board,OUTPUT/'board_sessions')
-        self.media=MediaLibrary(OUTPUT/'board_sessions',OUTPUT/'preview_videos')
+        registry=SceneRegistry.shared(OUTPUT/'board_sessions',OUTPUT/'preview_videos')
+        self.receiver=FrameReceiver();self.recorder=PreviewRecorder(OUTPUT/'preview_videos',registry);self.receiver.listener=self.recorder.consume
+        self.sessions=SessionManager(self.board,OUTPUT/'board_sessions',registry)
+        self.media=MediaLibrary(OUTPUT/'board_sessions',OUTPUT/'preview_videos',registry)
         self.cancelled=set();self.progress={};self.events=[];self.scene_jobs={}
         self.thread=threading.Thread(target=self._poll,daemon=True);self.thread.start()
     def _poll(self):
@@ -95,7 +97,10 @@ class Panel:
                 if action=='start_preview_record':
                     p=self.receiver.cache.latest()
                     if p is None or time.monotonic()-p.received_at>3:raise ValueError('当前没有新鲜图像')
-                    return self.recorder.start(params.get('view_mode','rgb'))
+                    with self.lock:source_session_id=self.state.get('pipeline',{}).get('session_id') or None
+                    if source_session_id and source_session_id not in self.media.registry.scenes:
+                        self.media.scene_names(self.board.call('list_sessions'))
+                    return self.recorder.start(params.get('view_mode','rgb'),source_session_id)
                 return self.recorder.stop()
             if action=='extract_local_frames':return self.media.extract(params['session_id'],params.get('fps',2))
             if action=='open_media_folder':return self.media.open_folder(params['relative'])
@@ -124,6 +129,10 @@ class Panel:
             request={key:value for key,value in data.items() if key in allowed}
             result=self.board.call(action,params,request,timeout=3700 if action=='export_session' else 60)
             if action=='list_sessions':self.media.scene_names(result)
+            if action=='rename_session':
+                try:local_sync=self.media.rename_scene(params['session_id'],result['result']['display_name'])
+                except (ValueError,OSError) as e:local_sync={'ok':False,'error':str(e)}
+                result['result']['local_sync']=local_sync
             if action=='prepare_dataset':
                 result['result']=self.sessions.fetch_dataset_index(result['result'])
             with self.lock:
@@ -163,20 +172,19 @@ def make_handler(panel):
             elif path=='/api/media-list':self.js(panel.media.list())
             elif path.startswith('/api/media/'):
                 try:
-                    media=panel.media.path(urllib.parse.unquote(path.removeprefix('/api/media/')))
-                    size=media.stat().st_size;start=0;end=size-1
-                    byte_range=self.headers.get('Range')
-                    if byte_range:
-                        match=re.fullmatch(r'bytes=(\d+)-(\d*)',byte_range)
-                        if not match:raise ValueError('无效视频范围')
-                        start=int(match[1]);end=min(end,int(match[2])) if match[2] else end
-                        if start>end:raise ValueError('视频范围越界')
-                    self.send_response(206 if byte_range else 200);self.send_header('Content-Type','video/mp4')
-                    self.send_header('Accept-Ranges','bytes');self.send_header('Content-Length',str(end-start+1))
-                    self.send_header('X-Content-Type-Options','nosniff')
-                    if byte_range:self.send_header('Content-Range',f'bytes {start}-{end}/{size}')
-                    self.end_headers()
-                    with media.open('rb') as stream:
+                    with panel.media.open_file(urllib.parse.unquote(path.removeprefix('/api/media/'))) as stream:
+                        size=os.fstat(stream.fileno()).st_size;start=0;end=size-1
+                        byte_range=self.headers.get('Range')
+                        if byte_range:
+                            match=re.fullmatch(r'bytes=(\d+)-(\d*)',byte_range)
+                            if not match:raise ValueError('无效视频范围')
+                            start=int(match[1]);end=min(end,int(match[2])) if match[2] else end
+                            if start>end:raise ValueError('视频范围越界')
+                        self.send_response(206 if byte_range else 200);self.send_header('Content-Type','video/mp4')
+                        self.send_header('Accept-Ranges','bytes');self.send_header('Content-Length',str(end-start+1))
+                        self.send_header('X-Content-Type-Options','nosniff')
+                        if byte_range:self.send_header('Content-Range',f'bytes {start}-{end}/{size}')
+                        self.end_headers()
                         stream.seek(start);remaining=end-start+1
                         while remaining:
                             chunk=stream.read(min(262144,remaining))

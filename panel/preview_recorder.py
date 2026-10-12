@@ -9,17 +9,20 @@ import threading
 import time
 import uuid
 from PIL import Image,ImageDraw
+from scene_registry import SceneRegistry
 
 class PreviewRecorder:
-    def __init__(self,root):
+    def __init__(self,root,registry=None):
         self.root=pathlib.Path(root);self.lock=threading.RLock();self.cv=threading.Condition(self.lock)
+        self.registry=registry or SceneRegistry.shared(self.root.parent/'board_sessions',self.root)
         self.queue=deque(maxlen=2);self.active=False;self.finishing=False;self.frames=0;self.dropped=0
         self.files=[];self.error=None;self.view_mode='rgb';self.thread=None;self.folder=None
+        self.preview_id=None;self.created_at_unix_s=None;self.source_session_id=None
     @staticmethod
     def ffmpeg():
         import imageio_ffmpeg
         return imageio_ffmpeg.get_ffmpeg_exe()
-    def start(self,view_mode):
+    def start(self,view_mode,source_session_id=None):
         if view_mode not in ('rgb','yolo'):raise ValueError('录像样式无效')
         ffmpeg=self.ffmpeg()
         with self.lock:
@@ -27,7 +30,8 @@ class PreviewRecorder:
             self.root.mkdir(parents=True,exist_ok=True)
             import shutil
             if shutil.disk_usage(self.root).free<1024**3:raise ValueError('电脑录像磁盘不足 1 GiB')
-            self.folder=self.root/('preview_'+uuid.uuid4().hex);self.folder.mkdir()
+            self.preview_id='preview_'+uuid.uuid4().hex;self.created_at_unix_s=time.time();self.source_session_id=source_session_id
+            self.folder=self.registry.create_preview(self.preview_id,view_mode,self.created_at_unix_s,source_session_id)
             self.active=True;self.finishing=False;self.view_mode=view_mode;self.frames=0;self.dropped=0;self.error=None;self.files=[];self.queue.clear()
             self.thread=threading.Thread(target=self._run,args=(ffmpeg,),daemon=True);self.thread.start()
             return self.snapshot()
@@ -83,8 +87,10 @@ class PreviewRecorder:
             except Exception:pass
         finally:
             if sidecar:sidecar.close()
-            with self.lock:self.active=False;self.finishing=False
-            (self.folder/'summary.json').write_text(json.dumps(self.snapshot(),ensure_ascii=False),encoding='utf-8')
+            with self.lock:
+                self.active=False;self.finishing=False
+                (self.folder/'summary.json').write_text(json.dumps(self.snapshot(),ensure_ascii=False),encoding='utf-8')
+                self.registry.finish_preview(self.preview_id)
     def stop(self):
         with self.cv:self.active=False;self.finishing=True;self.cv.notify_all();thread=self.thread
         if thread:thread.join(timeout=40)
@@ -93,4 +99,5 @@ class PreviewRecorder:
     def snapshot(self):
         with self.lock:return {'active':self.active,'finalizing':self.finishing,'frames':self.frames,'dropped':self.dropped,'files':list(self.files),
             'view_mode':self.view_mode,'error':self.error,'folder':str(self.folder) if self.folder else None,
+            'preview_id':self.preview_id,'created_at_unix_s':self.created_at_unix_s,'source_session_id':self.source_session_id,
             'note':'预览固定 8 fps；真实采集时间与断链在 frames.jsonl，不能替代原始素材'}

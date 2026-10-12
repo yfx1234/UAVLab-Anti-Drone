@@ -2,6 +2,11 @@ import sys,pathlib,tempfile,json,unittest,os
 from unittest.mock import patch
 ROOT=pathlib.Path(__file__).resolve().parents[1];sys.path[:0]=[str(ROOT/'board/zed_tracking/tools'),str(ROOT/'panel')]
 class CatalogTests(unittest.TestCase):
+ def test_default_name_is_beijing_time_independent_of_host_timezone(self):
+  import session_catalog as c
+  with tempfile.TemporaryDirectory() as t:
+   root=pathlib.Path(t);self.fixture(root,'session_clock',1791771152.5812051)
+   self.assertEqual(c.list_sessions(root)[0]['display_name'],'2026-10-12 10:12:32 北京时间')
  def fixture(self,root,name,stamp,state='complete'):
   p=root/name;p.mkdir();(p/'manifest.json').write_text(json.dumps({'created_at_unix_s':stamp,'metadata':{'label':'old_label'}}));(p/'session_summary.json').write_text(json.dumps({'state':state,'tail_metadata_may_arrive':False}));(p/'raw.bin').write_bytes(b'important_data');return p
  def test_latest_first_and_rename_does_not_change_order_or_uuid(self):
@@ -22,6 +27,15 @@ class CatalogTests(unittest.TestCase):
    p=self.fixture(root,'session_recording',1800000000,'recording')
    with self.assertRaises(ValueError):c.delete(root,'session_recording','session_recording','')
    self.assertTrue(p.exists())
+ def test_previous_boot_abandoned_writer_can_be_deleted_but_current_writer_cannot(self):
+  import session_catalog as c
+  with tempfile.TemporaryDirectory() as t:
+   root=pathlib.Path(t);p=self.fixture(root,'session_abandoned',1800000000,'finalizing')
+   manifest=json.loads((p/'manifest.json').read_text());manifest['boot_id']='previous-boot';(p/'manifest.json').write_text(json.dumps(manifest))
+   summary=json.loads((p/'session_summary.json').read_text());summary['tail_metadata_may_arrive']=True;(p/'session_summary.json').write_text(json.dumps(summary))
+   with self.assertRaises(ValueError):c.delete(root,'session_abandoned','session_abandoned','',current_boot_id='previous-boot')
+   with self.assertRaises(ValueError):c.delete(root,'session_abandoned','session_abandoned','session_abandoned',current_boot_id='new-boot')
+   c.delete(root,'session_abandoned','session_abandoned','',current_boot_id='new-boot');self.assertFalse(p.exists())
  def test_paths_symlinks_and_names_rejected(self):
   import session_catalog as c
   with tempfile.TemporaryDirectory() as t:

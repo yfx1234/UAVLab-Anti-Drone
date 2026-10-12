@@ -12,6 +12,6 @@ class ClockFolderTests(unittest.TestCase):
   with tempfile.TemporaryDirectory() as tmp:
    root=pathlib.Path(tmp);p=root/'fixture/exports/segment_1/rgb_video.view.mp4';p.parent.mkdir(parents=True);p.touch();library=MediaLibrary(root)
    with patch('media_library.subprocess.Popen') as launch:
-    result=library.open_folder('fixture/exports/segment_1/rgb_video.view.mp4');self.assertEqual(result['folder'],str(p.parent.resolve()));launch.assert_called_once()
+    result=library.open_folder('fixture/exports/segment_1/rgb_video.view.mp4');self.assertTrue(pathlib.Path(result['file']).is_file());self.assertEqual(pathlib.Path(result['folder']),pathlib.Path(result['file']).parent);launch.assert_called_once()
    with self.assertRaises(ValueError):library.open_folder('../outside.mp4')
 if __name__=='__main__':unittest.main()
