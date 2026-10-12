@@ -75,6 +75,11 @@ install(PROGRAMS
 endif()
 
 if(BUILD_TESTING)
+  add_executable(test_generic_sky test/test_generic_sky.cpp)
+  target_include_directories(test_generic_sky PRIVATE include ${OpenCV_INCLUDE_DIRS})
+  target_link_libraries(test_generic_sky ${OpenCV_LIBS})
+  target_compile_options(test_generic_sky PRIVATE -UNDEBUG)
+  add_test(NAME test_generic_sky COMMAND test_generic_sky)
   add_executable(test_camera_modes test/test_camera_modes.cpp)
   target_include_directories(test_camera_modes PRIVATE include)
   target_compile_options(test_camera_modes PRIVATE -UNDEBUG)

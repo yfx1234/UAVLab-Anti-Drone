@@ -28,6 +28,7 @@
 #include "zed_tracking/geometry.hpp"
 #include "zed_tracking/perception_quality.hpp"
 #include "zed_tracking/camera_modes.hpp"
+#include "zed_tracking/generic_sky_detector.hpp"
 #include "trt_runner.hpp"
 #include "zed_source.hpp"
 
@@ -51,6 +52,8 @@ struct Frame {
   std::vector<unsigned char> bgra;std::vector<float> depth,confidence;
   std::string session;uint32_t segment{0};bool recorded{false};uint64_t detector_generation{0};
   double effective_size{.30};std::string model,calibration_id;bool calibrated{false};
+  bool yolo_enabled{false},generic_enabled{false};double nominal_size{.30};
+  std::string generic_sensitivity{"standard"};zed_tracking::CameraMotionSample motion;
 };
 struct PreviewJob {std::shared_ptr<const Frame> frame;Json metadata;};
 
@@ -109,6 +112,8 @@ class Perception final:public rclcpp::Node {
   fs::path calibration_file_{"/home/uavlab/Jetson_ROS2_V0/perception_config/range_calibration.json"};
   std::string run_,boot_,profile_,engine_,model_;double target_size_{.30},effective_size_{.30};std::string size_definition_{"unconfirmed_30cm_extent"},calibration_id_{"initial_prior"};
   std::atomic<bool> stop_{false},detector_{false};std::atomic<int> detector_state_{0}; // disabled/loading/running/error
+  std::atomic<bool> generic_detector_{false};std::atomic<int> generic_state_{0};
+  std::string generic_sensitivity_{"standard"};
   std::atomic<uint64_t> detector_generation_{0};bool calibrated_{false};
   std::atomic<uint64_t> config_revision_{0};
   Json calibration_data_;
@@ -158,7 +163,11 @@ class Perception final:public rclcpp::Node {
     Json j={{"schema_version",1},{"run_id",run_},{"boot_id",boot_},{"frame_id","zed_left_camera_optical_frame"},
       {"frame_key",run_+"_"+std::to_string(f.sequence)},{"sequence",f.sequence},{"stamp_ns",f.stamp},
       {"monotonic_s",f.acquired},{"image_width",f.w},{"image_height",f.h},{"model_id",f.model},{"camera_serial",intrinsics_.serial_number},
-      {"detector_enabled",detector_state_==2},{"detector_state",detector_state_.load()},
+      {"detector_enabled",(f.yolo_enabled&&detector_state_==2)||(f.generic_enabled&&generic_state_==2)},
+      {"yolo_enabled",f.yolo_enabled},{"detector_state",detector_state_.load()},
+      {"generic_detector_enabled",f.generic_enabled},{"generic_detector_state",generic_state_.load()},
+      {"detector_generation",f.detector_generation},{"generic_sensitivity",f.generic_sensitivity},
+      {"camera_motion_valid",f.motion.valid},
       {"session_id",f.session},{"segment_id",f.segment},{"recorded",nullptr},{"record_submitted",f.recorded},{"targets",Json::array()}};
     j["intrinsics"]={{"fx",intrinsics_.fx},{"fy",intrinsics_.fy},{"cx",intrinsics_.cx},{"cy",intrinsics_.cy}};
     return j;
@@ -179,7 +188,7 @@ class Perception final:public rclcpp::Node {
   }
   void publish_status(){
     std::lock_guard<std::mutex> status_guard(status_io_mutex_);
-    Json j;{std::lock_guard<std::mutex> l(state_mutex_);j=status_;j["model_id"]=model_;j["target_size_m"]=target_size_;j["calibration_id"]=calibration_id_;}
+    Json j;{std::lock_guard<std::mutex> l(state_mutex_);j=status_;j["model_id"]=model_;j["target_size_m"]=target_size_;j["calibration_id"]=calibration_id_;j["generic_sensitivity"]=generic_sensitivity_;}
     double now=monotonic_s();j["run_id"]=run_;j["boot_id"]=boot_;j["monotonic_s"]=now;
     j["profile"]=profile_;j["depth_enabled"]=depth_enabled_.load();
     j["capture_frames"]=sequence_.load();j["inference_frames"]=inferred_.load();j["dropped_frames"]=dropped_.load();
@@ -188,15 +197,17 @@ class Perception final:public rclcpp::Node {
     double elapsed=std::max(.001,now-started_),window=std::max(.001,now-last_status_time_);
     bool running=j["camera_state"]=="running";
     j["capture_hz"]=running&&last_status_time_>0?double(sequence_-last_status_capture_)/window:0;
-    j["inference_hz"]=running&&detector_&&last_status_time_>0?double(inferred_-last_status_infer_)/window:0;
+    j["inference_hz"]=running&&(detector_||generic_detector_)&&last_status_time_>0?double(inferred_-last_status_infer_)/window:0;
     j["average_capture_hz"]=sequence_/elapsed;j["average_inference_hz"]=inferred_/elapsed;
     last_status_time_=now;last_status_capture_=sequence_;last_status_infer_=inferred_;
     j["detector_state"]=detector_state_.load();j["detector_enabled"]=detector_.load();
+    j["generic_detector_state"]=generic_state_.load();j["generic_detector_enabled"]=generic_detector_.load();
+    j["detector_generation"]=detector_generation_.load();
     j["preview_frames"]=preview_.frames_sent.load();j["preview_mbps"]=preview_.bytes_sent*8/elapsed/1e6;j["preview_listening"]=preview_.listening.load();
     j["dropped_metadata"]=dropped_logs_.load();
     j["node_config_revision"]=config_revision_.load();
     j["record_write_bytes_s"]=write_rate_.load();j["disk_reserve_bytes"]=disk_reserve_.load();
-    j["targets_valid"]=zed_tracking::targets_are_fresh(running,detector_&&detector_state_==2,
+    j["targets_valid"]=zed_tracking::targets_are_fresh(running,(detector_&&detector_state_==2)||(generic_detector_&&generic_state_==2),
       last_frame_>0?now-last_frame_:-1,last_infer_>0?now-last_infer_:-1);
     j["record_elapsed_s"]=record_started_>0?Json(now-record_started_):Json(nullptr);
     try{const uint64_t available=fs::space(records_.parent_path()).available;j["disk_free_bytes"]=available;
@@ -240,9 +251,19 @@ class Perception final:public rclcpp::Node {
         if(enabled&&!zed_tracking::model_change_allowed(!session_id_.empty(),model_,p.value("model_id",model_)))
           throw std::runtime_error("finish recording before changing model identity");
         if(enabled){{std::lock_guard<std::mutex> l(state_mutex_);engine_=p.value("engine_path",engine_);model_=p.value("model_id",model_);}apply_range_calibration();}
-        source.set_depth_enabled(enabled);depth_enabled_=enabled;
+        source.set_depth_enabled(enabled||generic_detector_);depth_enabled_=source.depth_enabled();
         ++detector_generation_;detector_=enabled;detector_state_=enabled?1:0;
         {std::lock_guard<std::mutex> l(queue_mutex_);if(latest_)pending_work_.release(latest_->session);latest_.reset();}queue_cv_.notify_all();
+        if(!session_id_.empty())log(session_/"events.jsonl",{{"event","detector_change"},{"source","yolo"},{"enabled",enabled},{"generation",detector_generation_.load()},{"monotonic_s",monotonic_s()}});
+      }else if(action=="set_generic_detector"){
+        bool enabled=p.at("enabled");std::string sensitivity;
+        {std::lock_guard<std::mutex> l(state_mutex_);sensitivity=p.value("sensitivity",generic_sensitivity_);}
+        zed_tracking::sky_options(sensitivity);
+        source.set_depth_enabled(enabled||detector_);depth_enabled_=source.depth_enabled();
+        {std::lock_guard<std::mutex> l(state_mutex_);generic_sensitivity_=sensitivity;}
+        ++detector_generation_;generic_detector_=enabled;generic_state_=enabled?1:0;
+        {std::lock_guard<std::mutex> l(queue_mutex_);if(latest_)pending_work_.release(latest_->session);latest_.reset();}queue_cv_.notify_all();
+        if(!session_id_.empty())log(session_/"events.jsonl",{{"event","detector_change"},{"source","generic"},{"enabled",enabled},{"sensitivity",sensitivity},{"generation",detector_generation_.load()},{"monotonic_s",monotonic_s()}});
       }else if(action=="start_raw_record"){
         if(!session_id_.empty())throw std::runtime_error("recording already active");
         if(fs::space(records_.parent_path()).available<disk_reserve_)throw std::runtime_error("disk below measured recording reserve");
@@ -254,6 +275,8 @@ class Perception final:public rclcpp::Node {
         Json manifest={{"schema_version",1},{"session_id",session_id_},{"request_id",rid},{"run_id",run_},{"boot_id",boot_},
           {"profile",profile_},{"codec","LOSSLESS"},{"segment_seconds",60},{"model_id",model_},
           {"camera_resolution",camera_resolution_},{"configured_capture_fps",capture_fps_},
+          {"yolo_enabled",detector_.load()},{"generic_detector_enabled",generic_detector_.load()},{"generic_sensitivity",generic_sensitivity_},
+          {"generic_size_prior_calibrated",false},{"generic_size_prior_m",target_size_},
           {"camera_serial",intrinsics_.serial_number},{"sdk_version",std::string(sl::Camera::getSDKVersion().c_str())},
           {"tensorrt_version",std::to_string(NV_TENSORRT_MAJOR)+"."+std::to_string(NV_TENSORRT_MINOR)},
           {"target_size_m",target_size_},{"calibration_id",calibration_id_},{"metadata",p},
@@ -322,7 +345,7 @@ class Perception final:public rclcpp::Node {
     zed_tracking::ZedSource source;
     try{
       zed_tracking::ZedAcquireConfig cfg;cfg.fps=capture_fps_;cfg.resolution=camera_resolution_;
-      cfg.depth_mode="NEURAL_LIGHT";cfg.depth_computation_enabled=detector_.load();source.open(cfg);
+      cfg.depth_mode="NEURAL_LIGHT";cfg.depth_computation_enabled=detector_||generic_detector_;source.open(cfg);
       if(std::abs(source.configured_fps()-capture_fps_)>.5)throw std::runtime_error("camera FPS differs from requested configuration");
       depth_enabled_=source.depth_enabled();
       intrinsics_=source.intrinsics();apply_range_calibration();set_status("camera_state","running");
@@ -331,20 +354,25 @@ class Perception final:public rclcpp::Node {
       int failures=0;double last_resource=0;uint64_t previous_free=fs::space(records_.parent_path()).available;
       while(!stop_&&rclcpp::ok()){
         commands(source);
-        if(source.depth_enabled()!=detector_.load()){source.set_depth_enabled(detector_.load());depth_enabled_=source.depth_enabled();}
+        bool any_detector=detector_||generic_detector_;
+        if(source.depth_enabled()!=any_detector){source.set_depth_enabled(any_detector);depth_enabled_=source.depth_enabled();}
         if(!source.grab()){
           if(++failures>=40)throw std::runtime_error("repeated SDK grab failure");
           std::this_thread::sleep_for(std::chrono::milliseconds(50));continue;
         }
         failures=0;uint32_t seq=++sequence_;double now=monotonic_s();last_frame_=now;
         bool recorded=false;int64_t stamp=source.image_timestamp_ns();
+        auto motion=source.camera_motion(stamp);
         std::string sid=session_id_;int seg=segment_;
         if(!sid.empty()){
           auto rs=source.recording_status();recorded=true;++recorded_frames_;
           if(rs.status)recording_failures_=0;else ++recording_failures_;
           log(session_/"frames.jsonl",{{"sequence",seq},{"stamp_ns",stamp},{"monotonic_s",now},{"segment_id",seg},
             {"submitted",true},{"recorded",nullptr},{"sdk_recording_status",rs.status},
-            {"sdk_frames_ingested",rs.number_frames_ingested},{"sdk_frames_encoded",rs.number_frames_encoded}});
+            {"sdk_frames_ingested",rs.number_frames_ingested},{"sdk_frames_encoded",rs.number_frames_encoded},
+            {"yolo_enabled",detector_.load()},{"generic_detector_enabled",generic_detector_.load()},
+            {"detector_generation",detector_generation_.load()},{"camera_motion_valid",motion.valid},
+            {"camera_motion_timestamp_ns",motion.timestamp_ns},{"camera_quaternion_wxyz",motion.quaternion_wxyz}});
           if(recording_failures_>=10)finish_record(source,"sdk_recording_failed");
           else if(metadata_failed_)finish_record(source,"metadata_writer_failed");
           else if(fs::space(records_.parent_path()).available<disk_reserve_)finish_record(source,"disk_reserve");
@@ -370,7 +398,9 @@ class Perception final:public rclcpp::Node {
         }
         // SDK records every grab; FPS is separately selected from YOLO input size.
         auto f=std::make_shared<Frame>();f->sequence=seq;f->stamp=stamp;f->acquired=now;f->session=sid;f->segment=seg;f->recorded=recorded;f->detector_generation=detector_generation_;
-        {std::lock_guard<std::mutex> l(state_mutex_);f->model=model_;f->effective_size=effective_size_;f->calibration_id=calibration_id_;f->calibrated=calibrated_;}
+        {std::lock_guard<std::mutex> l(state_mutex_);f->model=model_;f->effective_size=effective_size_;f->calibration_id=calibration_id_;f->calibrated=calibrated_;
+          f->generic_sensitivity=generic_sensitivity_;f->nominal_size=target_size_;}
+        f->yolo_enabled=detector_;f->generic_enabled=generic_detector_;f->motion=motion;
         const sl::Mat& left=source.retrieve_left();f->w=int(left.getWidth());f->h=int(left.getHeight());
         size_t rowbytes=size_t(f->w)*4;f->bgra.resize(rowbytes*f->h);auto ptr=left.getPtr<sl::uchar1>();
         for(int y=0;y<f->h;++y)std::memcpy(f->bgra.data()+y*rowbytes,reinterpret_cast<const unsigned char*>(ptr)+y*left.getStepBytes(),rowbytes);
@@ -382,8 +412,8 @@ class Perception final:public rclcpp::Node {
               std::memcpy(f->confidence.data()+y*f->w,reinterpret_cast<const char*>(c.getPtr<float>())+y*c.getStepBytes(),f->w*sizeof(float));}
           }catch(const std::exception& e){f->depth.clear();f->confidence.clear();if(seq%30==0)error("depth",e.what());}
         }
-        if(!detector_||detector_state_==3){preview_.offer(f,base(*f));continue;}
-        if(detector_state_!=2)preview_.offer(f,base(*f));
+        if(!f->yolo_enabled&&!f->generic_enabled){preview_.offer(f,base(*f));continue;}
+        if((f->yolo_enabled&&detector_state_!=2)||(f->generic_enabled&&generic_state_!=2))preview_.offer(f,base(*f));
         {std::lock_guard<std::mutex> l(queue_mutex_);if(latest_){++dropped_;pending_work_.release(latest_->session);}
           pending_work_.acquire(f->session);latest_=std::move(f);}queue_cv_.notify_one();
       }
@@ -412,33 +442,83 @@ class Perception final:public rclcpp::Node {
     return boxes;
   }
   void infer_loop(){
-    std::unique_ptr<zed_tracking::TrtRunner> runner;zed_tracking::TargetAssociation association;uint64_t applied_generation=0;
+    std::unique_ptr<zed_tracking::TrtRunner> runner;zed_tracking::TargetAssociation association;
+    zed_tracking::GenericSkyDetector sky_detector;zed_tracking::GenericSkyTracker sky_tracker;
+    uint64_t applied_generation=0;
     while(!stop_){std::shared_ptr<const Frame> f;
       {std::unique_lock<std::mutex> l(queue_mutex_);queue_cv_.wait_for(l,std::chrono::milliseconds(100),[&]{return stop_||bool(latest_);});
-       if(stop_)break;if(!latest_)continue;f=std::move(latest_);}
+       if(stop_)break;if(latest_)f=std::move(latest_);}
+      if(!detector_)runner.reset(); // Release GPU memory even when both modes are now disabled.
+      if(!f)continue;
       auto release_work=[this](const Frame* frame){pending_work_.release(frame->session);};
       std::unique_ptr<const Frame,decltype(release_work)> work_guard(f.get(),release_work);
-      if(!detector_||f->detector_generation!=detector_generation_){runner.reset();association.reset();continue;}
-      if(applied_generation!=f->detector_generation){association.reset();applied_generation=f->detector_generation;}
+      if(f->detector_generation!=detector_generation_)continue;
+      if(applied_generation!=f->detector_generation){association.reset();sky_tracker.clear();applied_generation=f->detector_generation;}
       try{
-        if(!runner){detector_state_=1;runner=std::make_unique<zed_tracking::TrtRunner>();std::string engine;
-          {std::lock_guard<std::mutex> l(state_mutex_);engine=engine_;}runner->load(engine);}
-        auto boxes=detect(*f,*runner);
+        std::vector<Detection> boxes;std::vector<zed_tracking::SkyTrack> generic;
+        std::vector<zed_tracking::SkyCandidate> candidates;
+        double yolo_ms=0,generic_ms=0;
+        if(f->yolo_enabled){
+          const auto start=Steady::now();
+          try{
+            if(!runner){detector_state_=1;runner=std::make_unique<zed_tracking::TrtRunner>();std::string engine;
+              {std::lock_guard<std::mutex> l(state_mutex_);engine=engine_;}runner->load(engine);}
+            boxes=detect(*f,*runner);
+            if(f->detector_generation==detector_generation_)detector_state_=2;
+          }catch(const std::exception& e){runner.reset();
+            if(f->detector_generation==detector_generation_){detector_=false;detector_state_=3;++detector_generation_;error("yolo",e.what());}}
+          yolo_ms=std::chrono::duration<double,std::milli>(Steady::now()-start).count();
+        }
+        if(f->generic_enabled && f->detector_generation==detector_generation_){
+          const auto start=Steady::now();
+          try{
+            cv::Mat image(f->h,f->w,CV_8UC4,const_cast<unsigned char*>(f->bgra.data()));
+            auto options=zed_tracking::sky_options(f->generic_sensitivity);
+            candidates=sky_detector.detect(image,options);
+            zed_tracking::SkyIntrinsics k{intrinsics_.fx,intrinsics_.fy,intrinsics_.cx,intrinsics_.cy,f->w,f->h};
+            generic=sky_tracker.update(candidates,k,f->stamp*1e-9,f->motion,options.confirmation_frames);
+            if(f->detector_generation==detector_generation_)generic_state_=2;
+          }catch(const std::exception& e){sky_tracker.clear();
+            if(f->detector_generation==detector_generation_){generic_detector_=false;generic_state_=3;++detector_generation_;error("generic",e.what());}}
+          generic_ms=std::chrono::duration<double,std::milli>(Steady::now()-start).count();
+        }
         if(stop_||!rclcpp::ok())break;
-        if(!detector_||f->detector_generation!=detector_generation_){preview_.offer(f,base(*f));continue;}
-        detector_state_=2;
+        if(f->detector_generation!=detector_generation_)continue;
+        set_status("yolo_detector_ms",yolo_ms);set_status("generic_detector_ms",generic_ms);
+        set_status("camera_motion_valid",f->motion.valid);
         auto ids=association.assign(boxes,f->acquired);Json packet=base(*f);
+        struct Input {Detection box;uint32_t id;bool generic_only;std::string source;bool motion_compensated;};
+        std::vector<Input> inputs;std::vector<bool> used_generic(generic.size(),false);
+        for(size_t i=0;i<boxes.size();++i){bool supported=false;const auto& b=boxes[i];
+          zed_tracking::SkyCandidate y{b.x1,b.y1,b.x2,b.y2,b.score};
+          for(size_t gi=0;gi<generic.size();++gi){const auto& g=generic[gi];
+            const double cx=(g.x1+g.x2)/2,cy=(g.y1+g.y2)/2;
+            const double ratio=std::max(g.x2-g.x1,g.y2-g.y1)/std::max(b.x2-b.x1,b.y2-b.y1);
+            if(zed_tracking::sky_iou(y,g)>.2 || (ratio>.3&&ratio<2&&cx>=b.x1&&cx<=b.x2&&cy>=b.y1&&cy<=b.y2)){
+              used_generic[gi]=true;supported=true;}}
+          inputs.push_back({b,ids[i],false,supported?"yolo+generic":"yolo",false});
+        }
+        for(size_t gi=0;gi<generic.size();++gi)if(!used_generic[gi]){
+          const auto& g=generic[gi];Detection b{g.x1,g.y1,g.x2,g.y2,g.score,-1};
+          inputs.push_back({b,0x80000000u|g.id,true,"generic",g.motion_compensated});
+        }
+        packet["detector_timings_ms"]={{"yolo",yolo_ms},{"generic",generic_ms}};
+        packet["generic_candidate_count"]=candidates.size();packet["generic_confirmed_count"]=generic.size();
         zed_perception_interfaces::msg::PerceptionFrame msg;
         msg.header.stamp=rclcpp::Time(f->stamp);msg.header.frame_id="zed_left_camera_optical_frame";
         msg.run_id=run_;msg.model_id=packet["model_id"];msg.sequence=f->sequence;msg.image_width=f->w;msg.image_height=f->h;msg.detector_enabled=true;
-        double extent=f->effective_size;std::string cid=f->calibration_id;bool calibrated=f->calibrated;
-        for(size_t i=0;i<boxes.size();++i){const auto& b=boxes[i];double u=(b.x1+b.x2)/2,v=(b.y1+b.y2)/2;
+        msg.yolo_enabled=f->yolo_enabled;msg.generic_detector_enabled=f->generic_enabled;msg.detector_generation=f->detector_generation;
+        for(const auto& input:inputs){const auto& b=input.box;double u=(b.x1+b.x2)/2,v=(b.y1+b.y2)/2;
+          const double extent=input.generic_only?f->nominal_size:f->effective_size;
+          const std::string cid=input.generic_only?"generic_nominal_extent_prior":f->calibration_id;
+          const bool calibrated=!input.generic_only&&f->calibrated;
           bool clipped=b.x1<=1||b.y1<=1||b.x2>=f->w-2||b.y2>=f->h-2;
           auto q=zed_tracking::assess_target_depth(f->depth.empty()?nullptr:f->depth.data(),f->confidence.empty()?nullptr:f->confidence.data(),f->w,f->h,b.x1,b.y1,b.x2,b.y2);
           auto estimate=zed_tracking::estimate_target_z(extent,intrinsics_.fx,intrinsics_.fy,b.x2-b.x1,b.y2-b.y1,clipped);
           bool consistent=estimate.valid&&zed_tracking::depth_matches_size_prior(q.z,estimate.z);
           bool separated=q.accepted&&zed_tracking::target_separates_from_background(f->depth.data(),f->confidence.data(),f->w,f->h,b.x1,b.y1,b.x2,b.y2,q.z);
-          bool measured=association.depth_ready(ids[i],q.accepted&&!clipped&&consistent&&separated);
+          const bool accepted=q.accepted&&!clipped&&consistent&&separated;
+          bool measured=input.generic_only?sky_tracker.confirm_depth(input.id&0x7fffffffu,accepted):association.depth_ready(input.id,accepted);
           bool valid=measured||estimate.valid;double z=measured?q.z:(estimate.valid?estimate.z:0);
           auto p=zed_tracking::project_target(u,v,z,intrinsics_.fx,intrinsics_.fy,intrinsics_.cx,intrinsics_.cy);
           std::string mode=measured?"depth":(valid?"size_estimate":"bearing_only");
@@ -447,7 +527,9 @@ class Perception final:public rclcpp::Node {
           if(q.accepted&&!consistent&&!clipped&&estimate.valid)reason="depth_size_disagreement";
           if(q.accepted&&consistent&&!separated&&!clipped)reason="background_depth_ambiguous";
           if(!valid&&!clipped)reason="box_too_small";
-          Json target={{"track_id",ids[i]},{"class_id",b.class_id},{"confidence",b.score},{"bbox_xyxy",{b.x1,b.y1,b.x2,b.y2}},
+          Json target={{"track_id",input.id},{"class_id",b.class_id},{"confidence",b.score},{"bbox_xyxy",{b.x1,b.y1,b.x2,b.y2}},
+            {"detector_source",input.source},{"score_kind",input.generic_only?"contrast_score":"class_confidence"},{"class_confirmed",!input.generic_only},
+            {"camera_motion_compensated",input.motion_compensated},{"size_prior_m",extent},
             {"pixel_u",u},{"pixel_v",v},{"unit_los",p.los},{"horizontal_angle_rad",p.horizontal},{"vertical_angle_rad",p.vertical},
             {"mode",mode},{"position_valid",valid},{"depth_measured_valid",measured},{"covariance_valid",false},
             {"depth_z_m",measured?Json(z):Json(nullptr)},{"estimated_depth_z_m",!measured&&valid?Json(z):Json(nullptr)},
@@ -455,7 +537,8 @@ class Perception final:public rclcpp::Node {
             {"depth_valid_pixels",q.count},{"depth_valid_ratio",q.ratio},{"depth_iqr_m",q.iqr},{"reason",reason},
             {"calibration_id",cid},{"size_estimate_calibrated",calibrated},{"position_definition","supported_surface_center_ray"}};
           packet["targets"].push_back(target);
-          zed_perception_interfaces::msg::TargetObservation t;t.track_id=ids[i];t.class_id=b.class_id;t.confidence=b.score;
+          zed_perception_interfaces::msg::TargetObservation t;t.track_id=input.id;t.class_id=b.class_id;t.confidence=b.score;
+          t.detector_source=input.source;t.score_kind=input.generic_only?"contrast_score":"class_confidence";t.class_confirmed=!input.generic_only;
           t.bbox_xyxy={b.x1,b.y1,b.x2,b.y2};t.pixel_u=u;t.pixel_v=v;t.unit_los.x=p.los[0];t.unit_los.y=p.los[1];t.unit_los.z=p.los[2];
           t.horizontal_angle_rad=p.horizontal;t.vertical_angle_rad=p.vertical;t.mode=mode;t.position_valid=valid;t.depth_measured_valid=measured;
           t.depth_z_m=measured?z:0;t.estimated_depth_z_m=!measured&&valid?z:0;t.distance_m=valid?p.distance:0;
@@ -463,11 +546,19 @@ class Perception final:public rclcpp::Node {
           t.depth_valid_ratio=q.ratio;t.depth_iqr_m=q.iqr;t.reason=reason;msg.targets.push_back(t);
         }
         observations_->publish(msg);std_msgs::msg::String out;out.data=packet.dump();json_pub_->publish(out);
-        if(!f->session.empty())log(records_/f->session/"observations.jsonl",packet);
+        if(!f->session.empty()){
+          log(records_/f->session/"observations.jsonl",packet);
+          Json comparison={{"sequence",f->sequence},{"stamp_ns",f->stamp},{"detector_generation",f->detector_generation},
+            {"yolo_enabled",f->yolo_enabled},{"generic_detector_enabled",f->generic_enabled},{"generic_sensitivity",f->generic_sensitivity},
+            {"camera_motion_valid",f->motion.valid},{"timings_ms",packet["detector_timings_ms"]},{"yolo_boxes",Json::array()},
+            {"generic_candidates",Json::array()},{"generic_tracks",Json::array()}};
+          for(const auto& b:boxes)comparison["yolo_boxes"].push_back({b.x1,b.y1,b.x2,b.y2,b.score});
+          for(const auto& b:candidates)comparison["generic_candidates"].push_back({b.x1,b.y1,b.x2,b.y2,b.score});
+          for(const auto& b:generic)comparison["generic_tracks"].push_back({{"id",b.id},{"bbox",{b.x1,b.y1,b.x2,b.y2}},{"motion_compensated",b.motion_compensated}});
+          log(records_/f->session/"detector_comparison.jsonl",comparison);
+        }
         ++inferred_;last_infer_=monotonic_s();preview_.offer(f,std::move(packet));
-      }catch(const std::exception& e){if(stop_||!rclcpp::ok())break;runner.reset();detector_state_=3;error("detector",e.what());preview_.offer(f,base(*f));
-        // Explicit retry through set_detector; no repeated allocation/crash loop.
-        detector_=false;}
+      }catch(const std::exception& e){if(stop_||!rclcpp::ok())break;error("observations",e.what());preview_.offer(f,base(*f));}
     }
   }
 public:

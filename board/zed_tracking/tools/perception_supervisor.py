@@ -22,7 +22,7 @@ EXE=WS/'install_perception/zed_tracking/lib/zed_tracking/zed_perception_standalo
 BOOT_FILE=pathlib.Path('/proc/sys/kernel/random/boot_id')
 SCHEMAS={
  'status':set(),'check_device':set(),'start_capture':{'profile','model_id','capture_fps','camera_resolution'},'stop_capture':set(),
- 'set_detector':{'enabled'},'start_raw_record':{'label','scene','lighting','size_definition','known_distance_m','distance_source','client_started_at_unix_s'},
+ 'set_detector':{'enabled'},'set_generic_detector':{'enabled','sensitivity'},'start_raw_record':{'label','scene','lighting','size_definition','known_distance_m','distance_source','client_started_at_unix_s'},
  'stop_raw_record':set(),'list_sessions':set(),'list_models':set(),'test_model':{'model_id'},
  'select_model':{'model_id'},'save_calibration':{'target_size_m','size_definition','samples'},
  'export_session':{'session_id','fps','mode'},'export_diagnostics':set(),
@@ -40,7 +40,9 @@ def validate_action(action,params):
         rates={'HD1080':(15,30,60),'HD1200':(15,30,60),'SVGA':(15,30,60,120)}
         if not isinstance(mode,str) or mode not in rates or type(fps) is not int or fps not in rates[mode]:
             raise ValueError('unsupported ZED X Mini resolution/FPS pair')
-    if action=='set_detector' and type(params.get('enabled')) is not bool:raise ValueError('enabled must be bool')
+    if action in ('set_detector','set_generic_detector') and type(params.get('enabled')) is not bool:raise ValueError('enabled must be bool')
+    if action=='set_generic_detector' and params.get('sensitivity','standard') not in ('high','standard','low'):
+        raise ValueError('generic sensitivity must be high/standard/low')
     if 'known_distance_m' in params:
         d=params['known_distance_m']
         if isinstance(d,bool) or not isinstance(d,(int,float)) or not math.isfinite(d) or d<=0:raise ValueError('distance must be positive finite')
@@ -267,7 +269,7 @@ def dispatch(request):
         elif action=='delete_session':
             from session_catalog import delete
             result=delete(RECORDS,params.get('session_id'),params.get('confirmation'),s.get('pipeline',{}).get('session_id',''),s['boot_id'])
-        elif action in ('set_detector','start_raw_record','stop_raw_record','save_calibration'):
+        elif action in ('set_detector','set_generic_detector','start_raw_record','stop_raw_record','save_calibration'):
             if action=='set_detector' and params['enabled']:
                 model=model_by_id(s.get('model_id') or None)
                 if s.get('pipeline',{}).get('record_state')=='recording' and model['model_id']!=s.get('model_id'):

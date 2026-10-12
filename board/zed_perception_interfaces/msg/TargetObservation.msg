@@ -1,6 +1,9 @@
 uint32 track_id
 int32 class_id
 float32 confidence
+string detector_source
+string score_kind
+bool class_confirmed
 float64[4] bbox_xyxy
 float64 pixel_u
 float64 pixel_v

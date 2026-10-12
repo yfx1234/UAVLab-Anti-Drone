@@ -11,6 +11,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include "zed_tracking/camera_motion.hpp"
 
 namespace zed_tracking
 {
@@ -90,6 +91,7 @@ public:
     }
     parameters.depth_mode = parse_depth_mode(config.depth_mode);
     parameters.coordinate_units = sl::UNIT::METER;
+    parameters.coordinate_system = sl::COORDINATE_SYSTEM::IMAGE;
     parameters.depth_minimum_distance =
       static_cast<float>(config.depth_min_m);
     parameters.depth_maximum_distance =
@@ -105,6 +107,9 @@ public:
     depth_available_ = config.depth_mode != "NONE";
     runtime_.enable_depth = depth_available_ && config.depth_computation_enabled;
     const sl::CameraInformation information = camera_.getCameraInformation();
+    const auto extrinsic=information.sensors_configuration.camera_imu_transform.getOrientation();
+    camera_from_imu_={extrinsic.w,extrinsic.x,extrinsic.y,extrinsic.z};
+    imu_extrinsic_valid_=normalized_quaternion(camera_from_imu_);
     configured_fps_ = information.camera_configuration.fps;
     intrinsics_.serial_number = information.serial_number;
     // retrieveImage/retrieveMeasure 输出的是校正后图像,配 calibration_parameters。
@@ -171,6 +176,20 @@ public:
 
   const CameraIntrinsics & intrinsics() const {return intrinsics_;}
 
+  // Image-aligned fused orientation; no VIO/SLAM or extra camera owner is started.
+  CameraMotionSample camera_motion(int64_t image_stamp_ns) {
+    CameraMotionSample sample;sl::SensorsData sensors;
+    if(!imu_extrinsic_valid_ || camera_.getSensorsData(sensors,sl::TIME_REFERENCE::IMAGE)!=sl::ERROR_CODE::SUCCESS ||
+       !sensors.imu.is_available)return sample;
+    auto q=sensors.imu.pose.getOrientation();
+    std::array<double,4> world_from_imu{q.w,q.x,q.y,q.z};
+    if(!normalized_quaternion(world_from_imu))return sample;
+    sample.timestamp_ns=sensors.imu.timestamp.data_ns;
+    sample.quaternion_wxyz=quaternion_product(world_from_imu,quaternion_conjugate(camera_from_imu_));
+    sample.valid=true;sample.valid=motion_matches_image(sample,image_stamp_ns*1e-9);
+    return sample;
+  }
+
   void start_recording(const std::string & path, const std::string & compression)
   {
     sl::RecordingParameters parameters;
@@ -220,6 +239,8 @@ private:
   sl::Mat depth_;
   sl::Mat confidence_;
   CameraIntrinsics intrinsics_{};
+  std::array<double,4> camera_from_imu_{1,0,0,0};
+  bool imu_extrinsic_valid_{false};
   bool depth_available_{false};
   float configured_fps_{0};
   std::atomic<bool> recording_{false};
