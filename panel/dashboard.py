@@ -19,7 +19,7 @@ from media_library import MediaLibrary
 from scene_registry import SceneRegistry
 
 BASE=pathlib.Path(__file__).resolve().parent
-OUTPUT=BASE.parents[1]/'outputs'/'perception_data'
+OUTPUT=pathlib.Path(os.environ.get('UAVLAB_OUTPUT_DIRECTORY',str(BASE.parents[1]/'outputs'/'perception_data'))).resolve()
 BOARD_ACTIONS={'check_device','start_capture','stop_capture','set_detector','start_raw_record','stop_raw_record',
                'list_sessions','list_models','test_model','select_model','save_calibration','export_session','export_diagnostics','prepare_dataset','rename_session','delete_session'}
 LOCAL_ACTIONS={'connect','disconnect','start_preview_record','stop_preview_record','download_session','download_asset','extract_local_frames','cancel_job','open_media_folder'}

@@ -4,8 +4,7 @@
   <name>zed_tracking</name>
   <version>0.1.0</version>
   <description>
-    ZED X Mini 单进程感知节点:采集、竖版 YOLO 检测、深度三维解算、SVO 录像。
-    替代旧三相机链路的相机与测距部分,输出轻量 JSON 话题供滤波/控制使用。
+    ZED X Mini 感知与采集:RGB、YOLO、相机坐标定位与 SVO 录像。
   </description>
   <maintainer email="uavlab@example.com">uavlab</maintainer>
   <license>Proprietary</license>
@@ -15,11 +14,8 @@
   <depend>rclcpp</depend>
   <depend>std_msgs</depend>
   <depend>zed_perception_interfaces</depend>
-  <!-- zed_track_filter_node 复用其 ConstantVelocityKalmanFilter(Python) -->
-  <exec_depend>falcon_intercept</exec_depend>
-  <test_depend>falcon_intercept</test_depend>
-
   <test_depend>ament_cmake_gtest</test_depend>
+  <test_depend>ament_cmake_pytest</test_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

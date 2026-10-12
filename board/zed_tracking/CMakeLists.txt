@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 project(zed_tracking)
+option(UAVLAB_BUILD_LEGACY_TRACKING "Install historical flight/filter tools and their tests" OFF)
 
 if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
@@ -59,6 +60,7 @@ install(TARGETS zed_perception_standalone export_svo_rgb DESTINATION lib/${PROJE
 install(PROGRAMS tools/perception_supervisor.py tools/export_session.py DESTINATION lib/${PROJECT_NAME})
 install(FILES tools/session_catalog.py tools/clock_reference.py DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY config launch DESTINATION share/${PROJECT_NAME})
+if(UAVLAB_BUILD_LEGACY_TRACKING)
 install(PROGRAMS
   scripts/zed_track_filter_node.py
   scripts/track_hold_node.py
@@ -70,6 +72,7 @@ install(PROGRAMS
   tools/replay_track_check.py
   tools/sim_analyze.py
   DESTINATION lib/${PROJECT_NAME})
+endif()
 
 if(BUILD_TESTING)
   add_executable(test_camera_modes test/test_camera_modes.cpp)
@@ -87,9 +90,11 @@ if(BUILD_TESTING)
   target_include_directories(test_depth_stats PRIVATE include)
   ament_add_gtest(test_yolo_decode test/test_yolo_decode.cpp)
   target_include_directories(test_yolo_decode PRIVATE include)
+  if(UAVLAB_BUILD_LEGACY_TRACKING)
   find_package(ament_cmake_pytest REQUIRED)
   ament_add_pytest_test(test_zed_track_filter test/test_zed_track_filter.py)
   ament_add_pytest_test(test_track_hold test/test_track_hold.py)
+  endif()
 endif()
 
 ament_package()

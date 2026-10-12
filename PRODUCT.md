@@ -20,7 +20,7 @@ web
 
 ## Operating Context
 
-当前板子为 Orin Nano 8GB、ZED X Mini 4 mm、H100 图传；未来迁移 NX 16GB。当前默认采集 15 fps。相机启动、YOLO、原始录像与电脑预览录像拥有独立的操作生命周期。
+当前板子为 Orin Nano 8GB、ZED X Mini 4 mm、H100 图传；未来迁移 NX 16GB。当前默认采集 15 fps。相机启动、YOLO与板上原始录像拥有独立的操作生命周期；电脑预览录像入口已移除。
 
 ## Capabilities and Constraints
 

@@ -1,0 +1,136 @@
+{
+  "collected_at_utc": "2026-10-12T08:49:00.890874+00:00",
+  "os_release": "PRETTY_NAME=\"Ubuntu 22.04.5 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"22.04\"\nVERSION=\"22.04.5 LTS (Jammy Jellyfish)\"\nVERSION_CODENAME=jammy\nID=ubuntu\nID_LIKE=debian\nHOME_URL=\"https://www.ubuntu.com/\"\nSUPPORT_URL=\"https://help.ubuntu.com/\"\nBUG_REPORT_URL=\"https://bugs.launchpad.net/ubuntu/\"\nPRIVACY_POLICY_URL=\"https://www.ubuntu.com/legal/terms-and-policies/privacy-policy\"\nUBUNTU_CODENAME=jammy",
+  "l4t_release": "# R36 (release), REVISION: 4.3, GCID: 38968081, BOARD: generic, EABI: aarch64, DATE: Wed Jan  8 01:49:37 UTC 2025\n# KERNEL_VARIANT: oot\nTARGET_USERSPACE_LIB_DIR=nvidia\nTARGET_USERSPACE_LIB_DIR_PATH=usr/lib/aarch64-linux-gnu/nvidia\n# Seeed Image Name mfi_recomputer-orin-nano-8g-j401-6.2-36.4.3-2026-02-05.tar.gz\n# branch R36.4.3\n# commit ID 453114c2cb5920e062f46df72765ba73ea6a773b",
+  "kernel": {
+    "exit_code": 0,
+    "stdout": "5.15.148-tegra"
+  },
+  "architecture": {
+    "exit_code": 0,
+    "stdout": "aarch64"
+  },
+  "device_tree_model": "NVIDIA Jetson Orin NX Engineering Reference Developer Kit Super\u0000",
+  "packages": {
+    "exit_code": 0,
+    "stdout": "cuda-cccl-12-6\t12.6.37-1\ncuda-command-line-tools-12-6\t12.6.11-1\ncuda-compiler-12-6\t12.6.11-1\ncuda-crt-12-6\t12.6.68-1\ncuda-cudart-12-6\t12.6.68-1\ncuda-cudart-dev-12-6\t12.6.68-1\ncuda-cuobjdump-12-6\t12.6.68-1\ncuda-cupti-12-6\t12.6.68-1\ncuda-cupti-dev-12-6\t12.6.68-1\ncuda-cuxxfilt-12-6\t12.6.68-1\ncuda-documentation-12-6\t12.6.68-1\ncuda-driver-dev-12-6\t12.6.68-1\ncuda-gdb-12-6\t12.6.68-1\ncuda-libraries-12-6\t12.6.11-1\ncuda-libraries-dev-12-6\t12.6.11-1\ncuda-nsight-compute-12-6\t12.6.11-1\ncuda-nvcc-12-6\t12.6.68-1\ncuda-nvdisasm-12-6\t12.6.68-1\ncuda-nvml-dev-12-6\t12.6.68-1\ncuda-nvprune-12-6\t12.6.68-1\ncuda-nvrtc-12-6\t12.6.68-1\ncuda-nvrtc-dev-12-6\t12.6.68-1\ncuda-nvtx-12-6\t12.6.68-1\ncuda-nvvm-12-6\t12.6.68-1\ncuda-profiler-api-12-6\t12.6.68-1\ncuda-runtime-12-6\t12.6.11-1\ncuda-sanitizer-12-6\t12.6.68-1\ncuda-toolkit-12-6\t12.6.11-1\ncuda-toolkit-12-6-config-common\t12.6.68-1\ncuda-toolkit-12-config-common\t12.6.68-1\ncuda-toolkit-config-common\t12.6.68-1\ncuda-tools-12-6\t12.6.11-1\ncuda-visual-tools-12-6\t12.6.11-1\nlibnvinfer-bin\t10.3.0.30-1+cuda12.5\nlibnvinfer-dev\t10.3.0.30-1+cuda12.5\nlibnvinfer-dispatch-dev\t10.3.0.30-1+cuda12.5\nlibnvinfer-dispatch10\t10.3.0.30-1+cuda12.5\nlibnvinfer-headers-dev\t10.3.0.30-1+cuda12.5\nlibnvinfer-headers-plugin-dev\t10.3.0.30-1+cuda12.5\nlibnvinfer-lean-dev\t10.3.0.30-1+cuda12.5\nlibnvinfer-lean10\t10.3.0.30-1+cuda12.5\nlibnvinfer-plugin-dev\t10.3.0.30-1+cuda12.5\nlibnvinfer-plugin10\t10.3.0.30-1+cuda12.5\nlibnvinfer-samples\t10.3.0.30-1+cuda12.5\nlibnvinfer-vc-plugin-dev\t10.3.0.30-1+cuda12.5\nlibnvinfer-vc-plugin10\t10.3.0.30-1+cuda12.5\nlibnvinfer10\t10.3.0.30-1+cuda12.5\nlibopencv\t4.8.0-1-g6371ee1\nlibopencv-calib3d4.5d:arm64\t4.5.4+dfsg-9ubuntu4\nlibopencv-contrib4.5d:arm64\t4.5.4+dfsg-9ubuntu4\nlibopencv-core4.5d:arm64\t4.5.4+dfsg-9ubuntu4\nlibopencv-dev\t4.8.0-1-g6371ee1\nlibopencv-dnn4.5d:arm64\t4.5.4+dfsg-9ubuntu4\nlibopencv-features2d4.5d:arm64\t4.5.4+dfsg-9ubuntu4\nlibopencv-flann4.5d:arm64\t4.5.4+dfsg-9ubuntu4\nlibopencv-highgui4.5d:arm64\t4.5.4+dfsg-9ubuntu4\nlibopencv-imgcodecs4.5d:arm64\t4.5.4+dfsg-9ubuntu4\nlibopencv-imgproc4.5d:arm64\t4.5.4+dfsg-9ubuntu4\nlibopencv-ml4.5d:arm64\t4.5.4+dfsg-9ubuntu4\nlibopencv-objdetect4.5d:arm64\t4.5.4+dfsg-9ubuntu4\nlibopencv-photo4.5d:arm64\t4.5.4+dfsg-9ubuntu4\nlibopencv-python\t4.8.0-1-g6371ee1\nlibopencv-samples\t4.8.0-1-g6371ee1\nlibopencv-shape4.5d:arm64\t4.5.4+dfsg-9ubuntu4\nlibopencv-stitching4.5d:arm64\t4.5.4+dfsg-9ubuntu4\nlibopencv-video4.5d:arm64\t4.5.4+dfsg-9ubuntu4\nlibopencv-videoio4.5d:arm64\t4.5.4+dfsg-9ubuntu4\nlibopencv-viz4.5d:arm64\t4.5.4+dfsg-9ubuntu4\nlibssl-dev:arm64\t3.0.2-0ubuntu1.25\nnvidia-l4t-3d-core\t36.4.3-20250107174145\nnvidia-l4t-apt-source\t36.4.3-20250107174145\nnvidia-l4t-bootloader\t36.4.3-20250107174145\nnvidia-l4t-camera\t36.4.3-20250107174145\nnvidia-l4t-configs\t36.4.3-20250107174145\nnvidia-l4t-core\t36.4.3-20250107174145\nnvidia-l4t-cuda\t36.4.3-20250107174145\nnvidia-l4t-cuda-utils\t36.4.3-20250107174145\nnvidia-l4t-cudadebuggingsupport\t12.6-34622040.0\nnvidia-l4t-display-kernel\t5.15.148-tegra-36.4.3-20250107174145\nnvidia-l4t-dla-compiler\t36.4.7-20250918154033\nnvidia-l4t-firmware\t36.4.3-20250107174145\nnvidia-l4t-gbm\t36.4.3-20250107174145\nnvidia-l4t-graphics-demos\t36.4.3-20250107174145\nnvidia-l4t-gstreamer\t36.4.7-20250918154033\nnvidia-l4t-init\t36.4.3-20250107174145\nnvidia-l4t-initrd\t36.4.3-20250107174145\nnvidia-l4t-jetson-io\t36.4.3-20250107174145\nnvidia-l4t-jetson-multimedia-api\t36.4.7-20250918154033\nnvidia-l4t-jetsonpower-gui-tools\t36.4.3-20250107174145\nnvidia-l4t-kernel\t5.15.148-tegra-36.4.3-20250107174145\nnvidia-l4t-kernel-dtbs\t5.15.148-tegra-36.4.3-20250107174145\nnvidia-l4t-kernel-headers\t5.15.148-tegra-36.4.3-20250107174145\nnvidia-l4t-kernel-oot-headers\t5.15.148-tegra-36.4.3-20250107174145\nnvidia-l4t-kernel-oot-modules\t5.15.148-tegra-36.4.3-20250107174145\nnvidia-l4t-libwayland-client0\t36.4.3-20250107174145\nnvidia-l4t-libwayland-cursor0\t36.4.3-20250107174145\nnvidia-l4t-libwayland-egl1\t36.4.3-20250107174145\nnvidia-l4t-libwayland-server0\t36.4.3-20250107174145\nnvidia-l4t-multimedia\t36.4.3-20250107174145\nnvidia-l4t-multimedia-utils\t36.4.3-20250107174145\nnvidia-l4t-nvfancontrol\t36.4.3-20250107174145\nnvidia-l4t-nvml\t36.4.3-20250107174145\nnvidia-l4t-nvpmodel\t36.4.3-20250107174145\nnvidia-l4t-nvpmodel-gui-tools\t36.4.3-20250107174145\nnvidia-l4t-nvsci\t36.4.3-20250107174145\nnvidia-l4t-oem-config\t36.4.3-20250107174145\nnvidia-l4t-openwfd\t36.4.3-20250107174145\nnvidia-l4t-optee\t36.4.3-20250107174145\nnvidia-l4t-pva\t36.4.3-20250107174145\nnvidia-l4t-tools\t36.4.3-20250107174145\nnvidia-l4t-vulkan-sc\t36.4.3-20250107174145\nnvidia-l4t-vulkan-sc-dev\t36.4.3-20250107174145\nnvidia-l4t-vulkan-sc-samples\t36.4.3-20250107174145\nnvidia-l4t-vulkan-sc-sdk\t36.4.3-20250107174145\nnvidia-l4t-wayland\t36.4.3-20250107174145\nnvidia-l4t-weston\t36.4.3-20250107174145\nnvidia-l4t-x11\t36.4.3-20250107174145\nnvidia-l4t-xusb-firmware\t36.4.3-20250107174145\npython3-colcon-argcomplete\t0.3.3+upstream-1\npython3-colcon-bash\t0.5.0-100\npython3-colcon-cd\t0.2.1-100\npython3-colcon-cmake\t0.2.30+upstream-1\npython3-colcon-common-extensions\t0.3.0-100\npython3-colcon-core\t0.21.0+upstream-1\npython3-colcon-defaults\t0.2.9+upstream-1\npython3-colcon-devtools\t0.3.0-100\npython3-colcon-installed-package-information\t0.2.1-100\npython3-colcon-library-path\t0.2.1-100\npython3-colcon-metadata\t0.2.5-100\npython3-colcon-notification\t0.3.1+upstream-1\npython3-colcon-output\t0.2.14+upstream-1\npython3-colcon-override-check\t0.0.1-100\npython3-colcon-package-information\t0.4.1+upstream-1\npython3-colcon-package-selection\t0.2.10-100\npython3-colcon-parallel-executor\t0.3.0-100\npython3-colcon-pkg-config\t0.1.0-100\npython3-colcon-powershell\t0.5.0+upstream-1\npython3-colcon-python-setup-py\t0.2.9-100\npython3-colcon-recursive-crawl\t0.2.3-100\npython3-colcon-ros\t0.5.0+upstream-1\npython3-colcon-test-result\t0.3.8-100\npython3-colcon-zsh\t0.5.0-100\nros-humble-action-msgs\t1.2.3-1jammy.20260605.133057\nros-humble-actionlib-msgs\t4.9.1-1jammy.20260605.141339\nros-humble-ament-cmake\t1.3.14-1jammy.20260307.124427\nros-humble-ament-cmake-auto\t1.3.14-1jammy.20260307.134911\nros-humble-ament-cmake-copyright\t0.12.15-1jammy.20260307.134433\nros-humble-ament-cmake-core\t1.3.14-1jammy.20260224.185835\nros-humble-ament-cmake-cppcheck\t0.12.15-1jammy.20260307.134937\nros-humble-ament-cmake-cpplint\t0.12.15-1jammy.20260307.135534\nros-humble-ament-cmake-export-definitions\t1.3.14-1jammy.20260224.215805\nros-humble-ament-cmake-export-dependencies\t1.3.14-1jammy.20260306.211159\nros-humble-ament-cmake-export-include-directories\t1.3.14-1jammy.20260224.215759\nros-humble-ament-cmake-export-interfaces\t1.3.14-1jammy.20260306.211302\nros-humble-ament-cmake-export-libraries\t1.3.14-1jammy.20260224.220931\nros-humble-ament-cmake-export-link-flags\t1.3.14-1jammy.20260306.233759\nros-humble-ament-cmake-export-targets\t1.3.14-1jammy.20260306.205710\nros-humble-ament-cmake-flake8\t0.12.15-1jammy.20260307.135542\nros-humble-ament-cmake-gen-version-h\t1.3.14-1jammy.20260307.123838\nros-humble-ament-cmake-gmock\t1.3.14-1jammy.20260307.000601\nros-humble-ament-cmake-gtest\t1.3.14-1jammy.20260306.235050\nros-humble-ament-cmake-include-directories\t1.3.14-1jammy.20260224.221440\nros-humble-ament-cmake-libraries\t1.3.14-1jammy.20260224.221620\nros-humble-ament-cmake-lint-cmake\t0.12.15-1jammy.20260307.133939\nros-humble-ament-cmake-pep257\t0.12.15-1jammy.20260307.135948\nros-humble-ament-cmake-pytest\t1.3.14-1jammy.20260307.123308\nros-humble-ament-cmake-python\t1.3.14-1jammy.20260306.210226\nros-humble-ament-cmake-ros\t0.10.0-3jammy.20260307.154932\nros-humble-ament-cmake-target-dependencies\t1.3.14-1jammy.20260306.211355\nros-humble-ament-cmake-test\t1.3.14-1jammy.20260306.234114\nros-humble-ament-cmake-uncrustify\t0.12.15-1jammy.20260307.153009\nros-humble-ament-cmake-version\t1.3.14-1jammy.20260224.203742\nros-humble-ament-cmake-xmllint\t0.12.15-1jammy.20260307.140115\nros-humble-ament-copyright\t0.12.15-1jammy.20260307.124146\nros-humble-ament-cppcheck\t0.12.15-1jammy.20260306.211540\nros-humble-ament-cpplint\t0.12.15-1jammy.20260307.133157\nros-humble-ament-flake8\t0.12.15-1jammy.20260306.234142\nros-humble-ament-index-cpp\t1.4.1-1jammy.20260307.154947\nros-humble-ament-index-python\t1.4.1-1jammy.20260307.132352\nros-humble-ament-lint\t0.12.15-1jammy.20260306.210720\nros-humble-ament-lint-auto\t0.12.15-1jammy.20260307.123338\nros-humble-ament-lint-cmake\t0.12.15-1jammy.20260307.133440\nros-humble-ament-lint-common\t0.12.15-1jammy.20260307.153456\nros-humble-ament-package\t0.14.2-1jammy.20260213.215330\nros-humble-ament-pep257\t0.12.15-1jammy.20260307.123523\nros-humble-ament-uncrustify\t0.12.15-1jammy.20260307.152532\nros-humble-ament-xmllint\t0.12.15-1jammy.20260307.124751\nros-humble-builtin-interfaces\t1.2.3-1jammy.20260605.113558\nros-humble-class-loader\t2.2.0-3jammy.20260307.170003\nros-humble-common-interfaces\t4.9.1-1jammy.20260605.141757\nros-humble-composition-interfaces\t1.2.3-1jammy.20260605.140927\nros-humble-console-bridge-vendor\t1.4.1-1jammy.20260307.162113\nros-humble-cv-bridge\t3.2.1-1jammy.20260605.142654\nros-humble-diagnostic-msgs\t4.9.1-1jammy.20260605.123546\nros-humble-domain-coordinator\t0.10.0-3jammy.20260307.133940\nros-humble-eigen3-cmake-module\t0.1.1-4jammy.20260307.143609\nros-humble-fastcdr\t1.0.29-1jammy.20260306.224949\nros-humble-fastrtps\t2.6.11-1jammy.20260307.141454\nros-humble-fastrtps-cmake-module\t2.2.4-1jammy.20260307.162120\nros-humble-foonathan-memory-vendor\t1.2.0-3jammy.20260307.140928\nros-humble-geometry-msgs\t4.9.1-1jammy.20260605.122512\nros-humble-geometry2\t0.25.20-2jammy.20260605.170309\nros-humble-gmock-vendor\t1.10.9006-1jammy.20260306.234246\nros-humble-gtest-vendor\t1.10.9006-1jammy.20260306.225141\nros-humble-image-tools\t0.20.9-1jammy.20260606.032645\nros-humble-image-transport\t3.1.13-1jammy.20260607.082811\nros-humble-kdl-parser\t2.6.4-1jammy.20260329.212545\nros-humble-keyboard-handler\t0.0.5-1jammy.20260307.160949\nros-humble-launch\t1.0.14-1jammy.20260307.132907\nros-humble-launch-ros\t0.19.13-1jammy.20260605.144337\nros-humble-launch-testing\t1.0.14-1jammy.20260307.133947\nros-humble-launch-testing-ament-cmake\t1.0.14-1jammy.20260307.163708\nros-humble-launch-testing-ros\t0.19.13-1jammy.20260605.144705\nros-humble-launch-xml\t1.0.14-1jammy.20260307.133448\nros-humble-launch-yaml\t1.0.14-1jammy.20260307.133442\nros-humble-libstatistics-collector\t1.3.4-1jammy.20260605.142051\nros-humble-libyaml-vendor\t1.2.2-2jammy.20260307.170117\nros-humble-lifecycle-msgs\t1.2.3-1jammy.20260605.120434\nros-humble-message-filters\t4.3.18-1jammy.20260605.153631\nros-humble-nav-msgs\t4.9.1-1jammy.20260605.124244\nros-humble-orocos-kdl-vendor\t0.2.5-1jammy.20260307.162634\nros-humble-osrf-pycommon\t2.1.6-1jammy.20260306.230214\nros-humble-pluginlib\t5.1.4-1jammy.20260329.184508\nros-humble-pybind11-vendor\t2.4.2-1jammy.20260307.150804\nros-humble-python-cmake-module\t0.10.0-2jammy.20260307.163146\nros-humble-python-orocos-kdl-vendor\t0.2.5-1jammy.20260307.163713\nros-humble-rcl\t5.3.13-1jammy.20260605.140824\nros-humble-rcl-action\t5.3.13-1jammy.20260605.142047\nros-humble-rcl-interfaces\t1.2.3-1jammy.20260605.114406\nros-humble-rcl-lifecycle\t5.3.13-1jammy.20260605.142049\nros-humble-rcl-logging-interface\t2.3.2-1jammy.20260307.170327\nros-humble-rcl-logging-spdlog\t2.3.2-1jammy.20260307.170958\nros-humble-rcl-yaml-param-parser\t5.3.13-1jammy.20260605.110039\nros-humble-rclcpp\t16.0.19-1jammy.20260605.142447\nros-humble-rclcpp-action\t16.0.19-1jammy.20260605.151918\nros-humble-rclcpp-components\t16.0.19-1jammy.20260605.155812\nros-humble-rclcpp-lifecycle\t16.0.19-1jammy.20260605.152054\nros-humble-rclpy\t3.3.21-1jammy.20260605.142610\nros-humble-rcpputils\t2.4.6-1jammy.20260307.165252\nros-humble-rcutils\t5.1.8-1jammy.20260307.164217\nros-humble-rmw\t6.1.2-1jammy.20260605.104948\nros-humble-rmw-dds-common\t1.6.0-2jammy.20260605.111228\nros-humble-rmw-fastrtps-cpp\t6.2.10-1jammy.20260605.135747\nros-humble-rmw-fastrtps-shared-cpp\t6.2.10-1jammy.20260605.112855\nros-humble-rmw-implementation\t2.8.5-1jammy.20260605.140508\nros-humble-rmw-implementation-cmake\t6.1.2-1jammy.20260307.163150\nros-humble-robot-state-publisher\t3.0.3-2jammy.20260605.163405\nros-humble-ros-base\t0.10.0-1jammy.20260607.150006\nros-humble-ros-core\t0.10.0-1jammy.20260607.124957\nros-humble-ros-environment\t3.2.2-1jammy.20260224.212428\nros-humble-ros-workspace\t1.0.2-2jammy.20260224.190418\nros-humble-ros2action\t0.18.18-1jammy.20260605.150214\nros-humble-ros2bag\t0.15.16-1jammy.20260607.143253\nros-humble-ros2cli\t0.18.18-1jammy.20260605.145655\nros-humble-ros2cli-common-extensions\t0.1.2-1jammy.20260607.115221\nros-humble-ros2component\t0.18.18-1jammy.20260605.161300\nros-humble-ros2doctor\t0.18.18-1jammy.20260605.150142\nros-humble-ros2interface\t0.18.18-1jammy.20260605.150503\nros-humble-ros2launch\t0.19.13-1jammy.20260607.091436\nros-humble-ros2lifecycle\t0.18.18-1jammy.20260607.114851\nros-humble-ros2multicast\t0.18.18-1jammy.20260607.091759\nros-humble-ros2node\t0.18.18-1jammy.20260605.150637\nros-humble-ros2param\t0.18.18-1jammy.20260605.151234\nros-humble-ros2pkg\t0.18.18-1jammy.20260605.151430\nros-humble-ros2plugin\t5.1.4-1jammy.20260605.151759\nros-humble-ros2run\t0.18.18-1jammy.20260607.091757\nros-humble-ros2service\t0.18.18-1jammy.20260605.150700\nros-humble-ros2topic\t0.18.18-1jammy.20260605.145933\nros-humble-rosbag2\t0.15.16-1jammy.20260607.144300\nros-humble-rosbag2-compression\t0.15.16-1jammy.20260607.123955\nros-humble-rosbag2-compression-zstd\t0.15.16-1jammy.20260607.124459\nros-humble-rosbag2-cpp\t0.15.16-1jammy.20260607.120041\nros-humble-rosbag2-interfaces\t0.15.16-1jammy.20260605.120055\nros-humble-rosbag2-py\t0.15.16-1jammy.20260607.142735\nros-humble-rosbag2-storage\t0.15.16-1jammy.20260607.115054\nros-humble-rosbag2-storage-default-plugins\t0.15.16-1jammy.20260607.115618\nros-humble-rosbag2-transport\t0.15.16-1jammy.20260607.124836\nros-humble-rosgraph-msgs\t1.2.3-1jammy.20260605.115412\nros-humble-rosidl-adapter\t3.1.9-1jammy.20260605.104312\nros-humble-rosidl-cli\t3.1.9-1jammy.20260605.104119\nros-humble-rosidl-cmake\t3.1.9-1jammy.20260605.104936\nros-humble-rosidl-default-generators\t1.2.1-1jammy.20260605.111021\nros-humble-rosidl-default-runtime\t1.2.1-1jammy.20260605.111023\nros-humble-rosidl-generator-c\t3.1.9-1jammy.20260605.105029\nros-humble-rosidl-generator-cpp\t3.1.9-1jammy.20260605.105535\nros-humble-rosidl-generator-py\t0.14.6-1jammy.20260605.110613\nros-humble-rosidl-generator-rs\t0.4.12-1jammy.20260605.105755\nros-humble-rosidl-parser\t3.1.9-1jammy.20260605.104533\nros-humble-rosidl-runtime-c\t3.1.9-1jammy.20260605.104614\nros-humble-rosidl-runtime-cpp\t3.1.9-1jammy.20260605.105406\nros-humble-rosidl-runtime-py\t0.9.3-1jammy.20260605.135746\nros-humble-rosidl-typesupport-c\t2.0.2-1jammy.20260605.105449\nros-humble-rosidl-typesupport-cpp\t2.0.2-1jammy.20260605.105841\nros-humble-rosidl-typesupport-fastrtps-c\t2.2.4-1jammy.20260605.110325\nros-humble-rosidl-typesupport-fastrtps-cpp\t2.2.4-1jammy.20260605.110018\nros-humble-rosidl-typesupport-interface\t3.1.9-1jammy.20260605.104334\nros-humble-rosidl-typesupport-introspection-c\t3.1.9-1jammy.20260605.105230\nros-humble-rosidl-typesupport-introspection-cpp\t3.1.9-1jammy.20260605.105611\nros-humble-rpyutils\t0.2.2-1jammy.20260307.133516\nros-humble-sensor-msgs\t4.9.1-1jammy.20260605.124600\nros-humble-sensor-msgs-py\t4.9.1-1jammy.20260605.145025\nros-humble-shape-msgs\t4.9.1-1jammy.20260605.130845\nros-humble-shared-queues-vendor\t0.15.16-1jammy.20260307.151300\nros-humble-spdlog-vendor\t1.3.1-1jammy.20260307.164213\nros-humble-sqlite3-vendor\t0.15.16-1jammy.20260307.151312\nros-humble-sros2\t0.10.9-1jammy.20260607.094209\nros-humble-sros2-cmake\t0.10.9-1jammy.20260607.124803\nros-humble-statistics-msgs\t1.2.3-1jammy.20260605.120210\nros-humble-std-msgs\t4.9.1-1jammy.20260605.120214\nros-humble-std-srvs\t4.9.1-1jammy.20260605.132838\nros-humble-stereo-msgs\t4.9.1-1jammy.20260605.130057\nros-humble-tf2\t0.25.20-2jammy.20260605.142318\nros-humble-tf2-bullet\t0.25.20-2jammy.20260605.163412\nros-humble-tf2-eigen\t0.25.20-2jammy.20260605.163454\nros-humble-tf2-eigen-kdl\t0.25.20-2jammy.20260605.142925\nros-humble-tf2-geometry-msgs\t0.25.20-2jammy.20260605.163658\nros-humble-tf2-kdl\t0.25.20-2jammy.20260605.163731\nros-humble-tf2-msgs\t0.25.20-2jammy.20260605.135146\nros-humble-tf2-py\t0.25.20-2jammy.20260605.143548\nros-humble-tf2-ros\t0.25.20-2jammy.20260605.160702\nros-humble-tf2-ros-py\t0.25.20-2jammy.20260605.144120\nros-humble-tf2-sensor-msgs\t0.25.20-2jammy.20260605.163739\nros-humble-tf2-tools\t0.25.20-2jammy.20260605.145632\nros-humble-tinyxml-vendor\t0.8.3-2jammy.20260307.151743\nros-humble-tinyxml2-vendor\t0.7.7-1jammy.20260307.151730\nros-humble-tracetools\t4.1.2-1jammy.20260307.160235\nros-humble-trajectory-msgs\t4.9.1-1jammy.20260605.131006\nros-humble-uncrustify-vendor\t2.0.2-2jammy.20260307.151934\nros-humble-unique-identifier-msgs\t2.2.1-3jammy.20260605.132948\nros-humble-urdf\t2.6.1-1jammy.20260329.200059\nros-humble-urdf-parser-plugin\t2.6.1-1jammy.20260307.155427\nros-humble-urdfdom\t3.0.2-2jammy.20260307.162630\nros-humble-urdfdom-headers\t1.0.6-2jammy.20260306.233617\nros-humble-visualization-msgs\t4.9.1-1jammy.20260605.130109\nros-humble-yaml-cpp-vendor\t8.0.2-1jammy.20260307.152246\nros-humble-zstd-vendor\t0.15.16-1jammy.20260307.152743\ntensorrt\t10.3.0.30-1+cuda12.5\ntensorrt-libs\t10.3.0.30-1+cuda12.5\nv4l-utils\t1.22.1-2build1"
+  },
+  "cuda_version": "{\n   \"cuda\" : {\n      \"name\" : \"CUDA SDK\",\n      \"version\" : \"12.6.11\"\n   },\n   \"cuda_cccl\" : {\n      \"name\" : \"CUDA C++ Core Compute Libraries\",\n      \"version\" : \"12.6.37\"\n   },\n   \"cuda_compat\" : {\n      \"name\" : \"CUDA Specific Libraries\",\n      \"version\" : \"12.6.36890662\"\n   },\n   \"cuda_cudart\" : {\n      \"name\" : \"CUDA Runtime (cudart)\",\n      \"version\" : \"12.6.68\"\n   },\n   \"cuda_cuobjdump\" : {\n      \"name\" : \"cuobjdump\",\n      \"version\" : \"12.6.68\"\n   },\n   \"cuda_cupti\" : {\n      \"name\" : \"CUPTI\",\n      \"version\" : \"12.6.68\"\n   },\n   \"cuda_cuxxfilt\" : {\n      \"name\" : \"CUDA cu++ filt\",\n      \"version\" : \"12.6.68\"\n   },\n   \"cuda_gdb\" : {\n      \"name\" : \"CUDA GDB\",\n      \"version\" : \"12.6.68\"\n   },\n   \"cuda_nvcc\" : {\n      \"name\" : \"CUDA NVCC\",\n      \"version\" : \"12.6.68\"\n   },\n   \"cuda_nvdisasm\" : {\n      \"name\" : \"CUDA nvdisasm\",\n      \"version\" : \"12.6.68\"\n   },\n   \"cuda_nvml_dev\" : {\n      \"name\" : \"CUDA NVML Headers\",\n      \"version\" : \"12.6.68\"\n   },\n   \"cuda_nvprune\" : {\n      \"name\" : \"CUDA nvprune\",\n      \"version\" : \"12.6.68\"\n   },\n   \"cuda_nvrtc\" : {\n      \"name\" : \"CUDA NVRTC\",\n      \"version\" : \"12.6.68\"\n   },\n   \"cuda_nvtx\" : {\n      \"name\" : \"CUDA NVTX\",\n      \"version\" : \"12.6.68\"\n   },\n   \"cuda_sanitizer_api\" : {\n      \"name\" : \"CUDA Compute Sanitizer API\",\n      \"version\" : \"12.6.68\"\n   },\n   \"libcublas\" : {\n      \"name\" : \"CUDA cuBLAS\",\n      \"version\" : \"12.6.1.4\"\n   },\n   \"libcudla\" : {\n      \"name\" : \"CUDA cuDLA\",\n      \"version\" : \"12.6.68\"\n   },\n   \"libcufft\" : {\n      \"name\" : \"CUDA cuFFT\",\n      \"version\" : \"11.2.6.59\"\n   },\n   \"libcufile\" : {\n      \"name\" : \"GPUDirect Storage (cufile)\",\n      \"version\" : \"1.11.1.6\"\n   },\n   \"libcurand\" : {\n      \"name\" : \"CUDA cuRAND\",\n      \"version\" : \"10.3.7.68\"\n   },\n   \"libcusolver\" : {\n      \"name\" : \"CUDA cuSOLVER\",\n      \"version\" : \"11.6.4.69\"\n   },\n   \"libcusparse\" : {\n      \"name\" : \"CUDA cuSPARSE\",\n      \"version\" : \"12.5.3.3\"\n   },\n   \"libnpp\" : {\n      \"name\" : \"CUDA NPP\",\n      \"version\" : \"12.3.1.54\"\n   },\n   \"libnvfatbin\" : {\n      \"name\" : \"Fatbin interaction library\",\n      \"version\" : \"12.6.68\"\n   },\n   \"libnvjitlink\" : {\n      \"name\" : \"JIT Linker Library\",\n      \"version\" : \"12.6.68\"\n   },\n   \"libnvjpeg\" : {\n      \"name\" : \"CUDA nvJPEG\",\n      \"version\" : \"12.3.3.54\"\n   },\n   \"nsight_compute\" : {\n      \"name\" : \"Nsight Compute\",\n      \"version\" : \"2024.3.1.2\"\n   },\n   \"nvidia_fs\" : {\n      \"name\" : \"NVIDIA file-system\",\n      \"version\" : \"2.22.3\"\n   }\n}",
+  "nvpmodel": {
+    "exit_code": 0,
+    "stdout": "NV Power Mode: MAXN_SUPER\n2"
+  },
+  "v4l_devices": {
+    "exit_code": 0,
+    "stdout": "NVIDIA Tegra Video Input Device (platform:tegra-camrtc-ca):\n\t/dev/media0\n\nvi-output, zedx 10-0020 (platform:tegra-capture-vi:1):\n\t/dev/video0\n\t/dev/video1"
+  },
+  "models": [
+    {
+      "path": "/home/uavlab/Jetson_ROS2_V0/weights/candidates/platform_exp_20260909/exp.pt",
+      "bytes": 5460350,
+      "sha256": "c2ef85edb9c9cc0b31d0db4e690e324d5809115428344ee20a43c572b91a9437"
+    },
+    {
+      "path": "/home/uavlab/Jetson_ROS2_V0/weights/candidates/platform_exp_20260909/exp.onnx",
+      "bytes": 9996322,
+      "sha256": "200a04975f82fb648bd4e83f76efdf4034bad187525b263fce4d6a2cb464e55e"
+    },
+    {
+      "path": "/home/uavlab/Jetson_ROS2_V0/weights/candidates/platform_exp_20260909/exp_opt3.engine",
+      "bytes": 8921756,
+      "sha256": "f5ca6203076e96531ac9eae0f04f1da16fc31cfa51cdc04532bf1ac815ea66a2"
+    },
+    {
+      "path": "/home/uavlab/Jetson_ROS2_V0/weights/candidates/platform_exp_20260909/exp_opt3.manifest.json",
+      "bytes": 1188,
+      "sha256": "dc2061fe6759852e537626d045bbd595dc940ecaf659abe0974b1114e723a2c6",
+      "content": {
+        "contract_valid": true,
+        "dtype": "float32",
+        "input_nchw": [
+          1,
+          3,
+          736,
+          1280
+        ],
+        "output_shape": [
+          1,
+          300,
+          6
+        ],
+        "engine_sha256": "f5ca6203076e96531ac9eae0f04f1da16fc31cfa51cdc04532bf1ac815ea66a2",
+        "source_pt_sha256": "c2ef85edb9c9cc0b31d0db4e690e324d5809115428344ee20a43c572b91a9437",
+        "source_onnx_sha256": "200a04975f82fb648bd4e83f76efdf4034bad187525b263fce4d6a2cb464e55e",
+        "class_names": [
+          "drone"
+        ],
+        "preprocessing": {
+          "color": "RGB",
+          "normalization": "0_to_1",
+          "letterbox_fill": 114,
+          "rotation_degrees": 0
+        },
+        "output_layout": "end_to_end_xyxy_score_class",
+        "batch": 1,
+        "recognition_validated": false,
+        "build_environment": {
+          "l4t": "# R36 (release), REVISION: 4.3, GCID: 38968081, BOARD: generic, EABI: aarch64, DATE: Wed Jan  8 01:49:37 UTC 2025\n# KERNEL_VARIANT: oot\nTARGET_USERSPACE_LIB_DIR=nvidia\nTARGET_USERSPACE_LIB_DIR_PATH=usr/lib/aarch64-linux-gnu/nvidia\n# Seeed Image Name mfi_recomputer-orin-nano-8g-j401-6.2-36.4.3-2026-02-05.tar.gz\n# branch R36.4.3\n# commit ID 453114c2cb5920e062f46df72765ba73ea6a773b",
+          "sdk": "5.5",
+          "target": "current_8GB_Jetson"
+        },
+        "source_note": "Source hashes establish provenance; graph equivalence and real-target accuracy require separate validation."
+      }
+    }
+  ],
+  "configuration_files": [
+    {
+      "path": "/boot/extlinux/extlinux.conf",
+      "bytes": 1910,
+      "sha256": "724f92c0e95aa66c7c02f2c5f88c1e1734497158b53025072db25c902aed5fc0"
+    },
+    {
+      "path": "/var/nvidia/nvcam/settings/zedx_ar0234.isp",
+      "bytes": 108676,
+      "sha256": "6a452ed4ea59f09c1da41221d5fc1a4bfcd36228303f18df55112ecb028f3aa8"
+    },
+    {
+      "path": "/home/uavlab/Jetson_ROS2_V0/perception_records/session_71bf779b-b552-4906-b1c9-5a12cef1a48f/calibration.json",
+      "bytes": 761,
+      "sha256": "2e36d0a54f3b0a13ac2c861090a5618d649afaab9041615f66df0da60daf50e0"
+    },
+    {
+      "path": "/home/uavlab/Jetson_ROS2_V0/perception_records/session_5ae6d1e4-3a29-4d05-8865-e9d61c68a660/calibration.json",
+      "bytes": 782,
+      "sha256": "85672e162198c18c68f284f366de27a6a48fb37dfd458f684ca3a0373855856f"
+    },
+    {
+      "path": "/home/uavlab/Jetson_ROS2_V0/perception_records/session_381eea2c-3773-46e7-beac-0f175cc77da9/calibration.json",
+      "bytes": 786,
+      "sha256": "db5ad670553f8f67a79954beb79e2dc2752403618b386c061e5d2f5c63c01d85"
+    },
+    {
+      "path": "/home/uavlab/Jetson_ROS2_V0/perception_records/session_877a55b7-00b8-496b-a3e5-7478084ec7c6/calibration.json",
+      "bytes": 697,
+      "sha256": "0221f69d194ff9d84ebe46ed2558867cdc8cb29ee1f8268266e648602feca9cb"
+    },
+    {
+      "path": "/home/uavlab/Jetson_ROS2_V0/perception_records/session_1a8cfed5-d223-49c7-b0fa-194e6e232068/calibration.json",
+      "bytes": 697,
+      "sha256": "0221f69d194ff9d84ebe46ed2558867cdc8cb29ee1f8268266e648602feca9cb"
+    },
+    {
+      "path": "/home/uavlab/Jetson_ROS2_V0/perception_records/session_b1aff48b-ff31-4aa2-a581-40faef8cccdf/calibration.json",
+      "bytes": 786,
+      "sha256": "880ded99c0b2ac5bcea5e79c21bfb14489e9a732e8bae2065b1e446f2e2b50f3"
+    },
+    {
+      "path": "/home/uavlab/Jetson_ROS2_V0/perception_records/session_367c43ba-d293-49ac-82b5-eaba90f70726/calibration.json",
+      "bytes": 788,
+      "sha256": "0c76c7271bd244bbcd6bf4ddeb0a7f3a4ec0d581af06cd84c2ad3b7aa7f3a46a"
+    }
+  ],
+  "tracked_board_source_check": {
+    "matching_files": 56,
+    "different_or_missing": []
+  }
+}

@@ -1,0 +1,257 @@
+from __future__ import annotations
+
+from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument
+from launch.substitutions import LaunchConfiguration
+from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
+from launch_ros.substitutions import FindPackagePrefix
+
+
+def generate_launch_description():
+    return LaunchDescription(
+        [
+            DeclareLaunchArgument(
+                "search_device_path",
+                default_value=(
+                    "/dev/v4l/by-id/"
+                    "usb-Sonix_Technology_Co.__Ltd._HJ_4K_Camera_SN0001-video-index0"
+                ),
+            ),
+            DeclareLaunchArgument(
+                "model_engine_path",
+                default_value=(
+                    "/home/uavlab/Jetson_ROS2_V0/weights/"
+                    "candidates/platform_exp_20260909/exp_opt3.engine"
+                ),
+            ),
+            DeclareLaunchArgument(
+                "model_onnx_path",
+                default_value=(
+                    "/home/uavlab/Jetson_ROS2_V0/weights/"
+                    "candidates/platform_exp_20260909/exp.onnx"
+                ),
+            ),
+            DeclareLaunchArgument(
+                "custom_parser_path",
+                default_value=[
+                    FindPackagePrefix("falcon_intercept_deepstream"),
+                    "/lib/libnvdsinfer_custom_yolo26.so",
+                ],
+            ),
+            DeclareLaunchArgument("input_mode", default_value="camera"),
+            # Physical lens-occlusion verification on 2026-08-01:
+            # Argus sensor 1 is rig-left and sensor 0 is rig-right.
+            DeclareLaunchArgument("front_sensor_id", default_value="1"),
+            DeclareLaunchArgument("back_sensor_id", default_value="0"),
+            DeclareLaunchArgument("front_file_path", default_value=""),
+            DeclareLaunchArgument("back_file_path", default_value=""),
+            DeclareLaunchArgument("search_file_path", default_value=""),
+            DeclareLaunchArgument("search_sun_filter", default_value="true"),
+            DeclareLaunchArgument("search_exposure_time", default_value="1"),
+            DeclareLaunchArgument("search_gain", default_value="0"),
+            DeclareLaunchArgument("search_brightness", default_value="-64"),
+            DeclareLaunchArgument(
+                "search_backlight_compensation", default_value="0"
+            ),
+            DeclareLaunchArgument("batch_size", default_value="1"),
+            DeclareLaunchArgument("source_mode", default_value="all"),
+            DeclareLaunchArgument("mux_width", default_value="1280"),
+            DeclareLaunchArgument("mux_height", default_value="720"),
+            DeclareLaunchArgument("workspace_size_mb", default_value="0"),
+            DeclareLaunchArgument("network_mode", default_value="2"),
+            DeclareLaunchArgument("model_output_format", default_value="end_to_end"),
+            DeclareLaunchArgument("inference_interval", default_value="0"),
+            DeclareLaunchArgument("csi_fps", default_value="25"),
+            DeclareLaunchArgument("search_fps", default_value="15"),
+            DeclareLaunchArgument(
+                "stereo_exposure_compensation", default_value="0.0"
+            ),
+            DeclareLaunchArgument("confidence", default_value="0.50"),
+            DeclareLaunchArgument("classes", default_value=""),
+            DeclareLaunchArgument("class_names", default_value="drone"),
+            DeclareLaunchArgument("num_detected_classes", default_value="1"),
+            DeclareLaunchArgument("stereo_roi_enabled", default_value="true"),
+            DeclareLaunchArgument("stereo_roi_topic", default_value="/stereo/rois_json"),
+            DeclareLaunchArgument(
+                "stereo_roi_status_topic", default_value="/stereo/roi_runtime_status"
+            ),
+            DeclareLaunchArgument("stereo_roi_timeout_ms", default_value="500"),
+            DeclareLaunchArgument("stereo_roi_minimum_size_px", default_value="32"),
+            DeclareLaunchArgument("display", default_value="false"),
+            DeclareLaunchArgument("display_width", default_value="1280"),
+            DeclareLaunchArgument("display_height", default_value="720"),
+            DeclareLaunchArgument("display_sync", default_value="false"),
+            DeclareLaunchArgument("record", default_value="false"),
+            DeclareLaunchArgument("record_output_dir", default_value=""),
+            DeclareLaunchArgument("record_bitrate", default_value="4000000"),
+            DeclareLaunchArgument("record_width", default_value="960"),
+            DeclareLaunchArgument("record_height", default_value="540"),
+            DeclareLaunchArgument("record_segment_seconds", default_value="5"),
+            DeclareLaunchArgument("record_segment_prefix", default_value="0"),
+            DeclareLaunchArgument("record_annotate", default_value="true"),
+            DeclareLaunchArgument(
+                "stereo_color_correction", default_value="true"
+            ),
+            DeclareLaunchArgument(
+                "stereo_color_contrast_pivot", default_value="116.0"
+            ),
+            DeclareLaunchArgument("stereo_color_contrast", default_value="1.10"),
+            DeclareLaunchArgument("stereo_magenta_suppression", default_value="1.0"),
+            DeclareLaunchArgument("stereo_color_gamma", default_value="0.55"),
+            DeclareLaunchArgument("stereo_color_mix", default_value="0.85"),
+            Node(
+                package="falcon_intercept_deepstream",
+                executable="deepstream_three_camera_node",
+                name="deepstream_three_camera_node",
+                output="screen",
+                parameters=[
+                    {
+                        "search_device_path": LaunchConfiguration("search_device_path"),
+                        "model_engine_path": LaunchConfiguration("model_engine_path"),
+                        "model_onnx_path": LaunchConfiguration("model_onnx_path"),
+                        "custom_parser_path": LaunchConfiguration("custom_parser_path"),
+                        "input_mode": LaunchConfiguration("input_mode"),
+                        "front_sensor_id": ParameterValue(
+                            LaunchConfiguration("front_sensor_id"), value_type=int
+                        ),
+                        "back_sensor_id": ParameterValue(
+                            LaunchConfiguration("back_sensor_id"), value_type=int
+                        ),
+                        "front_file_path": LaunchConfiguration("front_file_path"),
+                        "back_file_path": LaunchConfiguration("back_file_path"),
+                        "search_file_path": LaunchConfiguration("search_file_path"),
+                        "search_sun_filter": ParameterValue(
+                            LaunchConfiguration("search_sun_filter"), value_type=bool
+                        ),
+                        "search_exposure_time": ParameterValue(
+                            LaunchConfiguration("search_exposure_time"), value_type=int
+                        ),
+                        "search_gain": ParameterValue(
+                            LaunchConfiguration("search_gain"), value_type=int
+                        ),
+                        "search_brightness": ParameterValue(
+                            LaunchConfiguration("search_brightness"), value_type=int
+                        ),
+                        "search_backlight_compensation": ParameterValue(
+                            LaunchConfiguration("search_backlight_compensation"),
+                            value_type=int,
+                        ),
+                        "batch_size": ParameterValue(
+                            LaunchConfiguration("batch_size"), value_type=int
+                        ),
+                        "source_mode": LaunchConfiguration("source_mode"),
+                        "mux_width": ParameterValue(
+                            LaunchConfiguration("mux_width"), value_type=int
+                        ),
+                        "mux_height": ParameterValue(
+                            LaunchConfiguration("mux_height"), value_type=int
+                        ),
+                        "workspace_size_mb": ParameterValue(
+                            LaunchConfiguration("workspace_size_mb"), value_type=int
+                        ),
+                        "network_mode": ParameterValue(
+                            LaunchConfiguration("network_mode"), value_type=int
+                        ),
+                        "model_output_format": LaunchConfiguration("model_output_format"),
+                        "inference_interval": ParameterValue(
+                            LaunchConfiguration("inference_interval"), value_type=int
+                        ),
+                        "csi_fps": ParameterValue(
+                            LaunchConfiguration("csi_fps"), value_type=int
+                        ),
+                        "search_fps": ParameterValue(
+                            LaunchConfiguration("search_fps"), value_type=int
+                        ),
+                        "stereo_exposure_compensation": ParameterValue(
+                            LaunchConfiguration("stereo_exposure_compensation"),
+                            value_type=float,
+                        ),
+                        "confidence": ParameterValue(
+                            LaunchConfiguration("confidence"), value_type=float
+                        ),
+                        "classes": LaunchConfiguration("classes"),
+                        "class_names": LaunchConfiguration("class_names"),
+                        "num_detected_classes": ParameterValue(
+                            LaunchConfiguration("num_detected_classes"), value_type=int
+                        ),
+                        "stereo_roi_enabled": ParameterValue(
+                            LaunchConfiguration("stereo_roi_enabled"), value_type=bool
+                        ),
+                        "stereo_roi_topic": LaunchConfiguration("stereo_roi_topic"),
+                        "stereo_roi_status_topic": LaunchConfiguration(
+                            "stereo_roi_status_topic"
+                        ),
+                        "stereo_roi_timeout_ms": ParameterValue(
+                            LaunchConfiguration("stereo_roi_timeout_ms"), value_type=int
+                        ),
+                        "stereo_roi_minimum_size_px": ParameterValue(
+                            LaunchConfiguration("stereo_roi_minimum_size_px"), value_type=int
+                        ),
+                        "display": ParameterValue(
+                            LaunchConfiguration("display"), value_type=bool
+                        ),
+                        "display_width": ParameterValue(
+                            LaunchConfiguration("display_width"), value_type=int
+                        ),
+                        "display_height": ParameterValue(
+                            LaunchConfiguration("display_height"), value_type=int
+                        ),
+                        "display_sync": ParameterValue(
+                            LaunchConfiguration("display_sync"), value_type=bool
+                        ),
+                        "record": ParameterValue(
+                            LaunchConfiguration("record"), value_type=bool
+                        ),
+                        "record_annotate": ParameterValue(
+                            LaunchConfiguration("record_annotate"), value_type=bool
+                        ),
+                        "record_output_dir": LaunchConfiguration(
+                            "record_output_dir"
+                        ),
+                        "record_bitrate": ParameterValue(
+                            LaunchConfiguration("record_bitrate"), value_type=int
+                        ),
+                        "record_width": ParameterValue(
+                            LaunchConfiguration("record_width"), value_type=int
+                        ),
+                        "record_height": ParameterValue(
+                            LaunchConfiguration("record_height"), value_type=int
+                        ),
+                        "record_segment_seconds": ParameterValue(
+                            LaunchConfiguration("record_segment_seconds"),
+                            value_type=int,
+                        ),
+                        "record_segment_prefix": ParameterValue(
+                            LaunchConfiguration("record_segment_prefix"),
+                            value_type=int,
+                        ),
+                        "stereo_color_correction": ParameterValue(
+                            LaunchConfiguration("stereo_color_correction"),
+                            value_type=bool,
+                        ),
+                        "stereo_color_contrast_pivot": ParameterValue(
+                            LaunchConfiguration("stereo_color_contrast_pivot"),
+                            value_type=float,
+                        ),
+                        "stereo_color_contrast": ParameterValue(
+                            LaunchConfiguration("stereo_color_contrast"),
+                            value_type=float,
+                        ),
+                        "stereo_magenta_suppression": ParameterValue(
+                            LaunchConfiguration("stereo_magenta_suppression"),
+                            value_type=float,
+                        ),
+                        "stereo_color_gamma": ParameterValue(
+                            LaunchConfiguration("stereo_color_gamma"),
+                            value_type=float,
+                        ),
+                        "stereo_color_mix": ParameterValue(
+                            LaunchConfiguration("stereo_color_mix"),
+                            value_type=float,
+                        ),
+                    }
+                ],
+            ),
+        ]
+    )

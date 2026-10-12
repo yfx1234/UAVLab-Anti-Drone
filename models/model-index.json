@@ -1,0 +1,35 @@
+{
+  "current_model": "platform_exp_20260909/exp_opt3.engine",
+  "input_nchw": [
+    1,
+    3,
+    736,
+    1280
+  ],
+  "output_shape": [
+    1,
+    300,
+    6
+  ],
+  "io_dtype": "float32",
+  "source_artifacts": [
+    {
+      "repository_path": "models/platform_exp_20260909/exp.pt",
+      "bytes": 5460350,
+      "sha256": "c2ef85edb9c9cc0b31d0db4e690e324d5809115428344ee20a43c572b91a9437"
+    },
+    {
+      "repository_path": "models/platform_exp_20260909/exp.onnx",
+      "bytes": 9996322,
+      "sha256": "200a04975f82fb648bd4e83f76efdf4034bad187525b263fce4d6a2cb464e55e"
+    }
+  ],
+  "nano_engine": {
+    "path": "/home/uavlab/Jetson_ROS2_V0/weights/candidates/platform_exp_20260909/exp_opt3.engine",
+    "bytes": 8921756,
+    "sha256": "f5ca6203076e96531ac9eae0f04f1da16fc31cfa51cdc04532bf1ac815ea66a2"
+  },
+  "engine_in_git": false,
+  "recognition_accuracy_validated": false,
+  "note": "Rebuild and check the engine on NX. Source hashes prove provenance, not inference equivalence or target accuracy."
+}
