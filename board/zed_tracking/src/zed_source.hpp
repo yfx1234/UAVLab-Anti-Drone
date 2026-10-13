@@ -202,11 +202,15 @@ public:
         std::string("enableRecording failed: ") + sl::toString(status).c_str());
     }
     recording_.store(true);
+    recording_compression_=compression;
   }
 
   void stop_recording()
   {
     if (recording_.exchange(false)) {
+      // NVENC can still hold the last frame when grab returns. Drain before disable;
+      // the replay timestamp test detected a missing tail without this interval.
+      if(recording_compression_!="LOSSLESS")std::this_thread::sleep_for(std::chrono::milliseconds(250));
       camera_.disableRecording();
       // SVO 写线程 flush 需要短暂窗口;立即 close 会截断尾部块,
       // 回放时报 "Corrupted message size"(2026-10-07 实测)。
@@ -244,6 +248,7 @@ private:
   bool depth_available_{false};
   float configured_fps_{0};
   std::atomic<bool> recording_{false};
+  std::string recording_compression_{"LOSSLESS"};
 };
 
 }  // namespace zed_tracking

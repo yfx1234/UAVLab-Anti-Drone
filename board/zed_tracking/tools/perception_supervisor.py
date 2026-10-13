@@ -22,7 +22,7 @@ EXE=WS/'install_perception/zed_tracking/lib/zed_tracking/zed_perception_standalo
 BOOT_FILE=pathlib.Path('/proc/sys/kernel/random/boot_id')
 SCHEMAS={
  'status':set(),'check_device':set(),'start_capture':{'profile','model_id','capture_fps','camera_resolution'},'stop_capture':set(),
- 'set_detector':{'enabled'},'set_generic_detector':{'enabled','sensitivity'},'start_raw_record':{'label','scene','lighting','size_definition','known_distance_m','distance_source','client_started_at_unix_s'},
+ 'set_detector':{'enabled'},'set_generic_detector':{'enabled','sensitivity'},'start_raw_record':{'label','scene','lighting','size_definition','known_distance_m','distance_source','client_started_at_unix_s','codec'},
  'stop_raw_record':set(),'list_sessions':set(),'list_models':set(),'test_model':{'model_id'},
  'select_model':{'model_id'},'save_calibration':{'target_size_m','size_definition','samples'},
  'export_session':{'session_id','fps','mode'},'export_diagnostics':set(),
@@ -41,6 +41,7 @@ def validate_action(action,params):
         if not isinstance(mode,str) or mode not in rates or type(fps) is not int or fps not in rates[mode]:
             raise ValueError('unsupported ZED X Mini resolution/FPS pair')
     if action in ('set_detector','set_generic_detector') and type(params.get('enabled')) is not bool:raise ValueError('enabled must be bool')
+    if action=='start_raw_record' and params.get('codec','LOSSLESS') not in ('LOSSLESS','H264_LOSSLESS'):raise ValueError('unsupported recording codec')
     if action=='set_generic_detector' and params.get('sensitivity','standard') not in ('high','standard','low'):
         raise ValueError('generic sensitivity must be high/standard/low')
     if 'known_distance_m' in params:
@@ -185,6 +186,11 @@ def start(s,params):
     args=[str(EXE),'--ros-args','-p',f'run_id:={run}','-p',f'profile:={params["profile"]}',
           '-p',f'capture_fps:={params.get("capture_fps",15)}',
           '-p',f'camera_resolution:={params.get("camera_resolution","HD1080")}']
+    from device_capabilities import collect
+    hardware=collect();parallel=hardware['module_family']=='Orin NX' and hardware['platform_configuration_consistent']
+    args.extend(['-p','parallel_detectors:='+str(parallel).lower(),'-p','module_sku:='+(hardware['module_sku'] or 'unknown'),
+                 '-p','platform_configuration_consistent:='+str(hardware['platform_configuration_consistent']).lower(),
+                 '-p','fast_recording_verified:='+str(hardware['nvenc_verified']).lower()])
     if m:args.extend(['-p',f'engine_path:={stage_model(m)}','-p',f'model_id:={m["model_id"]}'])
     command=f'source /opt/ros/humble/setup.bash && source {shlex.quote(str(WS/"install/setup.bash"))} && source {shlex.quote(str(WS/"install_perception/setup.bash"))} && exec '+shlex.join(args)
     log=ROOT/f'capture_{run}.log'
@@ -271,6 +277,13 @@ def dispatch(request):
             from session_catalog import delete
             result=delete(RECORDS,params.get('session_id'),params.get('confirmation'),s.get('pipeline',{}).get('session_id',''),s['boot_id'])
         elif action in ('set_detector','set_generic_detector','start_raw_record','stop_raw_record','save_calibration'):
+            if action=='start_raw_record':
+                from device_capabilities import collect
+                from recording_profiles import resolve_codec
+                params=dict(params,codec=resolve_codec(params.get('codec'),collect(),read_json(WS.parent/'perception_config/recording_capabilities.json')))
+                pipe=s.get('pipeline',{})
+                if params['codec']!='LOSSLESS' and (pipe.get('camera_resolution')!='HD1080' or pipe.get('configured_capture_fps') not in (15,30)):
+                    raise ValueError('高速录像当前仅验证1920×1080 / 15或30fps')
             if action=='set_detector' and params['enabled']:
                 model=model_by_id(s.get('model_id') or None)
                 if s.get('pipeline',{}).get('record_state')=='recording' and model['model_id']!=s.get('model_id'):

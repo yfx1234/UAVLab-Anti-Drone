@@ -58,7 +58,7 @@ target_link_libraries(export_svo_rgb OpenSSL::Crypto ${OpenCV_LIBS} CUDA::cudart
 set_target_properties(export_svo_rgb PROPERTIES BUILD_RPATH "${ZED_LIBRARY_DIR}" INSTALL_RPATH "${ZED_LIBRARY_DIR}")
 install(TARGETS zed_perception_standalone export_svo_rgb DESTINATION lib/${PROJECT_NAME})
 install(PROGRAMS tools/perception_supervisor.py tools/export_session.py DESTINATION lib/${PROJECT_NAME})
-install(FILES tools/session_catalog.py tools/clock_reference.py tools/device_capabilities.py DESTINATION lib/${PROJECT_NAME})
+install(FILES tools/session_catalog.py tools/clock_reference.py tools/device_capabilities.py tools/recording_profiles.py DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY config launch DESTINATION share/${PROJECT_NAME})
 if(UAVLAB_BUILD_LEGACY_TRACKING)
 install(PROGRAMS
@@ -75,6 +75,11 @@ install(PROGRAMS
 endif()
 
 if(BUILD_TESTING)
+  add_executable(test_detector_execution test/test_detector_execution.cpp)
+  target_include_directories(test_detector_execution PRIVATE include)
+  target_compile_options(test_detector_execution PRIVATE -UNDEBUG)
+  target_link_libraries(test_detector_execution pthread)
+  add_test(NAME test_detector_execution COMMAND test_detector_execution)
   add_executable(test_generic_sky test/test_generic_sky.cpp)
   target_include_directories(test_generic_sky PRIVATE include ${OpenCV_INCLUDE_DIRS})
   target_link_libraries(test_generic_sky ${OpenCV_LIBS})

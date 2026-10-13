@@ -29,6 +29,7 @@
 #include "zed_tracking/perception_quality.hpp"
 #include "zed_tracking/camera_modes.hpp"
 #include "zed_tracking/generic_sky_detector.hpp"
+#include "zed_tracking/detector_execution.hpp"
 #include "trt_runner.hpp"
 #include "zed_source.hpp"
 
@@ -119,7 +120,7 @@ class Perception final:public rclcpp::Node {
   Json calibration_data_;
   std::atomic<double> write_rate_{0};std::atomic<uint64_t> disk_reserve_{10ull*1024*1024*1024};
   std::atomic<bool> metadata_failed_{false};
-  int capture_fps_{15};
+  int capture_fps_{15};bool parallel_detectors_{false},platform_consistent_{false},fast_recording_verified_{false};std::string module_sku_,record_codec_{"LOSSLESS"};
   std::string camera_resolution_{"HD1080"};
   std::atomic<bool> depth_enabled_{false};
   std::atomic<double> record_started_{0};
@@ -191,6 +192,8 @@ class Perception final:public rclcpp::Node {
     Json j;{std::lock_guard<std::mutex> l(state_mutex_);j=status_;j["model_id"]=model_;j["target_size_m"]=target_size_;j["calibration_id"]=calibration_id_;j["generic_sensitivity"]=generic_sensitivity_;}
     double now=monotonic_s();j["run_id"]=run_;j["boot_id"]=boot_;j["monotonic_s"]=now;
     j["profile"]=profile_;j["depth_enabled"]=depth_enabled_.load();
+    j["module_sku"]=module_sku_;j["platform_configuration_consistent"]=platform_consistent_;j["parallel_detectors"]=parallel_detectors_;
+    j["fast_recording_verified"]=fast_recording_verified_;
     j["capture_frames"]=sequence_.load();j["inference_frames"]=inferred_.load();j["dropped_frames"]=dropped_.load();
     j["last_frame_age_s"]=last_frame_>0?Json(now-last_frame_):Json(nullptr);
     j["last_inference_age_s"]=last_infer_>0?Json(now-last_infer_):Json(nullptr);
@@ -218,7 +221,7 @@ class Perception final:public rclcpp::Node {
   }
   void begin_segment(zed_tracking::ZedSource& source){
     fs::path file=session_/"segments"/("segment_"+std::to_string(++segment_)+".svo2");
-    source.start_recording(file.string(),"LOSSLESS");segment_start_=monotonic_s();recording_failures_=0;
+    source.start_recording(file.string(),record_codec_);segment_start_=monotonic_s();recording_failures_=0;
     set_status("segment_id",segment_);
   }
   void close_segment(zed_tracking::ZedSource& source){
@@ -266,6 +269,10 @@ class Perception final:public rclcpp::Node {
         if(!session_id_.empty())log(session_/"events.jsonl",{{"event","detector_change"},{"source","generic"},{"enabled",enabled},{"sensitivity",sensitivity},{"generation",detector_generation_.load()},{"monotonic_s",monotonic_s()}});
       }else if(action=="start_raw_record"){
         if(!session_id_.empty())throw std::runtime_error("recording already active");
+        const std::string codec=p.value("codec",std::string("LOSSLESS"));
+        if(codec!="LOSSLESS"&&codec!="H264_LOSSLESS")throw std::runtime_error("unsupported recording codec");
+        if(codec!="LOSSLESS"&&(!fast_recording_verified_||!platform_consistent_||module_sku_!="P3767-0000"))throw std::runtime_error("hardware recording not verified; restart camera or choose training mode");
+        record_codec_=codec;set_status("record_codec",codec);set_status("recording_rgb_pixel_exact",codec=="LOSSLESS");
         if(fs::space(records_.parent_path()).available<disk_reserve_)throw std::runtime_error("disk below measured recording reserve");
         if(metadata_failed_)throw std::runtime_error("metadata writer failed; restart and check storage before recording");
         session_id_="session_"+read_line("/proc/sys/kernel/random/uuid");session_=records_/session_id_;
@@ -273,7 +280,7 @@ class Perception final:public rclcpp::Node {
         fs::create_directories(session_/"segments");
         segment_=0;recorded_frames_=0;segment_summaries_.clear();session_dropped_start_=dropped_logs_;
         Json manifest={{"schema_version",1},{"session_id",session_id_},{"request_id",rid},{"run_id",run_},{"boot_id",boot_},
-          {"profile",profile_},{"codec","LOSSLESS"},{"segment_seconds",60},{"model_id",model_},
+          {"profile",profile_},{"codec",record_codec_},{"rgb_pixel_exact",record_codec_=="LOSSLESS"},{"segment_seconds",60},{"model_id",model_},
           {"camera_resolution",camera_resolution_},{"configured_capture_fps",capture_fps_},
           {"yolo_enabled",detector_.load()},{"generic_detector_enabled",generic_detector_.load()},{"generic_sensitivity",generic_sensitivity_},
           {"generic_size_prior_calibrated",false},{"generic_size_prior_m",target_size_},
@@ -458,6 +465,15 @@ class Perception final:public rclcpp::Node {
         std::vector<Detection> boxes;std::vector<zed_tracking::SkyTrack> generic;
         std::vector<zed_tracking::SkyCandidate> candidates;
         double yolo_ms=0,generic_ms=0;
+        std::future<std::pair<std::vector<zed_tracking::SkyCandidate>,double>> generic_task;
+        if(f->generic_enabled){
+          generic_task=zed_tracking::launch_secondary([f,&sky_detector]{
+            const auto started=Steady::now();
+            cv::Mat image(f->h,f->w,CV_8UC4,const_cast<unsigned char*>(f->bgra.data()));
+            auto detected=sky_detector.detect(image,zed_tracking::sky_options(f->generic_sensitivity));
+            return std::make_pair(std::move(detected),std::chrono::duration<double,std::milli>(Steady::now()-started).count());
+          },parallel_detectors_&&f->yolo_enabled);
+        }
         if(f->yolo_enabled){
           const auto start=Steady::now();
           try{
@@ -470,17 +486,16 @@ class Perception final:public rclcpp::Node {
           yolo_ms=std::chrono::duration<double,std::milli>(Steady::now()-start).count();
         }
         if(f->generic_enabled && f->detector_generation==detector_generation_){
-          const auto start=Steady::now();
+          auto start=Steady::now();
           try{
-            cv::Mat image(f->h,f->w,CV_8UC4,const_cast<unsigned char*>(f->bgra.data()));
             auto options=zed_tracking::sky_options(f->generic_sensitivity);
-            candidates=sky_detector.detect(image,options);
+            auto detected=generic_task.get();candidates=std::move(detected.first);generic_ms=detected.second;start=Steady::now();
             zed_tracking::SkyIntrinsics k{intrinsics_.fx,intrinsics_.fy,intrinsics_.cx,intrinsics_.cy,f->w,f->h};
             generic=sky_tracker.update(candidates,k,f->stamp*1e-9,f->motion,options.confirmation_frames);
             if(f->detector_generation==detector_generation_)generic_state_=2;
           }catch(const std::exception& e){sky_tracker.clear();
             if(f->detector_generation==detector_generation_){generic_detector_=false;generic_state_=3;++detector_generation_;error("generic",e.what());}}
-          generic_ms=std::chrono::duration<double,std::milli>(Steady::now()-start).count();
+          generic_ms+=std::chrono::duration<double,std::milli>(Steady::now()-start).count();
         }
         if(stop_||!rclcpp::ok())break;
         if(f->detector_generation!=detector_generation_)continue;
@@ -566,6 +581,10 @@ public:
     run_=declare_parameter<std::string>("run_id",std::to_string(getpid()));boot_=read_line("/proc/sys/kernel/random/boot_id");
     profile_=declare_parameter<std::string>("profile","rgb");engine_=declare_parameter<std::string>("engine_path","");model_=declare_parameter<std::string>("model_id","");
     capture_fps_=declare_parameter<int>("capture_fps",15);
+    parallel_detectors_=declare_parameter<bool>("parallel_detectors",false);
+    module_sku_=declare_parameter<std::string>("module_sku","");
+    platform_consistent_=declare_parameter<bool>("platform_configuration_consistent",false);
+    fast_recording_verified_=declare_parameter<bool>("fast_recording_verified",false);
     camera_resolution_=declare_parameter<std::string>("camera_resolution","HD1080");
     if(!zed_tracking::camera_mode_supported(camera_resolution_,capture_fps_))throw std::runtime_error("unsupported ZED X Mini resolution/FPS pair");
     if(profile_!="rgb"&&profile_!="perception")throw std::runtime_error("invalid profile");

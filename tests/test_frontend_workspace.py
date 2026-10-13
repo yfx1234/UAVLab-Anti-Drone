@@ -158,7 +158,7 @@ const assert=require('node:assert/strict'),crypto=require('node:crypto');
 let busy=true,controlBusy=false,restarted=false,mediaPhase='',sessions=[],sessionsLoading=false,renameTarget='',downloadRequest='active-download',knownRecordedSession='';
 const TOKEN='test',stopButtons=['stopCapture','stopRaw','stopLocal'],meta=null,draw=()=>{},state={connected:true,state:{camera_state:'stopped',pipeline:{}}};
 const cameraNames={},recordNames={},elements={};
-const byId=id=>elements[id]||(elements[id]={id,dataset:{},value:'',textContent:'',classList:{toggle(){},add(){},remove(){}},removeAttribute(){}});
+const byId=id=>elements[id]||(elements[id]={id,dataset:{},value:'',textContent:'',options:[{},{}],classList:{toggle(){},add(){},remove(){}},removeAttribute(){}});
 const document={querySelectorAll:()=>['startCapture','stopCapture','stopRaw','stopLocal'].map(byId)};
 const number=(v,d=2)=>typeof v==='number'&&Number.isFinite(v)?v.toFixed(d):'—',beijingTime=()=>'',selectedSession=()=>'',renderTargets=()=>{};
 let notice='';const message=text=>{notice=text;},fetch=async()=>({ok:true,status:200}),restartNotice=()=>{};
