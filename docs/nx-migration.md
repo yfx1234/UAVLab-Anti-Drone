@@ -1,6 +1,8 @@
-# Orin NX 16GB 迁移准备
+# Orin NX 16GB 迁移
 
-## 当前实测基线
+2026-10-13 已换装 P3767-0000 / NX16GB，原载板与NVMe保留。短时采集、识别、录像、导出和图传通过，但当前仍加载Nano DTB/功耗配置及旧引擎；30fps无损录像未达标。先阅读 [完整检查记录](NX完整检查_2026-10-13.md) 和 `environment/current-nx16.json`。以下迁移步骤作为待完成事项，不能把历史Nano基线当作当前NX环境。
+
+## 历史 Nano 实测基线
 
 Orin Nano 8GB，DAMIAO ORIN NX V2 系列载板，ZED X Mini（用户称 4 mm）、ZED Link Mono、H100；Ubuntu 22.04、L4T 36.4.3、5.15.148-tegra、CUDA 12.6、TensorRT 10.3、ZED SDK 5.5、ROS2 Humble。详细版本与当前文件哈希在 `environment/current-nano.json`。
 
@@ -8,12 +10,12 @@ Orin Nano 8GB，DAMIAO ORIN NX V2 系列载板，ZED X Mini（用户称 4 mm）�
 
 ## 迁移顺序
 
-1. 保存 Nano 系统/数据备份，当前采集继续用 Nano。根据 NX 实际 SKU 与载板获取匹配的 BSP；不直接套用 Nano 的 p3767-0003 基础设备树。
+1. 保存现有系统/数据与启动配置备份。根据已核实的NX P3767-0000与载板获取匹配的BSP；当前实际仍使用Nano p3767-0003基础设备树，需完成适配并保留回退入口。
 2. 核对 NX 供电、散热、NVMe、CSI0 接线、ZED Link Mono 独立供电。建立和当前一致的用户 `uavlab`、项目目录 `/home/uavlab/Jetson_ROS2_V0` 和图传地址。
 3. 按实际 L4T/内核安装相机驱动、ZED SDK 与权限。参考 `environment/hardware/README.md` 和适配记录。确认 SDK 能枚举相机、读取左右图与深度，其他相机程序退出后再启动平台。
 4. 安装 ROS2 Humble、C++17/CMake、colcon、CUDA 开发文件、TensorRT 开发库、OpenCV core/imgproc/imgcodecs/videoio、OpenSSL 开发库及 ament 的 GTest/PyTest 支持。软件版本先对照环境清单，不直接升级整个 BSP。
 5. 在 NX 克隆仓库，执行 `scripts/stage_board.py --dry-run`，核对目标目录后正式复制源码/模型。脚本对改动文件留备份，不删除录像，不部署硬件启动配置。
-6. 释放相机后运行 `scripts/build_board.sh`。默认只构建两个感知包，关闭历史滤波/飞控工具安装与对应测试；5 组原生感知测试应通过。
+6. 释放相机后运行 `scripts/build_board.sh`。默认只构建两个感知包，关闭历史滤波/飞控工具安装与对应测试；6 组原生感知测试应通过。
 7. 在 NX 上从 ONNX 重建引擎，存入 `weights/candidates/platform_exp_20260909/exp_opt3.engine`，保持 batch=1、输入 FP32 NCHW `[1,3,736,1280]`、输出 FP32 `[1,300,6]` 与端到端 xyxy/score/class 合同。允许内部 FP16，但不能擅自改输入/输出类型或加入另一种 NMS 格式。
 8. 运行 `build_model_manifest.py` 生成新模型身份；相机关闭时用 `--check-model` 验证合同。以新引擎 SHA256 作为 model_id，不能沿用 Nano 的 f5ca… 模型 ID。保留源 PT/ONNX 哈希，张量合同通过不代表识别精度验收。
 9. 电脑核对 NX 的 SSH 主机公钥指纹后更新 `panel/board_client.py`。固定图传电脑/板子 IP 和项目目录若保持一致，其余连接路径可继续复用。若换用户/根目录，还须更新 RPC 和 `session_manager.py` 中的固定数据路径。
@@ -35,4 +37,4 @@ TensorRT 引擎对硬件和运行版本有兼容约束；JetPack 不提供通用
 
 相机坐标测试用约30cm实物四旋翼、人工量距和静置不同方位完成，分别评估深度有效/无效两种定位；暂未进行。当前 Nano 的30fps无损短测仅约18.2fps，高帧率默认标为实验，不承诺 NX 到位后自动达标。
 
-本次完成的是代码与迁移材料准备。NX硬件、全新系统构建、NX引擎和实物定位验收仍待实际设备到位。
+NX硬件已到位并完成现有程序短测；匹配启动/功耗配置、NX原生引擎、编码链路、30fps持续录像及实物定位验收尚待完成。

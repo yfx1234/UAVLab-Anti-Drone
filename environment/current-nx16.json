@@ -1,0 +1,265 @@
+{
+  "audit_date": "2026-10-13",
+  "status": "NX installed; migration incomplete; short bench tests only",
+  "module": {
+    "part_number": "699-13767-0000-303 G.1",
+    "sku": "P3767-0000",
+    "name": "Jetson Orin NX 16GB",
+    "linux_memtotal_kib": 16030520,
+    "online_cpus": "0-7",
+    "cuda": {
+      "init": 0,
+      "name": "Orin",
+      "multiprocessors": {
+        "code": 0,
+        "value": 8
+      },
+      "compute_major": {
+        "code": 0,
+        "value": 8
+      },
+      "compute_minor": {
+        "code": 0,
+        "value": 7
+      }
+    }
+  },
+  "carrier": "DAMIAO ORIN NX V2 (user retained carrier; minor revision not independently identified)",
+  "software": {
+    "ubuntu": "22.04.5",
+    "l4t": "36.4.3",
+    "kernel": "5.15.148-tegra",
+    "qspi_bootloader": "36.4.4",
+    "cuda": "12.6",
+    "tensorrt": "10.3.0.30",
+    "zed_sdk": "5.5.0",
+    "ros": "Humble",
+    "multimedia_package_mismatch": "gstreamer / multimedia-api / dla-compiler at 36.4.7; remaining core at 36.4.3"
+  },
+  "boot": {
+    "active_compatible": "nvidia,p3768-0000+p3767-0003-super nvidia,p3767-0003 nvidia,tegra234",
+    "default_label": "ZED_DAMIAO",
+    "fdt": "/boot/dtb/kernel_tegra234-j401-p3768-0000+p3767-0003-recomputer.dtb",
+    "overlay": "/boot/damiao-zed-mono.dtbo",
+    "nvpmodel_target": "/etc/nvpmodel/nvpmodel_p3767_0003_super.conf",
+    "mode": "MAXN_SUPER (Nano config ID 2; not NX acceptance)",
+    "gpu_tpc_mask_actual": 15,
+    "gpu_tpc_mask_config": 240
+  },
+  "camera": {
+    "devices": [
+      "/dev/video0",
+      "/dev/video1"
+    ],
+    "driver": "1.4.4",
+    "active_i2c_bus": 10,
+    "stream": "1920x1080",
+    "neural_depth_cache": "optimized on new GPU during initial open",
+    "rgb_export_valid": true,
+    "depth_export_valid": true
+  },
+  "yolo": {
+    "source_onnx_sha256": "200a04975f82fb648bd4e83f76efdf4034bad187525b263fce4d6a2cb464e55e",
+    "engine_sha256": "f5ca6203076e96531ac9eae0f04f1da16fc31cfa51cdc04532bf1ac815ea66a2",
+    "input_nchw": [
+      1,
+      3,
+      736,
+      1280
+    ],
+    "output_shape": [
+      1,
+      300,
+      6
+    ],
+    "contract_check_passed": true,
+    "cross_device_warning": true,
+    "nx_engine_rebuilt": false,
+    "real_quad_accuracy_validated": false
+  },
+  "nvenc": {
+    "device": "/dev/v4l2-nvenc",
+    "active_dt_status": "okay",
+    "gst_h264_factory_available": false,
+    "fresh_registry_result": "only nvv4l2decoder registered",
+    "encoding_verified": false
+  },
+  "source_check": {
+    "board_functional_files_match": true,
+    "matching_files": 57,
+    "differences": "README historical; perception_nano.yaml comments only; no behavior differences"
+  },
+  "measurements": [
+    {
+      "fps": 15,
+      "mode": "rgb",
+      "seconds": 12.999980992000019,
+      "unique_frames": 195,
+      "actual_hz": 15.000021932339738,
+      "inference_hz": 0.0,
+      "new_dropped_frames": 0
+    },
+    {
+      "fps": 15,
+      "mode": "yolo",
+      "seconds": 13.000000640000053,
+      "unique_frames": 195,
+      "actual_hz": 14.999999261538436,
+      "inference_hz": 14.999999261538436,
+      "new_dropped_frames": 0
+    },
+    {
+      "fps": 15,
+      "mode": "combined",
+      "seconds": 12.998185024000122,
+      "unique_frames": 195,
+      "actual_hz": 15.00209449549671,
+      "inference_hz": 11.924741778471743,
+      "new_dropped_frames": 40
+    },
+    {
+      "fps": 15,
+      "mode": "generic",
+      "seconds": 12.999977152000156,
+      "unique_frames": 195,
+      "actual_hz": 15.000026363123077,
+      "inference_hz": 15.000026363123077,
+      "new_dropped_frames": 0
+    },
+    {
+      "fps": 30,
+      "mode": "rgb",
+      "seconds": 13.000009952000028,
+      "unique_frames": 390,
+      "actual_hz": 29.999977033863672,
+      "inference_hz": 0.0,
+      "new_dropped_frames": 0
+    }
+  ],
+  "recording_measurements": [
+    {
+      "fps": 15,
+      "mode": "rgb",
+      "seconds": 12.00015945600012,
+      "unique_frames": 180,
+      "actual_hz": 14.99980068264838,
+      "inference_hz": 0.0,
+      "skipped_inference_frames": 0,
+      "new_metadata_drops": 0
+    },
+    {
+      "fps": 30,
+      "mode": "rgb",
+      "seconds": 11.99998691199994,
+      "unique_frames": 279,
+      "actual_hz": 23.250025358027774,
+      "inference_hz": 0.0,
+      "skipped_inference_frames": 0,
+      "new_metadata_drops": 0
+    },
+    {
+      "fps": 30,
+      "mode": "yolo",
+      "seconds": 12.650584191999997,
+      "unique_frames": 255,
+      "actual_hz": 20.157171884699004,
+      "inference_hz": 20.078124151817832,
+      "skipped_inference_frames": 0,
+      "new_metadata_drops": 0
+    },
+    {
+      "fps": 30,
+      "mode": "combined",
+      "seconds": 12.000039040000047,
+      "unique_frames": 222,
+      "actual_hz": 18.499939813529068,
+      "inference_hz": 10.749965026780405,
+      "skipped_inference_frames": 95,
+      "new_metadata_drops": 0
+    }
+  ],
+  "verification": {
+    "native_groups": 6,
+    "native_groups_passed": 6,
+    "pc_regression_total": 86,
+    "pc_regression_passed": 85,
+    "pc_regression_skipped": 1,
+    "pc_dashboard_tests": 2,
+    "panel_unique_fresh_frames": 46,
+    "max_temperature_c": 70.0,
+    "min_available_memory_kib": 12372684,
+    "camera_stopped_after_audit": true,
+    "no_flash_or_driver_or_power_changes": true,
+    "recording_svo_validation": {
+      "session_08f52558-4733-407a-aa0b-2c5ae6ca61c9": {
+        "state": null,
+        "verified_frames": null,
+        "rename_state": "complete"
+      },
+      "session_3f7e776f-5300-44c5-adfd-47b3dc24f7cf": {
+        "state": "complete",
+        "verified_frames": 306,
+        "rename_state": "complete"
+      },
+      "session_7efebc6a-50e4-4c3e-85ed-0b40aed0390b": {
+        "state": "complete",
+        "verified_frames": 268,
+        "rename_state": "complete"
+      },
+      "session_7993469f-cace-49c8-a34d-a9e7323b3601": {
+        "state": "complete",
+        "verified_frames": 249,
+        "rename_state": "complete"
+      }
+    }
+  },
+  "pending": [
+    "NX carrier-matched boot/FDT/power configuration",
+    "NX-native TensorRT engine",
+    "NVENC runtime repair and SVO codec acceptance",
+    "sustained 1080p30 lossless recording acceptance",
+    "actual moving-camera outdoor quad detection and positioning",
+    "RTC full power loss retention",
+    "physical supply and thermal capacity inspection"
+  ],
+  "download": {
+    "rgb": {
+      "kind": "rgb",
+      "transfer_bytes": 10399625,
+      "transfer_bytes_s": 1232621.192366704,
+      "timings_s": {
+        "metadata_s": 0.75,
+        "registry_s": 0.0,
+        "ssh_connect_s": 0.6090000000003783,
+        "sftp_open_s": 0.5159999999996217,
+        "path_check_s": 0.030999999999039574,
+        "remote_checksum_s": 0.15599999999903957,
+        "local_publish_s": 0.0,
+        "transfer_s": 8.437000000001717,
+        "total_download_s": 10.53099999999904,
+        "ready_check_s": 0.875,
+        "local_prepare_s": 1.125,
+        "total_job_s": 12.53099999999904
+      }
+    },
+    "depth": {
+      "kind": "depth",
+      "transfer_bytes": 0,
+      "transfer_bytes_s": 0.0,
+      "timings_s": {
+        "metadata_s": 1.1869999999980791,
+        "registry_s": 0.0,
+        "ssh_connect_s": 0.23500000000058208,
+        "sftp_open_s": 0.375,
+        "path_check_s": 0.4530000000013388,
+        "remote_checksum_s": 0.3279999999977008,
+        "local_hash_s": 0.014999999999417923,
+        "transfer_s": 0.0,
+        "total_download_s": 2.5929999999971187,
+        "ready_check_s": 0.5320000000028813,
+        "local_prepare_s": 0.0,
+        "total_job_s": 3.125
+      }
+    }
+  }
+}

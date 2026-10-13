@@ -61,7 +61,7 @@ NX 必须从 ONNX 在目标模块重建 TensorRT 引擎。当前 Nano `.engine` 
 - 当前 Nano 的 1080p/15 fps、同场 RGB→YOLO→RGB 录像及 SVO 回放已实测；实物四旋翼识别/坐标精度尚待用户安排。
 - 新增通用检测/联合YOLO的同场SVO短测503帧完整，原片实际约13.74Hz；通用检测约13.7Hz、联合约7.9Hz。当前Nano不宣称满15Hz或30Hz，真实天空与移动相机测试待做。摘要见 `environment/generic-detection-validation.json`。
 - 1080p/30 fps 的无损录像短测实际约 18.2 个独立图像/秒，尚未达标。SVGA/30 与 HD1200/15 只通过短时纯预览测试；60/120 fps 未验收。
-- NX 尚未安装，不能将配置占位文件或构建成功当成 NX 性能验收。
+- 2026-10-13 已换装 NX16GB；现有采集/检测/录像/导出/图传短测可运行，但仍加载Nano启动/功耗配置与旧引擎。1080p30纯RGB约30Hz；30fps无损录像约23.3Hz，叠加YOLO约20.2Hz、联合检测约18.5Hz，尚未达标。详见 [NX完整检查](docs/NX完整检查_2026-10-13.md) 与 `environment/current-nx16.json`。
 - 默认构建保留 6 组当前感知原生测试；历史滤波/控制的 2 组测试需开启旧工具选项及另外安装原 `falcon_intercept`/飞控相关依赖。
 
 提交前运行 `python -m unittest discover -s tests -v` 和 `python scripts/check_repository.py --history`。每次完成项目改动后提交并推送 GitHub；同步未成功时明确报告。
