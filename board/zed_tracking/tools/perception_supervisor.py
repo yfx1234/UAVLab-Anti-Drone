@@ -110,6 +110,7 @@ def state():
 
 def models():
     paths=sorted((WS.parent/'weights/candidates').glob('**/*.engine'))
+    selected=read_json(WS.parent/'perception_config/selected_model.json').get('model_id')
     result=[]
     for p in paths:
         # A basename is never treated as an arbitrary browser-supplied path.
@@ -120,7 +121,10 @@ def models():
         side=read_json(p.with_suffix('.manifest.json'))
         result.append({'model_id':mid,'engine_sha256':mid,'name':p.name,'path':str(p),'bytes':p.stat().st_size,
                        'recognition_validated':False,'manifest':side,
-                       'default':p.name=='exp_opt3.engine'})
+                       'default':False})
+    choice=next((m for m in result if m['model_id']==selected),None)
+    if choice is None:choice=next((m for m in result if m['name']=='exp_opt3.engine'),None)
+    if choice is not None:choice['default']=True
     return result
 
 def model_by_id(mid=None):
@@ -199,11 +203,8 @@ def stop(s):
     raise TimeoutError('owned process did not finalize; no broad/forced kill performed')
 
 def device_info():
-    mem={line.split(':')[0]:line.split(':')[1].strip() for line in pathlib.Path('/proc/meminfo').read_text().splitlines()}
-    caps={'memory':mem,'video_devices':[str(p) for p in pathlib.Path('/dev').glob('video*')],
-          'sdk_version':'5.5','default_profile':'nano_lossless','nvenc_verified':False,'nx16_ready':False}
-    try:caps['l4t']=pathlib.Path('/etc/nv_tegra_release').read_text().strip()
-    except OSError:pass
+    from device_capabilities import collect
+    caps=collect()
     # Fixed, bounded read-only diagnostics; never accept a command from the UI.
     for key,args in {
         'network':['ip','-j','address'],

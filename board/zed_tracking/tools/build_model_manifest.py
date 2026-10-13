@@ -25,13 +25,21 @@ def build(path):
     stem='exp_portrait_1280x736' if 'portrait' in path.stem else ('exp' if path.stem.startswith('exp') else path.stem)
     pt=path.parent/(stem+'.pt');onnx=path.parent/(stem+'.onnx')
     manifest=dict(contract,engine_sha256=sha256(path),source_pt_sha256=sha256(pt),source_onnx_sha256=sha256(onnx),
-        class_names=['drone'] if path.name=='exp_opt3.engine' else None,
+        class_names=['drone'] if stem=='exp' and pt.is_file() and onnx.is_file() else None,
         preprocessing={'color':'RGB','normalization':'0_to_1','letterbox_fill':114,'rotation_degrees':0},
         output_layout='end_to_end_xyxy_score_class',batch=1,recognition_validated=False,
-        build_environment={'l4t':pathlib.Path('/etc/nv_tegra_release').read_text().strip(),'sdk':'5.5','target':'current_8GB_Jetson'},
+        build_environment=build_environment(),
         source_note='Source hashes establish provenance; graph equivalence and real-target accuracy require separate validation.')
     atomic_json(path.with_suffix('.manifest.json'),manifest)
     return manifest
+
+def build_environment():
+    from device_capabilities import collect
+    facts=collect()
+    return {'l4t':facts['l4t'],'sdk':facts['sdk_version'],'target':facts['module_name'],
+            'module_sku':facts['module_sku'],'compatible':facts['compatible'],
+            'platform_configuration_consistent':facts['platform_configuration_consistent'],
+            'nvpmodel_config':facts['nvpmodel_config']}
 
 if __name__=='__main__':
     a=argparse.ArgumentParser();a.add_argument('engine',type=pathlib.Path);args=a.parse_args()
