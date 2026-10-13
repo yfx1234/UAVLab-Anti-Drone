@@ -18,6 +18,7 @@ class GenericPanelTests(unittest.TestCase):
     def test_generic_cannot_receive_idle_rgb_download_acceleration(self):
         good={'pid':123,'camera_state':'running','profile':'rgb','last_status_age_s':.2,
               'pipeline':{'profile':'rgb','depth_enabled':False,'detector_enabled':False,
+               'module_sku':'P3767-0003','platform_configuration_consistent':True,
                'generic_detector_enabled':False,'record_state':'idle','capture_hz':15,
                'mem_available_kib':4*1024*1024,'max_temperature_c':56,'last_frame_age_s':.1}}
         self.assertEqual(SessionManager.transfer_limit(good),768*1024)

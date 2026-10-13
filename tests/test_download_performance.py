@@ -51,10 +51,27 @@ def fixture(clock=None,source_hash=None):
     return Board(),data
 
 class DownloadPerformanceTests(unittest.TestCase):
+    def test_nx_preview_speed_requires_consistent_identity_and_requested_rate(self):
+        good=self.healthy_preview();good['pipeline'].update(module_sku='P3767-0000',platform_configuration_consistent=True,configured_capture_fps=30,capture_hz=30,mem_available_kib=10*1024*1024)
+        self.assertEqual(SessionManager.transfer_limit(good),1024*1024)
+        for key,value in [('platform_configuration_consistent',False),('capture_hz',20),('mem_available_kib',5*1024*1024),('max_temperature_c',65),('configured_capture_fps',float('inf'))]:
+            bad=copy.deepcopy(good);bad['pipeline'][key]=value
+            with self.subTest(key=key):self.assertEqual(SessionManager.transfer_limit(bad),256*1024)
+        nano=copy.deepcopy(good);nano['pipeline']['module_sku']='P3767-0003'
+        self.assertEqual(SessionManager.transfer_limit(nano),768*1024)
+
     def healthy_preview(self):
         return {'pid':123,'camera_state':'running','profile':'rgb','last_status_age_s':.2,'pipeline':{'profile':'rgb',
+            'module_sku':'P3767-0003','platform_configuration_consistent':True,
             'depth_enabled':False,'detector_enabled':False,'record_state':'idle','capture_hz':15,
             'mem_available_kib':4*1024*1024,'max_temperature_c':56,'last_frame_age_s':.1}}
+
+    def test_unknown_or_inconsistent_identity_uses_conservative_budget(self):
+        for sku in (None,'unknown','P3767-0001'):
+            value=self.healthy_preview();value['pipeline']['module_sku']=sku
+            with self.subTest(sku=sku):self.assertEqual(SessionManager.transfer_limit(value),256*1024)
+        value=self.healthy_preview();value['pipeline']['platform_configuration_consistent']=False
+        self.assertEqual(SessionManager.transfer_limit(value),256*1024)
 
     def test_preview_acceleration_requires_every_health_and_idle_condition(self):
         good=self.healthy_preview()

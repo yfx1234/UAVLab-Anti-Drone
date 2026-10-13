@@ -169,6 +169,7 @@ let notice='';const message=text=>{notice=text;},fetch=async()=>({ok:true,status
  await byId('cancelDownload').onclick();assert.match(notice,/转换结束后生效/,'board conversion cancellation must describe deferred application');
  transferProgress({phase_code:'local_prepare'});update();assert.equal(byId('startCapture').disabled,false,'local preparation does not own the camera');
  transferProgress({phase_code:'transfer'});update();assert.equal(byId('startCapture').disabled,false,'file transfer permits camera start');
+ busy=false;state.state.camera_state='running';state.state.pid=123;state.state.pipeline.generic_detector_enabled=true;state.error='timed out';update();assert.equal(byId('connection').textContent,'连接中断');assert.equal(byId('cameraState').textContent,'状态待更新');assert.equal(byId('startCapture').disabled,true);assert.equal(byId('genericSensitivity').disabled,true);assert.equal(byId('genericStatus').textContent,'待核对');
 })().catch(error=>{console.error(error);process.exitCode=1;});
 ''')
 

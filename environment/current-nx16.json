@@ -1,6 +1,6 @@
 {
   "audit_date": "2026-10-13",
-  "status": "NX installed; migration incomplete; short bench tests only",
+  "status": "NX boot, native engine, encoder and perception optimizations deployed; 25W; real-target field validation pending",
   "module": {
     "part_number": "699-13767-0000-303 G.1",
     "sku": "P3767-0000",
@@ -37,14 +37,15 @@
     "multimedia_package_mismatch": "gstreamer / multimedia-api / dla-compiler at 36.4.7; remaining core at 36.4.3"
   },
   "boot": {
-    "active_compatible": "nvidia,p3768-0000+p3767-0003-super nvidia,p3767-0003 nvidia,tegra234",
-    "default_label": "ZED_DAMIAO",
-    "fdt": "/boot/dtb/kernel_tegra234-j401-p3768-0000+p3767-0003-recomputer.dtb",
+    "active_compatible": "nvidia,p3768-0000+p3767-0000-super nvidia,p3767-0000 nvidia,tegra234",
+    "default_label": "UAVLAB_NX16",
+    "fdt": "/boot/dtb/uavlab-damiao-nx16-36.4.3.dtb",
     "overlay": "/boot/damiao-zed-mono.dtbo",
-    "nvpmodel_target": "/etc/nvpmodel/nvpmodel_p3767_0003_super.conf",
-    "mode": "MAXN_SUPER (Nano config ID 2; not NX acceptance)",
+    "nvpmodel_target": "/etc/nvpmodel/nvpmodel_p3767_0000_super.conf",
+    "mode": "25W / ID3",
     "gpu_tpc_mask_actual": 15,
-    "gpu_tpc_mask_config": 240
+    "gpu_tpc_mask_config": 240,
+    "backup": "/var/backups/uavlab-nx16-20261013T115705Z"
   },
   "camera": {
     "devices": [
@@ -60,7 +61,7 @@
   },
   "yolo": {
     "source_onnx_sha256": "200a04975f82fb648bd4e83f76efdf4034bad187525b263fce4d6a2cb464e55e",
-    "engine_sha256": "f5ca6203076e96531ac9eae0f04f1da16fc31cfa51cdc04532bf1ac815ea66a2",
+    "engine_sha256": "817e1709350e806e7ab261a3fe4d62acfa4828b6c2062b581ac51e9eea3d7712",
     "input_nchw": [
       1,
       3,
@@ -73,69 +74,42 @@
       6
     ],
     "contract_check_passed": true,
-    "cross_device_warning": true,
-    "nx_engine_rebuilt": false,
-    "real_quad_accuracy_validated": false
+    "cross_device_warning": false,
+    "nx_engine_rebuilt": true,
+    "real_quad_accuracy_validated": false,
+    "engine_name": "exp_nx16_fp16.engine",
+    "comparison": "9 indoor right-clipped false-positive frames, one near-tied NMS choice differs7 modelpixels/IoU.921; no real quad acceptance"
   },
   "nvenc": {
     "device": "/dev/v4l2-nvenc",
     "active_dt_status": "okay",
-    "gst_h264_factory_available": false,
-    "fresh_registry_result": "only nvv4l2decoder registered",
-    "encoding_verified": false
+    "gst_h264_factory_available": true,
+    "fresh_registry_result": "H264/H265/AV1/VP9 registered after corrected NX identity and user cache refresh",
+    "encoding_verified": true,
+    "svo_codecs": {
+      "LOSSLESS": {
+        "rgb_pixel_exact": true,
+        "default": true
+      },
+      "H264_LOSSLESS": {
+        "rgb_pixel_exact": false,
+        "explicit_opt_in": true,
+        "mean_rgb_abs_difference": 1.3819,
+        "max_rgb_abs_difference": 24,
+        "verified_fps": [
+          15,
+          30
+        ],
+        "verified_resolution": "HD1080",
+        "pre_disable_drain_ms": 250
+      }
+    }
   },
   "source_check": {
     "board_functional_files_match": true,
     "matching_files": 57,
     "differences": "README historical; perception_nano.yaml comments only; no behavior differences"
   },
-  "measurements": [
-    {
-      "fps": 15,
-      "mode": "rgb",
-      "seconds": 12.999980992000019,
-      "unique_frames": 195,
-      "actual_hz": 15.000021932339738,
-      "inference_hz": 0.0,
-      "new_dropped_frames": 0
-    },
-    {
-      "fps": 15,
-      "mode": "yolo",
-      "seconds": 13.000000640000053,
-      "unique_frames": 195,
-      "actual_hz": 14.999999261538436,
-      "inference_hz": 14.999999261538436,
-      "new_dropped_frames": 0
-    },
-    {
-      "fps": 15,
-      "mode": "combined",
-      "seconds": 12.998185024000122,
-      "unique_frames": 195,
-      "actual_hz": 15.00209449549671,
-      "inference_hz": 11.924741778471743,
-      "new_dropped_frames": 40
-    },
-    {
-      "fps": 15,
-      "mode": "generic",
-      "seconds": 12.999977152000156,
-      "unique_frames": 195,
-      "actual_hz": 15.000026363123077,
-      "inference_hz": 15.000026363123077,
-      "new_dropped_frames": 0
-    },
-    {
-      "fps": 30,
-      "mode": "rgb",
-      "seconds": 13.000009952000028,
-      "unique_frames": 390,
-      "actual_hz": 29.999977033863672,
-      "inference_hz": 0.0,
-      "new_dropped_frames": 0
-    }
-  ],
   "recording_measurements": [
     {
       "fps": 15,
@@ -214,13 +188,10 @@
     }
   },
   "pending": [
-    "NX carrier-matched boot/FDT/power configuration",
-    "NX-native TensorRT engine",
-    "NVENC runtime repair and SVO codec acceptance",
-    "sustained 1080p30 lossless recording acceptance",
-    "actual moving-camera outdoor quad detection and positioning",
+    "real moving-camera outdoor quad detection and positioning",
     "RTC full power loss retention",
-    "physical supply and thermal capacity inspection"
+    "physical supply/connector and thermal capacity inspection before higher power",
+    "all-detector 1080p30 pixel-exact recording acceptance"
   ],
   "download": {
     "rgb": {
@@ -261,5 +232,302 @@
         "total_job_s": 3.125
       }
     }
+  },
+  "pre_repair_measurements": [
+    {
+      "fps": 15,
+      "mode": "rgb",
+      "seconds": 12.999980992000019,
+      "unique_frames": 195,
+      "actual_hz": 15.000021932339738,
+      "inference_hz": 0.0,
+      "new_dropped_frames": 0
+    },
+    {
+      "fps": 15,
+      "mode": "yolo",
+      "seconds": 13.000000640000053,
+      "unique_frames": 195,
+      "actual_hz": 14.999999261538436,
+      "inference_hz": 14.999999261538436,
+      "new_dropped_frames": 0
+    },
+    {
+      "fps": 15,
+      "mode": "combined",
+      "seconds": 12.998185024000122,
+      "unique_frames": 195,
+      "actual_hz": 15.00209449549671,
+      "inference_hz": 11.924741778471743,
+      "new_dropped_frames": 40
+    },
+    {
+      "fps": 15,
+      "mode": "generic",
+      "seconds": 12.999977152000156,
+      "unique_frames": 195,
+      "actual_hz": 15.000026363123077,
+      "inference_hz": 15.000026363123077,
+      "new_dropped_frames": 0
+    },
+    {
+      "fps": 30,
+      "mode": "rgb",
+      "seconds": 13.000009952000028,
+      "unique_frames": 390,
+      "actual_hz": 29.999977033863672,
+      "inference_hz": 0.0,
+      "new_dropped_frames": 0
+    }
+  ],
+  "measurements": [
+    {
+      "fps": 15,
+      "mode": "rgb",
+      "codec": "LOSSLESS",
+      "session_id": "session_11685ae6-bf92-44b9-87d4-dd34f4f87452",
+      "seconds": 13.000005599999895,
+      "capture_hz_actual": 14.999993538464443,
+      "inference_hz_actual": 0.0,
+      "replaced_inference_frames": 0,
+      "metadata_drops": 0,
+      "preview_unique": 6,
+      "preview_timestamps": 6
+    },
+    {
+      "fps": 15,
+      "mode": "rgb",
+      "codec": "H264_LOSSLESS",
+      "session_id": "session_9739369c-0ffd-4af6-ad34-bc60ef0dfe4e",
+      "seconds": 12.99996480000027,
+      "capture_hz_actual": 15.000040615494278,
+      "inference_hz_actual": 0.0,
+      "replaced_inference_frames": 0,
+      "metadata_drops": 0,
+      "preview_unique": 6,
+      "preview_timestamps": 6
+    },
+    {
+      "fps": 15,
+      "mode": "yolo",
+      "codec": "LOSSLESS",
+      "session_id": "session_138c5e1d-dcfd-483c-96da-230cf67625a1",
+      "seconds": 12.999974463999934,
+      "capture_hz_actual": 15.00002946467334,
+      "inference_hz_actual": 15.00002946467334,
+      "replaced_inference_frames": 0,
+      "metadata_drops": 0,
+      "preview_unique": 6,
+      "preview_timestamps": 6
+    },
+    {
+      "fps": 15,
+      "mode": "yolo",
+      "codec": "H264_LOSSLESS",
+      "session_id": "session_5c018cb1-be4f-403e-98a8-26d647767cd6",
+      "seconds": 13.00000617600017,
+      "capture_hz_actual": 14.999992873849344,
+      "inference_hz_actual": 14.999992873849344,
+      "replaced_inference_frames": 0,
+      "metadata_drops": 0,
+      "preview_unique": 6,
+      "preview_timestamps": 6
+    },
+    {
+      "fps": 15,
+      "mode": "combined",
+      "codec": "LOSSLESS",
+      "session_id": "session_c872794b-625b-4021-9e1e-3de857549964",
+      "seconds": 13.000032416000067,
+      "capture_hz_actual": 14.999962597016266,
+      "inference_hz_actual": 12.769198928742052,
+      "replaced_inference_frames": 29,
+      "metadata_drops": 0,
+      "preview_unique": 6,
+      "preview_timestamps": 6
+    },
+    {
+      "fps": 15,
+      "mode": "combined",
+      "codec": "H264_LOSSLESS",
+      "session_id": "session_1f338aee-f5bf-474e-b993-49d29805a6f7",
+      "seconds": 12.999975039999754,
+      "capture_hz_actual": 15.00002880005558,
+      "inference_hz_actual": 13.153871409279509,
+      "replaced_inference_frames": 23,
+      "metadata_drops": 0,
+      "preview_unique": 6,
+      "preview_timestamps": 6
+    },
+    {
+      "fps": 15,
+      "mode": "generic",
+      "codec": "LOSSLESS",
+      "session_id": "session_27f2bfc6-d251-4a4f-ab69-89d7034f2eb0",
+      "seconds": 12.999539679999998,
+      "capture_hz_actual": 15.00053115726941,
+      "inference_hz_actual": 14.000495746784784,
+      "replaced_inference_frames": 13,
+      "metadata_drops": 0,
+      "preview_unique": 6,
+      "preview_timestamps": 6
+    },
+    {
+      "fps": 15,
+      "mode": "generic",
+      "codec": "H264_LOSSLESS",
+      "session_id": "session_026fe861-03f0-46cc-b4e5-e87fce345323",
+      "seconds": 12.999990527999671,
+      "capture_hz_actual": 15.000010929239112,
+      "inference_hz_actual": 14.692318397357283,
+      "replaced_inference_frames": 4,
+      "metadata_drops": 0,
+      "preview_unique": 6,
+      "preview_timestamps": 6
+    },
+    {
+      "fps": 30,
+      "mode": "rgb",
+      "codec": "LOSSLESS",
+      "session_id": "session_1126c0b1-679d-4f2c-9a95-4f023d11f572",
+      "seconds": 12.999999520000074,
+      "capture_hz_actual": 18.153846824141933,
+      "inference_hz_actual": 0.0,
+      "replaced_inference_frames": 0,
+      "metadata_drops": 0,
+      "preview_unique": 6,
+      "preview_timestamps": 6
+    },
+    {
+      "fps": 30,
+      "mode": "rgb",
+      "codec": "H264_LOSSLESS",
+      "session_id": "session_022d7282-c431-4e7d-8524-fdf461a90e5f",
+      "seconds": 13.000043936000111,
+      "capture_hz_actual": 29.999898609573183,
+      "inference_hz_actual": 0.0,
+      "replaced_inference_frames": 0,
+      "metadata_drops": 0,
+      "preview_unique": 6,
+      "preview_timestamps": 6
+    },
+    {
+      "fps": 30,
+      "mode": "yolo",
+      "codec": "LOSSLESS",
+      "session_id": "session_3886d7c4-a562-44d6-8752-07d9c59066d8",
+      "seconds": 12.999988479999956,
+      "capture_hz_actual": 16.846168774451154,
+      "inference_hz_actual": 16.846168774451154,
+      "replaced_inference_frames": 0,
+      "metadata_drops": 0,
+      "preview_unique": 6,
+      "preview_timestamps": 6
+    },
+    {
+      "fps": 30,
+      "mode": "yolo",
+      "codec": "H264_LOSSLESS",
+      "session_id": "session_fd9bba6e-57a3-48f1-9648-67184f4f6c55",
+      "seconds": 13.000045312000111,
+      "capture_hz_actual": 18.61531973097156,
+      "inference_hz_actual": 18.61531973097156,
+      "replaced_inference_frames": 0,
+      "metadata_drops": 0,
+      "preview_unique": 6,
+      "preview_timestamps": 6
+    },
+    {
+      "fps": 30,
+      "mode": "combined",
+      "codec": "LOSSLESS",
+      "session_id": "session_dce44393-9dc8-4fa2-80e7-223956086082",
+      "seconds": 13.000028832000226,
+      "capture_hz_actual": 13.692277324942852,
+      "inference_hz_actual": 12.076896292224875,
+      "replaced_inference_frames": 21,
+      "metadata_drops": 0,
+      "preview_unique": 6,
+      "preview_timestamps": 6
+    },
+    {
+      "fps": 30,
+      "mode": "combined",
+      "codec": "H264_LOSSLESS",
+      "session_id": "session_2c665cb3-3646-4ceb-b4b3-5a94548c3e96",
+      "seconds": 13.0000297280003,
+      "capture_hz_actual": 19.384571056574295,
+      "inference_hz_actual": 13.307661876140289,
+      "replaced_inference_frames": 79,
+      "metadata_drops": 0,
+      "preview_unique": 6,
+      "preview_timestamps": 6
+    },
+    {
+      "fps": 30,
+      "mode": "generic",
+      "codec": "LOSSLESS",
+      "session_id": "session_9a81342b-691c-4365-815f-da364e723209",
+      "seconds": 12.999998528000106,
+      "capture_hz_actual": 13.46153998579888,
+      "inference_hz_actual": 12.076924444402424,
+      "replaced_inference_frames": 17,
+      "metadata_drops": 0,
+      "preview_unique": 6,
+      "preview_timestamps": 6
+    },
+    {
+      "fps": 30,
+      "mode": "generic",
+      "codec": "H264_LOSSLESS",
+      "session_id": "session_9ccec352-98f5-49c6-92b5-c6f50d07757e",
+      "seconds": 12.999871200000143,
+      "capture_hz_actual": 24.461780821335868,
+      "inference_hz_actual": 14.615529421552877,
+      "replaced_inference_frames": 129,
+      "metadata_drops": 0,
+      "preview_unique": 6,
+      "preview_timestamps": 6
+    }
+  ],
+  "short_matrix_resources": {
+    "maximum_temperature_c": 69.906,
+    "minimum_available_memory_gib": 9.93746566772461
+  },
+  "power_supply": {
+    "battery": "6S 22.2V nominal 5300mAh user supplied",
+    "full_charge_v": 25.2,
+    "vendor_v2_input_range_v": [
+      12,
+      28
+    ],
+    "module_regulated_input_v_observed": 4.984,
+    "current_mode_w": 25
+  },
+  "validation": {
+    "native_test_groups_passed": 7,
+    "pc_tests": 99,
+    "pc_passed": 98,
+    "pc_skipped_windows_symlink": 1,
+    "short_svo_replays_complete": 16
+  },
+  "sustained_measurements": [
+    {
+      "fps": 15,
+      "mode": "combined",
+      "codec": "LOSSLESS",
+      "session_id": "session_18e8a1e4-d352-4a0f-84e7-86e696519218",
+      "seconds": 151.99999318400023,
+      "capture_hz_actual": 13.98684273246261,
+      "inference_hz_actual": 12.2697373923061,
+      "replaced_inference_frames": 261,
+      "metadata_drops": 0,
+      "preview_unique": 69,
+      "preview_timestamps": 69
+    }
+  ],
+  "sustained_resources": {
+    "maximum_temperature_c": 70.687,
+    "minimum_available_memory_gib": 10.083599090576172
   }
 }

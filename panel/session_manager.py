@@ -40,7 +40,15 @@ class SessionManager:
             p.get('generic_detector_enabled',False) is False and
             number('capture_hz')>=13 and number('mem_available_kib')>=2*1024*1024 and
             0<=number('max_temperature_c')<65 and 0<=number('last_frame_age_s')<1)
-        return 768*1024 if healthy_rgb_preview else 256*1024
+        if p.get('module_sku')=='P3767-0000':
+            # Only accelerate an idle preview. Detection and recording retain their protected budget.
+            requested=number('configured_capture_fps')
+            healthy_nx=(healthy_rgb_preview and p.get('platform_configuration_consistent') is True and
+                requested in (15,30,60,120) and number('capture_hz')>=.9*requested and
+                number('mem_available_kib')>=6*1024*1024)
+            return 1024*1024 if healthy_nx else 256*1024
+        known_nano=p.get('module_sku') in ('P3767-0003','P3767-0004','P3767-0005') and p.get('platform_configuration_consistent') is True
+        return 768*1024 if healthy_rgb_preview and known_nano else 256*1024
     def fetch_dataset_index(self,result):
         self.root.mkdir(parents=True,exist_ok=True)
         target=self.root/'dataset_index.json';part=target.with_suffix('.json.part')
@@ -92,7 +100,7 @@ class SessionManager:
             # Keep transfer rate independent of remote hash and metadata stages.
             progress_value={'phase_code':code,'stage':stage,'downloaded_bytes':done,'total_bytes':total,
                 'file':file,'bytes_s':rate,'eta_s':(total-done)/max(1,rate) if rate else None,
-                'speed_mode':('停止后高速' if not limit else '预览中加速' if limit==768*1024 else '采集中限速'),'limit_bytes_s':limit,
+                'speed_mode':('停止后高速' if not limit else '预览中加速' if limit>=768*1024 else '采集中限速'),'limit_bytes_s':limit,
                 'elapsed_s':time.monotonic()-operation_started}
             progress(progress_value)
         def update_limit():
