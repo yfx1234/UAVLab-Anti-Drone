@@ -23,7 +23,7 @@ colors:
   disabled-text: "#858589"
 typography:
   brand:
-    fontFamily: "-apple-system, BlinkMacSystemFont, \"Segoe UI\", \"Microsoft YaHei\", sans-serif"
+    fontFamily: "-apple-system, BlinkMacSystemFont, \"Segoe UI\", \"Noto Sans SC\", \"PingFang SC\", \"Hiragino Sans GB\", Arial, sans-serif"
     fontSize: "22px"
     fontWeight: 650
     lineHeight: 1.5
@@ -39,7 +39,7 @@ typography:
     lineHeight: 1.5
     letterSpacing: "-0.015em"
   body:
-    fontFamily: "-apple-system, BlinkMacSystemFont, \"Segoe UI\", \"Microsoft YaHei\", sans-serif"
+    fontFamily: "-apple-system, BlinkMacSystemFont, \"Segoe UI\", \"Noto Sans SC\", \"PingFang SC\", \"Hiragino Sans GB\", Arial, sans-serif"
     fontSize: "14px"
     fontWeight: 400
     lineHeight: 1.5
@@ -150,7 +150,7 @@ components:
 
 ## Typography
 
-**Body Font:** -apple-system、BlinkMacSystemFont、Segoe UI、Microsoft YaHei、sans-serif。
+**Body Font:** 使用源码 `--font-ui` 的系统 UI 栈，具体顺序见 frontmatter。当前 Windows 环境使用 Segoe UI 与已安装的 Noto Sans SC 中文回退；Apple 平台字体名仅是跨平台回退项，不表示 Windows 已安装 SF 或 PingFang。
 **Display Font:** 无独立装饰 display 字体。
 **Label/Mono Font:** 标签沿用正文；测量、计时与健康数值使用 `font-variant-numeric: tabular-nums`，无独立等宽字体。
 
@@ -170,13 +170,15 @@ components:
 
 ## Layout
 
-桌面主容器最大宽度 1760px，水平留白 24px。实时控制栏为 248px，1500px 以上为 264px；素材来源栏为 300px，工作区间距 24px。工具栏 sticky，设备健康栏 fixed；实际高度经 ResizeObserver 回写变量，让内容、控制和反馈避开遮挡。
+桌面主容器最大宽度 1760px，水平留白 24px。实时控制栏与素材来源栏均为 248px，1500px 以上为 264px，工作区间距 24px。工具栏 sticky，设备健康栏 fixed；实际高度经 ResizeObserver 回写变量，让内容、控制和反馈避开遮挡。
 
-桌面控制 sticky 于工具栏下方 22px，最大高度扣除工具栏、健康栏与 44px 留白，内部滚动。1100px 以下控制可折叠，展开为三列；599px 以下为单列。素材库在 800px 以下改为单列。健康指标由八列减至四列、两列；窄屏默认折叠，保持可查。
+桌面控制与素材来源栏 sticky 于工具栏下方 22px，最大高度扣除工具栏、健康栏与 44px 留白，内部滚动；素材来源栏按 100dvh 计算可用高度。1100px 以下实时控制可折叠，展开为三列；599px 以下为单列。素材库在 800px 以下改为单列，来源栏恢复正常文档流与自然高度。健康指标由八列减至四列、两列；窄屏默认折叠，保持可查。
 
 目标表外容器固定 264px，sticky 表头、双向内部滚动与 stable scrollbar gutter；测量数据不换行。实时监看明确占满容器宽度、采用 16:9，保留最大高度 650px、默认最小高度 200px、窄屏 180px；原生全屏保持画面比例。
 
-本机回放 stage 明确为 100% 宽，由 16:9 决定高度，最小高度为 0，不设 650px 高度上限。视频绝对定位填满 stage，使用 object-fit: contain 保留完整画面；不得通过裁切或拉伸消除右侧空白。文件信息在正常文档流中。
+本机回放整个卡片按窗口可用高度等比缩小：源码 `--media-room` 为 `max(200px,calc(100dvh - var(--header-height) - var(--health-height) - 228px))`；卡片宽度为 100%，最大宽度为该高度乘 16/9，并在所在列靠左。标题区、选择字段、视频与文件信息共同遵循该卡片宽度。800px 以下移除卡片最大宽度，随自然堆叠占满所在列。
+
+回放 stage 明确为卡片的 100% 宽，由 16:9 决定高度，最小高度为 0，不设 650px 高度上限。视频绝对定位填满 stage，使用 object-fit: contain 保留完整画面；不得通过单独缩小视频、裁切或拉伸消除右侧空白。文件信息在正常文档流中。
 
 **The Stable Targets Rule.** 目标区保持固定高度、sticky 表头和内部滚动；更新复用行节点并保留双向滚动位置，不随目标数量移动外部布局。
 
@@ -200,9 +202,13 @@ components:
 
 基础控件最小高度 36px、无边框、两端半圆；石墨主按钮、浅灰次按钮、浅红底红字停止/删除按钮、透明低频按钮区分操作层级。基础按钮内边距见 frontmatter；控制栏使用 13px 与 7px 8px 内边距。低频工具、图像切换与反馈按钮可使用局部 28–34px 高度。不可逆确认用红色填充并置于模态操作区。禁用态使用独立文字和填色，不恢复边框。focus-visible 为 2px 轮廓、3px 外偏移；背景与阴影使用 150ms ease-out。
 
+下载按钮保持紧凑，最小高度 50px、内边距 9px 14px；图标与文字组整体居中，文字组内左对齐，主行 13px/600、参数行 11px。800px 以下为三列，内边距缩为 9px 12px；599px 以下恢复单列。
+
 ### Inputs / Fields
 
 浅灰填色、无边框、字段圆角与 frontmatter 的内边距。placeholder 使用独立可读灰色且 opacity 为 1；焦点沿用公共轮廓。改名为原位置内联编辑，字段下方显示错误；失败保留重试入口与内容。
+
+素材类型选择仅显示实际编码参数 LOSSLESS 与 H264_LOSSLESS，不在选项内追加常驻说明。YOLO 输入与实时预览不附常驻指导段落；保留操作状态、实际规格与必要的错误反馈。
 
 ### Navigation
 
@@ -231,10 +237,10 @@ components:
 - Do 以真实 RGB、YOLO 画面和本机视频作为图像内容；图标采用现有内联 SVG。
 - Do 保持固定目标容器、稳定滚动条、sticky 表头和滚动位置。
 - Do 用文字配合状态色；未知、过期、未标定与错误保持明确。
-- Do 让桌面控制内部滚动，窄屏控制可折叠；反馈固定显示且不改变内容流。
+- Do 让桌面控制和素材来源栏 sticky 并内部滚动，窄屏恢复相应折叠或自然堆叠；反馈固定显示且不改变内容流。
 - Do 保留键盘焦点、禁用、空状态、失败重试、取消与不可逆确认。
 - Do 用胶囊按钮、分尺度圆角与轻环境阴影；常驻控件和表面保持无外围描边。
-- Do 让本机回放 stage 占满容器宽度，以原比例和 contain 展示完整画面。
+- Do 按 --media-room 等比缩小整个本机回放卡片，让 stage 占满卡片宽度，以原比例和 contain 展示完整画面。
 
 ### Don't:
 
@@ -245,3 +251,4 @@ components:
 - Don't 用模拟画面、装饰效果图或推算状态替代实际数据。
 - Don't 将遗留边框变量继承为当前常驻控件边框，或把实时监看的 650px 上限施加到本机回放。
 - Don't 用裁切或拉伸视频遮盖布局空白。
+- Don't 恢复常驻 YOLO/预览说明或在编码参数选项内加入指导文字。
