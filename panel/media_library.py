@@ -2,6 +2,7 @@
 import pathlib,json,subprocess,time,shutil,urllib.parse,uuid,os,re,contextlib
 from preview_recorder import PreviewRecorder
 from scene_registry import SceneRegistry
+from windows_file_location import reveal_file
 
 class MediaLibrary:
     def __init__(self,root,preview_root=None,registry=None):
@@ -135,7 +136,7 @@ class MediaLibrary:
                 for p in folder.glob('exports/*/*.view.mp4'):
                     if p.is_symlink():continue
                     relative=p.relative_to(self.root).as_posix();kind='depth' if p.name.startswith('depth_') else 'rgb'
-                    rows.append(self._row(entry,sid,kind,p.parent.name,relative,p.name))
+                    rows.append(dict(self._row(entry,sid,kind,p.parent.name,relative,p.name),path=str(p.resolve())))
             if self.preview_root:
                 for pid,entry in self.registry.previews.items():
                     if pid in self.registry.active_previews:continue
@@ -143,7 +144,7 @@ class MediaLibrary:
                     for p in folder.glob('*.mp4'):
                         if p.is_symlink():continue
                         relative='preview_videos/'+p.relative_to(self.preview_root).as_posix()
-                        rows.append(self._row(entry,pid,'preview_'+entry.get('view_mode','rgb'),p.stem,relative,p.name))
+                        rows.append(dict(self._row(entry,pid,'preview_'+entry.get('view_mode','rgb'),p.stem,relative,p.name),path=str(p.resolve())))
             def order(row):
                 number=re.search(r'(\d+)$',row['segment'])
                 return (-row['created_at_unix_s'],row.get('source_session_id') or row['session_id'],int(number[1]) if number else 0,row['kind'],row['relative'])
@@ -162,8 +163,8 @@ class MediaLibrary:
         with self.registry.lock:
             source=self.path(relative)
             if os.name!='nt':raise ValueError('打开文件位置只用于Windows本机')
-            subprocess.Popen(['explorer.exe',f'/select,{source}'],creationflags=0x08000000)
-            return {'folder':str(source.parent),'file':str(source)}
+            reveal_file(source)
+            return {'folder':str(source.parent),'file':str(source),'selected':True}
     def extract(self,session_id,fps=2):
         if not re.fullmatch('[a-zA-Z0-9_-]{1,80}',session_id) or not .2<=fps<=15:raise ValueError('场次或抽帧参数无效')
         with self.registry.operation(session_id):return self._extract(session_id,fps)

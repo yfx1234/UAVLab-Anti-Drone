@@ -11,7 +11,13 @@ class ClockFolderTests(unittest.TestCase):
   from media_library import MediaLibrary
   with tempfile.TemporaryDirectory() as tmp:
    root=pathlib.Path(tmp);p=root/'fixture/exports/segment_1/rgb_video.view.mp4';p.parent.mkdir(parents=True);p.touch();library=MediaLibrary(root)
-   with patch('media_library.subprocess.Popen') as launch:
-    result=library.open_folder('fixture/exports/segment_1/rgb_video.view.mp4');self.assertTrue(pathlib.Path(result['file']).is_file());self.assertEqual(pathlib.Path(result['folder']),pathlib.Path(result['file']).parent);launch.assert_called_once()
+   with patch('media_library.reveal_file',create=True) as reveal,patch('media_library.subprocess.Popen'):
+    result=library.open_folder('fixture/exports/segment_1/rgb_video.view.mp4');self.assertTrue(pathlib.Path(result['file']).is_file());self.assertEqual(pathlib.Path(result['folder']),pathlib.Path(result['file']).parent);reveal.assert_called_once_with(pathlib.Path(result['file']));self.assertTrue(result['selected'])
    with self.assertRaises(ValueError):library.open_folder('../outside.mp4')
+ def test_reveal_failure_is_reported_instead_of_claiming_the_folder_opened(self):
+  from media_library import MediaLibrary
+  with tempfile.TemporaryDirectory() as tmp:
+   root=pathlib.Path(tmp);p=root/'fixture/exports/北京时间 场次/rgb_video.view.mp4';p.parent.mkdir(parents=True);p.touch();library=MediaLibrary(root)
+   with patch('media_library.reveal_file',create=True,side_effect=OSError('Shell selection failed')),patch('media_library.subprocess.Popen'):
+    with self.assertRaisesRegex(OSError,'Shell selection failed'):library.open_folder(p.relative_to(root).as_posix())
 if __name__=='__main__':unittest.main()

@@ -156,7 +156,7 @@ transferProgress({phase_code:'transfer',downloaded_bytes:1048576,total_bytes:209
   self.run_node(r'''
 const assert=require('node:assert/strict'),crypto=require('node:crypto');
 let busy=true,controlBusy=false,restarted=false,mediaPhase='',sessions=[],sessionsLoading=false,renameTarget='',downloadRequest='active-download',knownRecordedSession='';
-const TOKEN='test',stopButtons=['stopCapture','stopRaw','stopLocal'],meta=null,draw=()=>{},state={connected:true,state:{camera_state:'stopped',pipeline:{}}};
+const TOKEN='test',stopButtons=['stopCapture','stopRaw','stopLocal'],meta=null,image=null,draw=()=>{},state={connected:true,state:{camera_state:'stopped',pipeline:{}}};
 const cameraNames={},recordNames={},elements={},modelsLoaded=false,hydrateNotes=()=>{};
 const byId=id=>elements[id]||(elements[id]={id,dataset:{},value:'',textContent:'',options:[{},{}],classList:{toggle(){},add(){},remove(){}},removeAttribute(){}});
 const document={querySelectorAll:()=>['startCapture','stopCapture','stopRaw','stopLocal'].map(byId)};
@@ -170,6 +170,7 @@ let notice='';const message=text=>{notice=text;},fetch=async()=>({ok:true,status
  transferProgress({phase_code:'local_prepare'});update();assert.equal(byId('startCapture').disabled,false,'local preparation does not own the camera');
  transferProgress({phase_code:'transfer'});update();assert.equal(byId('startCapture').disabled,false,'file transfer permits camera start');
  busy=false;state.state.camera_state='running';state.state.pid=123;state.error='timed out';update();assert.equal(byId('connection').textContent,'连接中断');assert.equal(byId('cameraState').textContent,'状态待更新');assert.equal(byId('startCapture').disabled,true);assert.equal(byId('yoloInput').disabled,true);
+ byId('mediaSelect').value='/api/media/场次/rgb_video.view.mp4';update();assert.equal(byId('openMediaFolder').disabled,false,'already downloaded files remain accessible when board connection fails');
 })().catch(error=>{console.error(error);process.exitCode=1;});
 ''')
 
