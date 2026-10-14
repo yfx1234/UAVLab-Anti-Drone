@@ -2,6 +2,7 @@
 import hmac
 import http.server
 import json
+import math
 import os
 import pathlib
 import re
@@ -30,7 +31,7 @@ def valid_request(host,origin,token,expected):
 class Panel:
     def __init__(self):
         self.token=secrets.token_urlsafe(32);self.instance_id=uuid.uuid4().hex;self.lock=threading.RLock();self.board=BoardClient();self.jobs=JobManager()
-        self.connected=False;self.state={};self.state_observed_at=0.0;self.error=None;self.closed=threading.Event();self.local_revision=0
+        self.connected=False;self.state={};self.state_observed_at=0.0;self.control_roundtrip_ms=None;self.error=None;self.closed=threading.Event();self.local_revision=0
         registry=SceneRegistry.shared(OUTPUT/'board_sessions',OUTPUT/'preview_videos')
         self.receiver=FrameReceiver();self.recorder=PreviewRecorder(OUTPUT/'preview_videos',registry);self.receiver.listener=self.recorder.consume
         self.sessions=SessionManager(self.board,OUTPUT/'board_sessions',registry,self.transfer_state)
@@ -41,16 +42,26 @@ class Panel:
         while not self.closed.wait(1):
             if not self.connected:continue
             try:
-                state=self.board.call('status',timeout=12)
+                started=time.monotonic();state=self.board.call('status',timeout=12)
                 with self.lock:
                     if not self.connected:continue
                     if state.get('boot_id')==self.state.get('boot_id') and state.get('revision',0)<self.state.get('revision',0):continue
-                    changed=state.get('run_id')!=self.state.get('run_id')
-                    self.state=state;self.state_observed_at=time.monotonic();self.error=None
-                if changed:self.receiver.cache.clear()
+                    self.observe_state(state,started);self.error=None
                 self.receiver.set_enabled(bool(state.get('pid')))
             except Exception as e:
                 with self.lock:self.error=str(e)
+    def observe_state(self,state,request_started):
+        received=time.monotonic();transit=max(0,received-request_started)
+        state=state.copy()
+        def age(value):
+            return value+transit if isinstance(value,(int,float)) and not isinstance(value,bool) and math.isfinite(value) and value>=0 else None
+        if 'last_status_age_s' in state:state['last_status_age_s']=age(state['last_status_age_s'])
+        if isinstance(state.get('hardware'),dict):state['hardware']=dict(state['hardware'],sample_age_s=age(state['hardware'].get('sample_age_s')))
+        self.receiver.observe_board_clock(state,request_started)
+        with self.lock:
+            changed=state.get('run_id')!=getattr(self,'state',{}).get('run_id')
+            self.state=state;self.state_observed_at=received;self.control_roundtrip_ms=transit*1000
+        if changed and hasattr(self.receiver,'cache'):self.receiver.cache.clear()
     def transfer_state(self):
         """Never trust an idle state after polling stalls or the panel disconnects."""
         with self.lock:
@@ -68,7 +79,12 @@ class Panel:
             state=self.state.copy();node_age=state.get('last_status_age_s')
             if isinstance(node_age,(int,float)) and not isinstance(node_age,bool) and node_age>=0:
                 state['last_status_age_s']=node_age+max(0,time.monotonic()-self.state_observed_at)
+            hardware=state.get('hardware')
+            if isinstance(hardware,dict):
+                age=hardware.get('sample_age_s')
+                state['hardware']=dict(hardware,sample_age_s=age+max(0,time.monotonic()-self.state_observed_at) if isinstance(age,(int,float)) and math.isfinite(age) and age>=0 else None)
             return {'api_version':2,'instance_id':self.instance_id,'host':HOST,'connected':self.connected,'state':state,'error':self.error,
+                    'control_roundtrip_ms':getattr(self,'control_roundtrip_ms',None),
                     'local_revision':self.local_revision,'preview':self.receiver.snapshot(),'preview_recording':self.recorder.snapshot(),
                     'events':self.events[-15:],'output_directory':str(OUTPUT)}
     def submit(self,data):
@@ -93,8 +109,8 @@ class Panel:
                 self.board.password=password
                 state=self.board.call('status')
                 request=dict(request_id=uuid.uuid4().hex,**{'expected_'+k:state[k] for k in ('boot_id','run_id','revision')})
-                state=self.board.call('set_clock_reference',{'pc_unix_s':time.time()},request)['state']
-                with self.lock:self.connected=True;self.state=state;self.state_observed_at=time.monotonic();self.error=None
+                started=time.monotonic();state=self.board.call('set_clock_reference',{'pc_unix_s':time.time()},request)['state']
+                with self.lock:self.connected=True;self.observe_state(state,started);self.error=None
                 self.receiver.set_enabled(bool(state.get('pid')));return {'connected':True}
             if action=='disconnect':
                 with self.lock:self.connected=False;self.board.password=None
@@ -152,7 +168,7 @@ class Panel:
                 return result
             allowed={'action','request_id','expected_boot_id','expected_run_id','expected_revision','params'}
             request={key:value for key,value in data.items() if key in allowed}
-            result=self.board.call(action,params,request,timeout=3700 if action=='export_session' else 60)
+            started=time.monotonic();result=self.board.call(action,params,request,timeout=3700 if action=='export_session' else 60)
             if action=='list_sessions':self.media.scene_names(result)
             if action=='rename_session':
                 try:local_sync=self.media.rename_scene(params['session_id'],result['result']['display_name'])
@@ -162,7 +178,7 @@ class Panel:
                 result['result']=self.sessions.fetch_dataset_index(result['result'])
             with self.lock:
                 if isinstance(result,dict) and 'state' in result:
-                    self.state=result['state'];self.state_observed_at=time.monotonic()
+                    self.observe_state(result['state'],started)
             return result
         def guarded_work():
             try:return work()

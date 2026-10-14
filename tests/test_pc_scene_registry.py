@@ -221,6 +221,7 @@ class PcSceneRegistryTests(unittest.TestCase):
                 def call(self,action,params,request,timeout):
                     return {'result':{'session_id':'session_a','display_name':params['name']},'state':{}}
             panel=Panel.__new__(Panel); panel.lock=threading.RLock(); panel.jobs=JobManager(); panel.connected=True
+            panel.receiver=SimpleNamespace(observe_board_clock=lambda *args:None)
             panel.scene_jobs={}; panel.progress={}; panel.cancelled=set(); panel.board=Board(); panel.media=library
             def submit(rid):
                 jid=panel.submit({'action':'rename_session','request_id':rid,'params':{'session_id':'session_a','name':'after'}})

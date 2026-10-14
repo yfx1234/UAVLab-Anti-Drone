@@ -179,7 +179,11 @@ class SessionManager:
                 # Source hash computed remotely through a fixed registered-path RPC.
                 report('remote_hash','校验',str(rel))
                 source=measured('remote_checksum_s',lambda:call('session_checksum',{'session_id':session_id,'file':str(rel)}))
-                if source['sha256']!=sha.hexdigest():raise ValueError('下载校验失败；保留临时文件')
+                if source['sha256']!=sha.hexdigest():
+                    # A checksum-invalid prefix cannot be resumed safely. Only
+                    # reset this transfer's temporary file; keep any published copy.
+                    with part.open('wb'):pass
+                    raise ValueError('下载校验失败；临时文件已重置，请重试下载')
                 measured('local_publish_s',lambda:part.replace(target));checks.append({'file':str(rel),'sha256':sha.hexdigest()})
             (dest/('download_integrity_'+kind+'.json')).write_text(json.dumps(checks),encoding='utf-8')
             timings.update(transfer_s=transfer_elapsed,total_download_s=time.monotonic()-operation_started)

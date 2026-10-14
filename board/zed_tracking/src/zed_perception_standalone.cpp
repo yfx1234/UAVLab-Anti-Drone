@@ -161,7 +161,7 @@ class Perception final:public rclcpp::Node {
   }
   Json base(const Frame& f){
     std::lock_guard<std::mutex> config_lock(state_mutex_);
-    Json j={{"schema_version",1},{"run_id",run_},{"boot_id",boot_},{"frame_id","zed_left_camera_optical_frame"},
+    Json j={{"schema_version",2},{"run_id",run_},{"boot_id",boot_},{"frame_id","zed_left_camera_optical_frame"},
       {"frame_key",run_+"_"+std::to_string(f.sequence)},{"sequence",f.sequence},{"stamp_ns",f.stamp},
       {"monotonic_s",f.acquired},{"image_width",f.w},{"image_height",f.h},{"model_id",f.model},{"camera_serial",intrinsics_.serial_number},
       {"detector_enabled",(f.yolo_enabled&&detector_state_==2)||(f.generic_enabled&&generic_state_==2)},
@@ -177,6 +177,18 @@ class Perception final:public rclcpp::Node {
     std::lock_guard<std::mutex> l(log_mutex_);
     if(logs_.size()>=1024){++dropped_logs_;metadata_failed_=true;return;}
     pending_work_.acquire(file.parent_path().filename().string());logs_.emplace_back(file,std::move(value));log_cv_.notify_one();
+  }
+  void publish_inactive_frame(const Frame& f,Json packet){
+    if(stop_||!rclcpp::ok()||f.detector_generation!=detector_generation_)return;
+    const double latency=monotonic_s()-f.acquired;
+    packet["detector_enabled"]=false;packet["observations_fresh"]=false;packet["processing_latency_s"]=latency;
+    zed_perception_interfaces::msg::PerceptionFrame msg;
+    msg.header.stamp=rclcpp::Time(f.stamp);msg.header.frame_id="zed_left_camera_optical_frame";
+    msg.run_id=run_;msg.boot_id=boot_;msg.model_id=f.model;msg.schema_version=2;msg.sequence=f.sequence;
+    msg.image_width=f.w;msg.image_height=f.h;msg.detector_generation=f.detector_generation;
+    msg.detector_enabled=false;msg.yolo_enabled=false;msg.generic_detector_enabled=false;
+    msg.observations_fresh=false;msg.processing_latency_s=latency;
+    observations_->publish(msg);std_msgs::msg::String out;out.data=packet.dump();json_pub_->publish(out);
   }
   void writer_loop(){
     while(true){std::pair<fs::path,Json> item;
@@ -419,7 +431,7 @@ class Perception final:public rclcpp::Node {
               std::memcpy(f->confidence.data()+y*f->w,reinterpret_cast<const char*>(c.getPtr<float>())+y*c.getStepBytes(),f->w*sizeof(float));}
           }catch(const std::exception& e){f->depth.clear();f->confidence.clear();if(seq%30==0)error("depth",e.what());}
         }
-        if(!f->yolo_enabled&&!f->generic_enabled){preview_.offer(f,base(*f));continue;}
+        if(!f->yolo_enabled&&!f->generic_enabled){auto packet=base(*f);publish_inactive_frame(*f,packet);preview_.offer(f,std::move(packet));continue;}
         if((f->yolo_enabled&&detector_state_!=2)||(f->generic_enabled&&generic_state_!=2))preview_.offer(f,base(*f));
         {std::lock_guard<std::mutex> l(queue_mutex_);if(latest_){++dropped_;pending_work_.release(latest_->session);}
           pending_work_.acquire(f->session);latest_=std::move(f);}queue_cv_.notify_one();
@@ -521,7 +533,9 @@ class Perception final:public rclcpp::Node {
         packet["generic_candidate_count"]=candidates.size();packet["generic_confirmed_count"]=generic.size();
         zed_perception_interfaces::msg::PerceptionFrame msg;
         msg.header.stamp=rclcpp::Time(f->stamp);msg.header.frame_id="zed_left_camera_optical_frame";
-        msg.run_id=run_;msg.model_id=packet["model_id"];msg.sequence=f->sequence;msg.image_width=f->w;msg.image_height=f->h;msg.detector_enabled=true;
+        if(!zed_tracking::frame_observations_fresh(packet["detector_enabled"].get<bool>(),monotonic_s()-f->acquired))inputs.clear();
+        msg.run_id=run_;msg.model_id=packet["model_id"];msg.sequence=f->sequence;msg.image_width=f->w;msg.image_height=f->h;msg.detector_enabled=packet["detector_enabled"].get<bool>();
+        msg.schema_version=2;msg.boot_id=boot_;
         msg.yolo_enabled=f->yolo_enabled;msg.generic_detector_enabled=f->generic_enabled;msg.detector_generation=f->detector_generation;
         for(const auto& input:inputs){const auto& b=input.box;double u=(b.x1+b.x2)/2,v=(b.y1+b.y2)/2;
           const double extent=input.generic_only?f->nominal_size:f->effective_size;
@@ -558,8 +572,16 @@ class Perception final:public rclcpp::Node {
           t.horizontal_angle_rad=p.horizontal;t.vertical_angle_rad=p.vertical;t.mode=mode;t.position_valid=valid;t.depth_measured_valid=measured;
           t.depth_z_m=measured?z:0;t.estimated_depth_z_m=!measured&&valid?z:0;t.distance_m=valid?p.distance:0;
           t.position_camera.x=p.x;t.position_camera.y=p.y;t.position_camera.z=p.z;t.depth_valid_pixels=q.count;
-          t.depth_valid_ratio=q.ratio;t.depth_iqr_m=q.iqr;t.reason=reason;msg.targets.push_back(t);
+          t.depth_valid_ratio=q.ratio;t.depth_iqr_m=q.iqr;t.reason=reason;
+          t.size_estimate_calibrated=calibrated;t.calibration_id=cid;t.size_prior_m=extent;msg.targets.push_back(t);
         }
+        if(stop_||!rclcpp::ok())break;
+        if(f->detector_generation!=detector_generation_)continue;
+        const double processing_latency_s=monotonic_s()-f->acquired;
+        const bool observations_fresh=zed_tracking::frame_observations_fresh(msg.detector_enabled,processing_latency_s);
+        msg.observations_fresh=observations_fresh;msg.processing_latency_s=processing_latency_s;
+        packet["processing_latency_s"]=processing_latency_s;packet["observations_fresh"]=observations_fresh;
+        if(!observations_fresh){msg.targets.clear();packet["targets"]=Json::array();}
         observations_->publish(msg);std_msgs::msg::String out;out.data=packet.dump();json_pub_->publish(out);
         if(!f->session.empty()){
           log(records_/f->session/"observations.jsonl",packet);

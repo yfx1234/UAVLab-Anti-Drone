@@ -7,6 +7,17 @@ from dashboard import Panel
 HTML=(ROOT/'panel/index.html').read_text(encoding='utf-8')
 
 class DetectionStabilityTests(unittest.TestCase):
+    def test_displayed_image_age_includes_transport_and_rejects_old_run(self):
+        function='function previewFrameAge('+HTML.split('function previewFrameAge(',1)[1].split('function currentTargets(',1)[0]
+        self.run_node(function+r'''
+const assert=require('node:assert/strict');
+const source={pid:1,run_id:'r',boot_id:'b'};
+const packet={run_id:'r',boot_id:'b',source_age_s:.8,received_age_s:.1,observed_at_browser_s:10};
+assert.ok(Math.abs(previewFrameAge(packet,source,10.2)-1.1)<1e-8);
+assert.equal(previewFrameAge({...packet,run_id:'old'},source,10.2),null);
+assert.equal(previewFrameAge({...packet,source_age_s:NaN},source,10.2),null);
+assert.equal(previewFrameAge(packet,source,9),null);
+''')
     def run_node(self,code):
         node=shutil.which('node')
         if not node:self.skipTest('Node required')

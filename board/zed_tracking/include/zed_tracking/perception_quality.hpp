@@ -36,6 +36,9 @@ inline uint64_t disk_reserve_bytes(double write_rate_bytes_s) {
   if(!std::isfinite(write_rate_bytes_s)||write_rate_bytes_s<0)write_rate_bytes_s=0;
   return std::max<uint64_t>(10ull*1024*1024*1024,uint64_t(std::ceil(write_rate_bytes_s*120)));
 }
+inline bool frame_observations_fresh(bool detector_enabled,double processing_latency_s) {
+  return detector_enabled&&std::isfinite(processing_latency_s)&&processing_latency_s>=0&&processing_latency_s<1;
+}
 inline bool depth_matches_size_prior(double depth,double estimate) {
   // Coarse sanity gate only. Perspective/rotor extent still needs field calibration.
   return std::isfinite(depth+estimate)&&depth>0&&estimate>0&&depth>=estimate*.6&&depth<=estimate/ .6;

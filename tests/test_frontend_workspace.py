@@ -151,6 +151,7 @@ transferProgress({phase_code:'transfer',downloaded_bytes:1048576,total_bytes:209
   transfer='function transferProgress('+HTML.split('function transferProgress(',1)[1].split('const beijingFormatter=',1)[0]
   update='function update()'+HTML.split('function update()',1)[1].split('async function action(',1)[0]
   freshness='function currentTargets('+HTML.split('function currentTargets(',1)[1].split('function draw()',1)[0]
+  age='function previewFrameAge('+HTML.split('function previewFrameAge(',1)[1].split('function currentTargets(',1)[0]
   elapsed='function elapsedTime('+HTML.split('function elapsedTime(',1)[1].split('const headerObserver=',1)[0]
   cancel="byId('cancelDownload').onclick="+HTML.split("byId('cancelDownload').onclick=",1)[1].split('function mediaIdentity(',1)[0]
   self.run_node(r'''
@@ -162,7 +163,7 @@ const byId=id=>elements[id]||(elements[id]={id,dataset:{},value:'',textContent:'
 const document={querySelectorAll:()=>['startCapture','stopCapture','stopRaw','stopLocal'].map(byId)};
 const number=(v,d=2)=>typeof v==='number'&&Number.isFinite(v)?v.toFixed(d):'—',beijingTime=()=>'',selectedSession=()=>'',renderTargets=()=>{};
 let notice='';const message=text=>{notice=text;},fetch=async()=>({ok:true,status:200}),restartNotice=()=>{};
-'''+elapsed+transfer+freshness+update+cancel+r'''
+'''+elapsed+transfer+age+freshness+update+cancel+r'''
 (async()=>{
  transferProgress({phase_code:'ready_check'});update();assert.equal(byId('startCapture').disabled,true,'camera cannot start while video readiness is being checked');
  transferProgress({phase_code:'board_convert',cancel_after_stage:true});update();assert.equal(byId('startCapture').disabled,true,'camera cannot start during offline board conversion');

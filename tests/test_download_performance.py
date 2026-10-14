@@ -51,6 +51,20 @@ def fixture(clock=None,source_hash=None):
     return Board(),data
 
 class DownloadPerformanceTests(unittest.TestCase):
+    def test_checksum_failure_resets_corrupted_partial_for_next_retry(self):
+        board,data=fixture()
+        with tempfile.TemporaryDirectory() as folder:
+            manager=SessionManager(board,pathlib.Path(folder),status_provider=lambda:{'pid':None})
+            manager.registry.update(board.call('list_sessions'))
+            dest=manager.registry.folder('fixture',create=True)/'exports/segment_1'
+            dest.mkdir(parents=True)
+            part=dest/'rgb_video.mp4.part';part.write_bytes(b'x'*len(data))
+            with self.assertRaisesRegex(ValueError,'校验失败'):manager.download('fixture',kind='rgb')
+            self.assertEqual(part.stat().st_size,0)
+            result=manager.download('fixture',kind='rgb')
+            self.assertEqual((dest/'rgb_video.mp4').read_bytes(),data)
+            self.assertEqual(result['transfer_bytes'],len(data))
+
     def test_nx_preview_speed_requires_consistent_identity_and_requested_rate(self):
         good=self.healthy_preview();good['pipeline'].update(module_sku='P3767-0000',platform_configuration_consistent=True,configured_capture_fps=30,capture_hz=30,mem_available_kib=10*1024*1024)
         self.assertEqual(SessionManager.transfer_limit(good),1024*1024)
@@ -141,7 +155,7 @@ class DownloadPerformanceTests(unittest.TestCase):
             manager.status_provider=unavailable
             with self.assertRaisesRegex(ValueError,'校验失败'):manager.download('fixture',kind='rgb')
             self.assertFalse(list(pathlib.Path(tmp).rglob('*.mp4')))
-            self.assertEqual(next(pathlib.Path(tmp).rglob('*.part')).read_bytes(),data)
+            self.assertEqual(next(pathlib.Path(tmp).rglob('*.part')).stat().st_size,0)
             self.assertAlmostEqual(clock.now-10,.25)
 
     def test_panel_stale_disconnected_or_failed_state_never_enables_unlimited_transfer(self):

@@ -2,6 +2,7 @@
 from collections import OrderedDict
 from dataclasses import dataclass
 import json
+import math
 import socket
 import struct
 import threading
@@ -54,7 +55,24 @@ class FrameReceiver:
         self.host=host;self.local_ip=local_ip;self.port=port;self.cache=FrameCache()
         self.enabled=threading.Event();self.closed=threading.Event();self.sock=None
         self.error=None;self.frames=0;self.bytes=0;self.started=time.monotonic()
+        self.clock_lock=threading.Lock();self.clock_reference=None;self.clock_required=False
         self.listener=None;self.thread=threading.Thread(target=self._loop,daemon=True);self.thread.start()
+    def observe_board_clock(self,state,request_started):
+        """Request start supplies an upper age bound, independent of wall clocks."""
+        stamp=state.get('sample_monotonic_s');boot=state.get('boot_id')
+        valid=isinstance(stamp,(int,float)) and not isinstance(stamp,bool) and math.isfinite(stamp) and stamp>=0 and bool(boot)
+        with self.clock_lock:
+            self.clock_required=True
+            self.clock_reference=(boot,stamp,request_started) if valid else None
+    def age_metadata(self,metadata):
+        with self.clock_lock:reference=self.clock_reference;required=self.clock_required
+        if reference is None:return None if required else metadata
+        boot,board_now,pc_started=reference;acquired=metadata.get('monotonic_s')
+        if metadata.get('boot_id')!=boot or not isinstance(acquired,(int,float)) or isinstance(acquired,bool) or not math.isfinite(acquired):return None
+        upper_age=max(0,board_now+time.monotonic()-pc_started-acquired)
+        original=metadata.get('source_age_s')
+        original=original if isinstance(original,(int,float)) and math.isfinite(original) else 0
+        return dict(metadata,source_age_s=max(original,upper_age))
     def set_enabled(self,enabled):
         if enabled:self.enabled.set()
         else:
@@ -71,7 +89,10 @@ class FrameReceiver:
                     self.sock=s;s.settimeout(4);s.bind((self.local_ip,0));s.connect((self.host,self.port))
                     self.error=None
                     while self.enabled.is_set() and not self.closed.is_set():
-                        meta,jpeg=read_packet(s);old=self.cache.latest()
+                        meta,jpeg=read_packet(s);meta=self.age_metadata(meta)
+                        if meta is None:continue
+                        if meta.get('source_age_s',0)>3:raise ValueError('预览积压已过期，重新连接获取最新画面')
+                        old=self.cache.latest()
                         packet=self.cache.put(meta,jpeg)
                         if old is None or old.metadata['frame_key']!=meta['frame_key']:
                             self.frames+=1;self.bytes+=len(jpeg)

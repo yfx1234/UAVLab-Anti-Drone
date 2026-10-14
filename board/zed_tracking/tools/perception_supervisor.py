@@ -110,6 +110,9 @@ def state():
     estimated=estimate(read_json(ROOT/'clock_reference.json'),boot)
     s['clock']={'board_unix_s':time.time(),'estimated_unix_s':estimated,'status':'pc_referenced' if estimated else 'board_clock',
                 'offset_from_pc_s':None if estimated is None else time.time()-estimated}
+    from hardware_health import hardware_snapshot
+    s['hardware']=hardware_snapshot(boot,ROOT/'hardware_health.json',RECORDS.parent)
+    s['sample_monotonic_s']=time.monotonic()
     return s
 
 def models():
@@ -260,7 +263,7 @@ def dispatch(request):
         return {'state':state(),'device':device_info(),'sessions':sessions()}
     with state_lock():
         s=state();cached=read_json(ROOT/'requests.json')
-        if rid in cached:return cached[rid]
+        if rid in cached:return dict(cached[rid],state=s)
         validate_expectation(s,request)
         if action=='start_capture':result=start(s,params)
         elif action=='stop_capture':result=stop(s)

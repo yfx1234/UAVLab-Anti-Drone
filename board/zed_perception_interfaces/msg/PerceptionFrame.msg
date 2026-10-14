@@ -9,3 +9,7 @@ bool yolo_enabled
 bool generic_detector_enabled
 uint64 detector_generation
 TargetObservation[] targets
+uint32 schema_version
+string boot_id
+bool observations_fresh
+float64 processing_latency_s

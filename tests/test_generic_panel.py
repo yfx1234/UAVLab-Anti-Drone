@@ -78,6 +78,7 @@ expired=true;expireTargets();assert.deepEqual(rendered,[]);assert.equal(draws,1)
 
     def test_stalled_browser_image_ages_delay_and_exits_live_view(self):
         function='function expireTargets('+HTML.split('function expireTargets(',1)[1].split('function draw()',1)[0]
+        function='function previewFrameAge('+HTML.split('function previewFrameAge(',1)[1].split('function currentTargets(',1)[0]+function
         node=shutil.which('node')
         if not node:self.skipTest('Node required')
         result=subprocess.run([node,'-e',r'''

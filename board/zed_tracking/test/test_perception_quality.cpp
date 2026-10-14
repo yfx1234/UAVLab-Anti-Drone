@@ -41,6 +41,11 @@ int main() {
   assert(!zed_tracking::targets_are_fresh(true,false,.1,.1));
   assert(!zed_tracking::targets_are_fresh(true,true,.1,1.1));
   assert(zed_tracking::targets_are_fresh(true,true,.1,.1));
+  assert(zed_tracking::frame_observations_fresh(true,.1));
+  assert(!zed_tracking::frame_observations_fresh(false,.1));
+  assert(!zed_tracking::frame_observations_fresh(true,1.0));
+  assert(!zed_tracking::frame_observations_fresh(true,-.1));
+  assert(!zed_tracking::frame_observations_fresh(true,NAN));
   assert(zed_tracking::disk_reserve_bytes(0)==10737418240ull);
   assert(zed_tracking::disk_reserve_bytes(100000000)==12000000000ull);
   assert(zed_tracking::depth_matches_size_prior(3,4.2));

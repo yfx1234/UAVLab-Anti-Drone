@@ -23,3 +23,6 @@ uint32 depth_valid_pixels
 float32 depth_valid_ratio
 float64 depth_iqr_m
 string reason
+bool size_estimate_calibrated
+string calibration_id
+float64 size_prior_m

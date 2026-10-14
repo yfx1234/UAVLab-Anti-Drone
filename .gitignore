@@ -5,6 +5,9 @@ runtime/
 test-results/
 .worktrees/
 .superpowers/
+.impeccable/review/
+.impeccable/mocks/
+.impeccable/build/
 data/
 build*/
 install*/

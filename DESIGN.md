@@ -1,43 +1,236 @@
-# UAVLab 操作工作台
+---
+name: "UAVLab 感知与采集工作台"
+description: "以真实画面为中心、控制与状态稳定的中性采集软件。"
+colors:
+  primary: "#303033"
+  primary-hover: "#171719"
+  background: "#f5f5f4"
+  paper: "#fff"
+  rail: "#fafaf9"
+  ink: "#252526"
+  muted: "#626266"
+  line: "#dededc"
+  control-line: "#c8c8c6"
+  image: "#202124"
+  success: "#216d50"
+  danger: "#ac3e43"
+  warning: "#856020"
+  selection: "#e9e9e6"
+  hover: "#f0f0ee"
+  pressed: "#e8e8e6"
+  disabled-surface: "#f2f2f0"
+  disabled-text: "#858589"
+typography:
+  brand:
+    fontFamily: "-apple-system, BlinkMacSystemFont, \"Segoe UI\", \"Microsoft YaHei\", sans-serif"
+    fontSize: "22px"
+    fontWeight: 650
+    lineHeight: 1.5
+    letterSpacing: "-0.04em"
+  headline:
+    fontSize: "17px"
+    fontWeight: 600
+    lineHeight: 1.5
+    letterSpacing: "-0.02em"
+  control-title:
+    fontSize: "15px"
+    fontWeight: 600
+    lineHeight: 1.5
+    letterSpacing: "-0.015em"
+  body:
+    fontFamily: "-apple-system, BlinkMacSystemFont, \"Segoe UI\", \"Microsoft YaHei\", sans-serif"
+    fontSize: "14px"
+    fontWeight: 400
+    lineHeight: 1.5
+  control:
+    fontSize: "13px"
+    fontWeight: 500
+    lineHeight: 1.5
+  label:
+    fontSize: "12px"
+    fontWeight: 400
+    lineHeight: 1.5
+  supporting:
+    fontSize: "11px"
+    fontWeight: 400
+    lineHeight: 1.5
+rounded:
+  segment: "5px"
+  control: "7px"
+  feedback: "8px"
+  surface: "10px"
+  dialog: "12px"
+spacing:
+  tight: "4px"
+  inset: "8px"
+  compact: "12px"
+  standard: "16px"
+  section: "20px"
+  workspace: "24px"
+components:
+  button-primary:
+    backgroundColor: "{colors.primary}"
+    textColor: "{colors.paper}"
+    rounded: "{rounded.control}"
+    padding: "7px 12px"
+  button-primary-hover:
+    backgroundColor: "{colors.primary-hover}"
+  button-secondary:
+    backgroundColor: "{colors.paper}"
+    textColor: "{colors.ink}"
+    rounded: "{rounded.control}"
+    padding: "7px 12px"
+  button-danger:
+    backgroundColor: "{colors.paper}"
+    textColor: "{colors.danger}"
+    rounded: "{rounded.control}"
+    padding: "7px 12px"
+  input:
+    backgroundColor: "{colors.paper}"
+    textColor: "{colors.ink}"
+    rounded: "{rounded.control}"
+    padding: "7px 10px"
+  workspace-tab:
+    textColor: "{colors.muted}"
+    rounded: "{rounded.control}"
+    padding: "6px 13px"
+    typography: "{typography.control}"
+  workspace-tab-selected:
+    backgroundColor: "{colors.selection}"
+    textColor: "{colors.ink}"
+  section:
+    backgroundColor: "{colors.paper}"
+    textColor: "{colors.ink}"
+    rounded: "{rounded.surface}"
+---
 
-<!-- impeccable:design-schema 1 -->
+# Design System: UAVLab 感知与采集工作台
 
-本轮用户明确要求整体重设计、直接优化。视觉身份替换为采集/媒体编辑工作站：用稳定的工具条、可切换工作区和大图像台承载任务，不延续旧版长页白卡片。
+## Overview
 
-## Durable Visual Decisions
+**Creative North Star: "稳定的软件工作台"**
 
-- 中性浅灰背景、白色工具条、深石墨图像区域。蓝色只用于当前选择与主要操作；红色用于停止/删除与故障。
-- 使用 Segoe UI / Microsoft YaHei 产品字体；正文 13px、控件 13px、区标题 16px、产品标题 20px。数值用等宽数字，禁止全场技术字体。
-- 顶部产品和连接状态持续可见；实时监看/素材库在同一固定导航中切换。
-- 桌面左侧紧凑控制栏，右侧大图像与目标表。素材库以下载来源栏和播放台分区。窄屏控制折叠，图像优先。
-- 列表外部高度固定，sticky 表头、内部滚动与稳定滚动条。目标更新复用行节点并保留滚动位置。
-- 消息反馈不改变内容流；工作区切换不发启动/停止 RPC、不改变录像生命周期。
-- 空状态、错误、加载、悬停、键盘焦点和不可逆确认保持完整。说明文案在指南中，不常驻工作区。
+以真实画面为中心的成熟采集软件。柔和中性工具面、石墨主操作与细分界让控制保持清楚；UAVLab 品牌和中文操作语言沿用。系统 UI 字体服务连续操作，测量数据用等宽数字对齐。
 
-## Tokens
+实时数据不改变操作布局。导航、控制、设备健康与反馈有稳定的位置；工作区切换只改变前端视图，相机、YOLO、录像与后台下载的生命周期独立。视觉层级由空间、字重、选中状态和真实图像建立，不依靠装饰标题或重复卡片。
 
-背景 #f3f4f6；工具栏 #ffffff；侧栏 #f8f9fb；边界 #dce1e7；主字 #1d2632；辅助字 #586473；蓝色 #2458cf；图像台 #121820。
+**Key Characteristics:**
 
-控件 6px 圆角、图像台 10px 圆角、工作区间距 20px。只使用 1px 分界，不堆叠阴影或同尺寸卡片。
+- 中性工具面与石墨主要操作。
+- 真实画面为中心，控制和状态保持稳定。
+- 中文系统 UI 排版，测量数字对齐。
+- 完整的焦点、禁用、错误、确认与可恢复反馈。
 
-## Direction Record
+本文据 `panel/index.html` 当前实现合并既有有效规则；本轮已获整体重设计授权。旧版蓝色、全场 13px、通用检测与形式候选记录不再作为视觉规范。具体页面故事与首屏构图留在 `.impeccable/surface-briefs/console.md`。
 
-按与产品的相关度排序：1 相机控制台，2 实验室仪器台，3 采集/媒体编辑工作站，4 外场检查工作板，5 实验记录册，6 地图任务控制站，7 数据时间轴分析台。concept-seed 9278c0c8 指派 3，实施候选 3。
+## Colors
 
-图传操作者熟悉相机监看与素材回放，候选 3 能让两项任务各占完整视口。风格取舍：接受普通工具栏的熟悉感，用大图像台和稳定数据区落实工作流；不引入装饰性模拟硬件。
+柔和浅灰工具面配石墨主要操作；语义色只补充运行、故障与测量质量。frontmatter 是色值来源。sidecar 的八阶 OKLCH 色条仅供面板比较色调，为合成预览，不扩展生产色板。
 
-六个 challenger 的产品事实融合及取舍：
-- 时刻牌（competitive）：固定列适合实时目标，但全黑字符翻转会放大高频干扰。保留“列不移动”的纪律。
-- 影音目录墙（declined）：能承载视频，但横向海报墙不适合三类导出和精确场次改名。保留单一选中素材的视觉优先级。
-- 深色开发者控制台（competitive）：持久面板和隔离破坏操作适合设备任务；现场明亮环境需要浅色控件。保留面板结构与删除操作隔离，深色仅用于图像台。
-- 园区地图（declined）：空间区域无法表达录像/下载生命周期。保留响应式拓扑重排的纪律，不借用色块形状。
-- 录音带目录（declined）：两面承载两任务，但翻转隐喻会混淆后台连续运行。保留工作区时间元数据始终可查的纪律。
-- 中轴参考书（declined）：信息严密但细读密度不适合监看。保留对齐、尺度与分界的纪律，不借用文献排版。
+### Primary
 
-用户已授权直接大幅优化，本轮按明确要求自主实施；未再发方案审批页面。
+- **石墨操作色**：启动、主要下载、进度与固定反馈；旧 CSS 变量 `--blue` 的实际值已是石墨，不代表蓝色规范。
+- **深石墨悬停色**：主要按钮悬停。
 
-## Camera-control refinement
+### Neutral
 
-保持既定工具工作台视觉身份。桌面控制栏sticky置于实际顶栏高度加20px，最高为视口扣除顶栏与40px，内容内部滚动；窄屏保持折叠及线性阅读。移除profile与PC录像控件，参数/启动停止/YOLO三组连续排列。控件13px、组标题14px；实时图像台适配视口高度并保留比例，全屏用原生API。播放视频绝对定位于明确边界，文件信息单独在流中。
+- **工作台底色 / 白色内容面 / 浅灰工具面**：页面、图像与表格容器、工具条和设备健康区。
+- **墨色 / 辅助灰**：主要内容与状态说明。
+- **分界灰 / 控件边界灰**：细分界与输入边界。
+- **图像石墨**：监看和回放底面。
+- **选择灰 / 悬停灰 / 按下灰**：中性选择与短操作反馈。
+- **禁用底色 / 禁用文字**：不可用控件，不降低整个区域的透明度。
 
-通用检测采用独立控件组和标准/高/低灵敏度。通用目标以琥珀色 G 编号和“候选”标注，YOLO 用绿色 Y 编号，双源重合保留一行。实时画面切换统一为 RGB / 检测叠加。来源通过颜色及文字共同表达；目标表继续固定高度。窄屏功能文字不小于11px。
+运行绿、故障红与警示棕分别对应 success、danger、warning；保留实际状态文字。图像内 YOLO 绿色框为数据叠加，不是界面品牌色。
+
+**The Semantic Color Rule.** 运行、异常与未标定状态同时使用文字和语义色；选择与主操作使用中性石墨，不恢复旧版蓝色主操作。
+
+## Typography
+
+**Body Font:** -apple-system、BlinkMacSystemFont、Segoe UI、Microsoft YaHei、sans-serif。
+**Display Font:** 无独立装饰 display 字体。
+**Label/Mono Font:** 标签沿用正文；测量、计时与健康数值使用 `font-variant-numeric: tabular-nums`，无独立等宽字体。
+
+### Hierarchy
+
+- **Brand**：产品名称；窄屏缩为 21px。
+- **Headline**：内容区标题；窄屏为 16px。
+- **Control title**：参数与录像组；窄屏为 14px。
+- **Body**：正文与基础控件；基础按钮字重为 500。
+- **Control**：控制栏与工作区导航；窄屏控制保持 13px。
+- **Label**：状态、字段标签与表格内容。
+- **Supporting**：单位、规格、路径、表头与低频健康标签，不用于主要控制文字。
+
+模态标题为 20px、图像空状态为 18px；这是局部功能层级，不扩展为营销标题尺度。实际字号见 frontmatter。
+
+**The Operational Type Rule.** 沿用系统 UI 字体与实际功能层级，不引入装饰性 display 字体；数值使用 tabular-nums，正文不改成技术等宽字体。
+
+## Layout
+
+桌面主容器最大宽度 1760px，水平留白 24px。实时控制栏为 248px，1500px 以上为 264px；素材来源栏为 300px，工作区间距 24px。工具栏 sticky，设备健康栏 fixed；实际高度经 ResizeObserver 回写变量，让内容、控制和反馈避开遮挡。
+
+桌面控制 sticky 于工具栏下方 22px，最大高度扣除工具栏、健康栏与 44px 留白，内部滚动。1100px 以下控制可折叠，展开为三列；599px 以下为单列。素材库在 800px 以下改为单列。健康指标由八列减至四列、两列；窄屏默认折叠，保持可查。
+
+目标表外容器固定 264px，sticky 表头、双向内部滚动与 stable scrollbar gutter；测量数据不换行。监看与回放容器为 16:9，画面 contain 展示，最大高度 650px，默认最小高度 200px、窄屏 180px；原生全屏保持画面比例。播放视频绝对定位在明确媒体边界，文件信息在正常文档流中。
+
+**The Stable Targets Rule.** 目标区保持固定高度、sticky 表头和内部滚动；更新复用行节点并保留双向滚动位置，不随目标数量移动外部布局。
+
+**The Independent Workspaces Rule.** 切换实时监看与素材库只切换视图，不发送相机或录像启停 RPC；设备健康跨工作区可查。
+
+## Elevation & Depth
+
+常驻区域依靠浅灰工具面、白色内容面、石墨图像面与 1px 分界产生层次。侧栏为开放工具区；反馈用固定石墨面覆盖显示，不推移内容。选中分段按钮有低幅阴影，模态确认有柔和阴影与半透明背景；精确值见 sidecar extensions.shadows。
+
+**The Quiet Surfaces Rule.** 常驻工具面使用背景色与细边界区分；阴影只用于选中分段按钮和模态对话框。
+
+## Shapes
+
+圆角按对象尺度使用：分段子按钮、基础控件、反馈、内容容器、模态对话框分别使用 frontmatter 的圆角角色。工具栏、控制分组与健康栏以直线分界；状态圆点辅助真实状态。图标为内联线性 SVG，常规尺寸 18px、工作区图标 16px，不用字符图标或装饰标题图标。
+
+## Components
+
+### Buttons
+
+基础控件最小高度 36px；石墨主按钮、白色次按钮、红字停止/删除按钮、透明低频按钮区分操作层级。控制栏使用 13px 与 7px 8px 内边距。不可逆确认用红色填充并置于模态操作区。禁用态有独立文字、底色与边界。focus-visible 为 2px 轮廓、3px 外偏移；悬停与边界使用 150ms ease-out。
+
+### Inputs / Fields
+
+白底、可见边界、基础控件圆角与 7px 10px 内边距。placeholder 保持完整可读灰色；焦点沿用公共轮廓。改名为原位置内联编辑，字段下方显示错误；失败保留重试入口与内容。
+
+### Navigation
+
+工作区浅灰选中面和较强字重表示当前位置；使用 tab、aria-selected 与方向键/Home/End。RGB / YOLO 是图像局部分段切换，pressed 状态使用白色子按钮与轻阴影，不与硬件识别开关混淆。
+
+### Status
+
+文字与小圆点组合，不制作填色药丸。运行、故障与警示使用语义色，未知使用辅助灰。设备健康可折叠；计量单位保持可见。
+
+### Cards / Containers
+
+图像、目标表与回放是细边界内容容器；侧栏和工具区开放，不复制等尺寸卡片。标题区、测量区与内容区用细分界组织。
+
+### Stable target table
+
+固定外高、sticky 表头与复用行组成稳定测量组件，空表保留同一容器。定位质量同时显示文字和颜色，单位在表头或标题区域说明；过期数据不能继续显示为有效结果。
+
+### Feedback / Confirmation
+
+固定反馈位于设备健康栏上方，错误用独立暗红面，文字可换行、可关闭。原生 dialog 承载永久删除，明确板上范围与本机副本保留，初始焦点在取消。展开箭头只用 160ms ease-out 旋转；prefers-reduced-motion 禁用过渡。
+
+## Do's and Don'ts
+
+### Do:
+
+- Do 以真实 RGB、YOLO 画面和本机视频作为图像内容；图标采用现有内联 SVG。
+- Do 保持固定目标容器、稳定滚动条、sticky 表头和滚动位置。
+- Do 用文字配合状态色；未知、过期、未标定与错误保持明确。
+- Do 让桌面控制内部滚动，窄屏控制可折叠；反馈固定显示且不改变内容流。
+- Do 保留键盘焦点、禁用、空状态、失败重试、取消与不可逆确认。
+
+### Don't:
+
+- Don't 恢复蓝色主操作、全场 13px 正文或每个标题前的装饰图标。
+- Don't 堆叠同尺寸白卡片、硬偏移阴影或装饰动画。
+- Don't 把工作区切换与相机、识别、录像生命周期耦合。
+- Don't 将历史通用检测配色、双源标记或灵敏度控件继承为日常组件。
+- Don't 用模拟画面、装饰效果图或推算状态替代实际数据。
