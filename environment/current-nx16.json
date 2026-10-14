@@ -1,6 +1,6 @@
 {
   "audit_date": "2026-10-13",
-  "status": "NX boot, native engine, encoder and perception optimizations deployed; 25W; real-target field validation pending",
+  "status": "NX boot, native engine and NVENC deployed; MAXN_SUPER user-selected; default pixel-exact training1080p15; real-target field validation pending",
   "module": {
     "part_number": "699-13767-0000-303 G.1",
     "sku": "P3767-0000",
@@ -42,7 +42,7 @@
     "fdt": "/boot/dtb/uavlab-damiao-nx16-36.4.3.dtb",
     "overlay": "/boot/damiao-zed-mono.dtbo",
     "nvpmodel_target": "/etc/nvpmodel/nvpmodel_p3767_0000_super.conf",
-    "mode": "25W / ID3",
+    "mode": "MAXN_SUPER / ID0 (user requested; rollback ID3 / 25W)",
     "gpu_tpc_mask_actual": 15,
     "gpu_tpc_mask_config": 240,
     "backup": "/var/backups/uavlab-nx16-20261013T115705Z"
@@ -108,7 +108,8 @@
   "source_check": {
     "board_functional_files_match": true,
     "matching_files": 57,
-    "differences": "README historical; perception_nano.yaml comments only; no behavior differences"
+    "panel_functional_files_match": true,
+    "verified_date": "2026-10-14"
   },
   "recording_measurements": [
     {
@@ -502,12 +503,14 @@
       28
     ],
     "module_regulated_input_v_observed": 4.984,
-    "current_mode_w": 25
+    "current_mode_w": null,
+    "current_mode_name": "MAXN_SUPER",
+    "current_mode_id": 0
   },
   "validation": {
     "native_test_groups_passed": 7,
-    "pc_tests": 99,
-    "pc_passed": 98,
+    "pc_tests": 100,
+    "pc_passed": 99,
     "pc_skipped_windows_symlink": 1,
     "short_svo_replays_complete": 16
   },
@@ -529,5 +532,32 @@
   "sustained_resources": {
     "maximum_temperature_c": 70.687,
     "minimum_available_memory_gib": 10.083599090576172
+  },
+  "last_verified_date": "2026-10-14",
+  "maxn_rgb_sustained": {
+    "fps": 30,
+    "mode": "rgb",
+    "codec": "H264_LOSSLESS",
+    "session_id": "session_cbab0251-3456-4281-b57d-7cda000b0102",
+    "seconds": 610.999956608,
+    "capture_hz_actual": 29.435353972600456,
+    "inference_hz_actual": 0.0,
+    "replaced_inference_frames": 0,
+    "metadata_drops": 0,
+    "preview_unique": 247,
+    "preview_timestamps": 247,
+    "maximum_temperature_c": 65.781,
+    "minimum_available_memory_gib": 12.647159576416016,
+    "segments_seen": 11,
+    "full_playback_status": "complete",
+    "verified_frames": 18076,
+    "segments_verified": 11
+  },
+  "network": {
+    "pc_ipv4": "192.168.50.101/24",
+    "board_ipv4": "192.168.50.100",
+    "windows_fixed_address_in_active_and_persistent_store": true,
+    "windows_dhcp_enabled": false,
+    "verified_date": "2026-10-14"
   }
 }

@@ -2,7 +2,7 @@
 
 私有仓库：<https://github.com/yfx1234/UAVLab-Anti-Drone>，主分支 `main`。
 
-ZED X Mini 四旋翼感知与数据采集平台。当前运行在 Jetson Orin NX 16GB（P3767-0000），原 DAMIAO ORIN NX V2 载板与 NVMe 保留；仓库重点为感知、相机、录像、电脑监看与素材管理。已适配 NX 启动、25W 功耗配置、原生 TensorRT 引擎与编码器，实测边界见 [NX修复记录](docs/NX修复与优化_2026-10-13.md)。
+ZED X Mini 四旋翼感知与数据采集平台。当前运行在 Jetson Orin NX 16GB（P3767-0000），原 DAMIAO ORIN NX V2 载板与 NVMe 保留；仓库重点为感知、相机、录像、电脑监看与素材管理。已适配 NX 启动、正确功耗配置（现用 MAXN_SUPER）、原生 TensorRT 引擎与编码器，最新实测边界见 [结项复核](docs/NX结项复核_2026-10-14.md)。
 
 ## 当前链路
 
