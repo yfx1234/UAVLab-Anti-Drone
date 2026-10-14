@@ -20,8 +20,8 @@ from scene_registry import SceneRegistry
 
 BASE=pathlib.Path(__file__).resolve().parent
 OUTPUT=pathlib.Path(os.environ.get('UAVLAB_OUTPUT_DIRECTORY',str(BASE.parents[1]/'outputs'/'perception_data'))).resolve()
-BOARD_ACTIONS={'check_device','start_capture','stop_capture','set_detector','set_generic_detector','start_raw_record','stop_raw_record',
-               'list_sessions','list_models','test_model','select_model','save_calibration','export_session','export_diagnostics','prepare_dataset','rename_session','delete_session'}
+BOARD_ACTIONS={'check_device','start_capture','stop_capture','set_detector','start_raw_record','stop_raw_record',
+               'list_sessions','list_models','test_model','select_model','save_calibration','export_session','export_diagnostics','prepare_dataset','rename_session','delete_session','save_session_metadata'}
 LOCAL_ACTIONS={'connect','disconnect','start_preview_record','stop_preview_record','download_session','download_asset','extract_local_frames','cancel_job','open_media_folder'}
 
 def valid_request(host,origin,token,expected):
@@ -78,7 +78,7 @@ class Panel:
         rid=data.get('request_id',uuid.uuid4().hex)
         if not isinstance(rid,str) or not re.fullmatch('[a-zA-Z0-9_-]{1,80}',rid):raise ValueError('请求 ID 无效')
         # Reserve at submission, including queued work, so delete cannot race a transfer.
-        scene_action=action in ('download_session','download_asset','export_session','extract_local_frames','rename_session','delete_session')
+        scene_action=action in ('download_session','download_asset','export_session','extract_local_frames','rename_session','delete_session','save_session_metadata')
         sid=params.get('session_id') if scene_action else None
         with self.lock:
             with self.jobs.lock:
@@ -135,10 +135,15 @@ class Panel:
                         request=dict(request_id=uuid.uuid4().hex,**{'expected_'+k:fresh[k] for k in ('boot_id','run_id','revision')})
                         tick=time.monotonic()
                         converted=self.board.call('export_session',{'session_id':params['session_id'],'mode':kind+'_video','fps':15},request,timeout=3700)
+                        ready=converted['result']
                         timings['board_convert_s']=time.monotonic()-tick
                         if converted['result']['state']!='complete':raise ValueError('场次不完整，不能作为有效素材下载：'+'；'.join(converted['result']['integrity_errors']))
                 if rid in self.cancelled:raise ValueError('已取消下载；板上转换结果保留')
                 result=self.sessions.download(params['session_id'],progress,lambda:rid in self.cancelled,kind)
+                if kind=='depth':
+                    reports=ready.get('segments',[])
+                    result['depth_quality']={'all_invalid_segments':[r['segment_id'] for r in reports if r.get('depth_valid_sample_fraction')==0],
+                                             'meaning':'black pixels are invalid or outside the configured depth range; no distances were invented'}
                 result.setdefault('timings_s',{}).update(timings)
                 if kind in ('rgb','depth'):
                     progress({'phase_code':'local_prepare','stage':'本机准备'})

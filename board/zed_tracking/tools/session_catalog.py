@@ -26,6 +26,8 @@ def atomic(path,value):
 
 def scene_info(folder):
     manifest=read(folder/'manifest.json');summary=read(folder/'session_summary.json');display=read(folder/'display.json')
+    metadata={k:v for k,v in manifest.get('metadata',{}).items() if k in ('label','scene','lighting') and isinstance(v,str)}
+    metadata.update({k:v for k,v in read(folder/'notes.json').items() if k in ('label','scene','lighting') and isinstance(v,str)})
     stamp=manifest.get('created_at_unix_s');source=manifest.get('created_time_source','board_clock');uncertain=source=='board_clock'
     pc=manifest.get('metadata',{}).get('client_started_at_unix_s')
     if source=='board_clock' and type(pc) in (float,int) and math.isfinite(pc) and 1704067200<=pc<4102444800:
@@ -39,7 +41,18 @@ def scene_info(folder):
     files=[{'name':p.relative_to(folder).as_posix(),'bytes':p.stat().st_size} for p in folder.rglob('*')
            if not p.is_symlink() and p.is_file() and not p.name.endswith('.tmp') and '.operation' not in p.name]
     return {'session_id':folder.name,'display_name':name,'created_at_unix_s':stamp,'created_time_source':source,
-            'created_time_uncertain':uncertain,'manifest':manifest,'summary':summary,'files':files,'bytes':sum(f['bytes'] for f in files)}
+            'created_time_uncertain':uncertain,'metadata':metadata,'manifest':manifest,'summary':summary,'files':files,'bytes':sum(f['bytes'] for f in files)}
+
+def update_metadata(root,session_id,updates):
+    folder=folder_for(root,session_id)
+    if not isinstance(updates,dict) or set(updates)-{'label','scene','lighting'}:raise ValueError('unsupported note fields')
+    if any(not isinstance(v,str) or len(v)>300 or any(ord(c)<32 or ord(c)==127 for c in v) for v in updates.values()):
+        raise ValueError('备注需为最多300字的文本，不含换行或控制字符')
+    metadata=scene_info(folder)['metadata'];metadata.update(updates)
+    # Keep immutable acquisition metadata and clock evidence intact, including
+    # when the camera is still writing this session's other files.
+    atomic(folder/'notes.json',metadata)
+    return {'session_id':session_id,'metadata':metadata}
 
 def list_sessions(root):
     root=pathlib.Path(root)

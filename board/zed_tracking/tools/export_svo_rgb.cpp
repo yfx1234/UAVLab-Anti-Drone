@@ -89,7 +89,6 @@ int main(int argc,char** argv){
     if(!verify&&!video){mapping.close();fs::rename(out/"mapping.jsonl.tmp",out/"mapping.jsonl");}
     if(video){
       writer.release();
-      if(depth&&valid_depth_samples==0)throw std::runtime_error("No valid depth in SVO playback; check depth units/range, stereo images and scene texture. Depth video was not published.");
       cv::VideoCapture reader(video_temp.string());cv::Mat decoded;int count=0;
       while(reader.read(decoded)){
         if(decoded.cols!=int(info.camera_configuration.resolution.width)||decoded.rows!=int(info.camera_configuration.resolution.height))
@@ -113,6 +112,8 @@ int main(int argc,char** argv){
     if(depth){report.update({{"depth_unit","METER"},{"depth_view","SDK_VIEW_DEPTH"},
       {"depth_minimum_m",.3},{"depth_maximum_m",10.5},
       {"depth_valid_sample_fraction",double(valid_depth_samples)/double(total_depth_samples)},
+      {"depth_measured_frames",frames},{"depth_total_samples",total_depth_samples},{"depth_valid_samples",valid_depth_samples},
+      {"depth_quality",valid_depth_samples?"some_valid":"all_invalid"},{"depth_invalid_label_burned_in",true},
       {"depth_sample_resolution",{160,90}},{"depth_frames_without_valid_samples",no_valid_depth_frames}});}
     std::cout<<report.dump()<<std::endl;
   }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}

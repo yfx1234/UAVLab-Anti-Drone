@@ -22,13 +22,14 @@ EXE=WS/'install_perception/zed_tracking/lib/zed_tracking/zed_perception_standalo
 BOOT_FILE=pathlib.Path('/proc/sys/kernel/random/boot_id')
 SCHEMAS={
  'status':set(),'check_device':set(),'start_capture':{'profile','model_id','capture_fps','camera_resolution'},'stop_capture':set(),
- 'set_detector':{'enabled'},'set_generic_detector':{'enabled','sensitivity'},'start_raw_record':{'label','scene','lighting','size_definition','known_distance_m','distance_source','client_started_at_unix_s','codec'},
+ 'set_detector':{'enabled','model_id'},'set_generic_detector':{'enabled','sensitivity'},'start_raw_record':{'label','scene','lighting','size_definition','known_distance_m','distance_source','client_started_at_unix_s','codec'},
  'stop_raw_record':set(),'list_sessions':set(),'list_models':set(),'test_model':{'model_id'},
  'select_model':{'model_id'},'save_calibration':{'target_size_m','size_definition','samples'},
  'export_session':{'session_id','fps','mode'},'export_diagnostics':set(),
  'session_checksum':{'session_id','file'},'ready_media':{'session_id','mode'},
  'prepare_dataset':set(),
  'set_clock_reference':{'pc_unix_s'},'rename_session':{'session_id','name'},'delete_session':{'session_id','confirmation'},
+ 'save_session_metadata':{'session_id','label','scene','lighting'},
 }
 class Conflict(ValueError):pass
 
@@ -41,6 +42,8 @@ def validate_action(action,params):
         if not isinstance(mode,str) or mode not in rates or type(fps) is not int or fps not in rates[mode]:
             raise ValueError('unsupported ZED X Mini resolution/FPS pair')
     if action in ('set_detector','set_generic_detector') and type(params.get('enabled')) is not bool:raise ValueError('enabled must be bool')
+    if action=='set_generic_detector' and params['enabled']:raise ValueError('通用检测已停用，当前仅使用 YOLO')
+    if 'model_id' in params and (not isinstance(params['model_id'],str) or not re.fullmatch('[0-9a-f]{64}',params['model_id'])):raise ValueError('invalid model identity')
     if action=='start_raw_record' and params.get('codec','LOSSLESS') not in ('LOSSLESS','H264_LOSSLESS'):raise ValueError('unsupported recording codec')
     if action=='set_generic_detector' and params.get('sensitivity','standard') not in ('high','standard','low'):
         raise ValueError('generic sensitivity must be high/standard/low')
@@ -273,6 +276,9 @@ def dispatch(request):
         elif action=='rename_session':
             from session_catalog import rename
             result=rename(RECORDS,params.get('session_id'),params.get('name'))
+        elif action=='save_session_metadata':
+            from session_catalog import update_metadata
+            result=update_metadata(RECORDS,params.get('session_id'),{k:v for k,v in params.items() if k!='session_id'})
         elif action=='delete_session':
             from session_catalog import delete
             result=delete(RECORDS,params.get('session_id'),params.get('confirmation'),s.get('pipeline',{}).get('session_id',''),s['boot_id'])
@@ -290,13 +296,13 @@ def dispatch(request):
                 if 'client_started_at_unix_s' in params:
                     from clock_reference import reference
                     atomic_json(ROOT/'clock_reference.json',reference(params['client_started_at_unix_s'],s['boot_id']))
-            if action=='set_detector' and params['enabled']:
-                model=model_by_id(s.get('model_id') or None)
-                if s.get('pipeline',{}).get('record_state')=='recording' and model['model_id']!=s.get('model_id'):
+            if action=='set_detector' and (params['enabled'] or 'model_id' in params):
+                model=model_by_id(params.get('model_id') or s.get('model_id') or None)
+                if s.get('pipeline',{}).get('record_state') in ('starting','recording','finalizing') and model['model_id']!=s.get('model_id'):
                     raise Conflict('finish recording before changing model identity')
                 params=dict(params,engine_path=stage_model(model),model_id=model['model_id'])
             result=node_command(s,action,params,rid)
-            if action=='set_detector' and params['enabled']:s['model_id']=params['model_id']
+            if action=='set_detector' and 'model_id' in params:s['model_id']=params['model_id']
         elif action in ('test_model','select_model'):
             if s.get('pipeline',{}).get('record_state') not in (None,'idle','error'):raise Conflict('finish recording before changing models')
             model=model_by_id(params.get('model_id'))

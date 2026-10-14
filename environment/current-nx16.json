@@ -1,5 +1,5 @@
 {
-  "audit_date": "2026-10-13",
+  "audit_date": "2026-10-14",
   "status": "NX boot, native engine and NVENC deployed; MAXN_SUPER user-selected; default pixel-exact training1080p15; real-target field validation pending",
   "module": {
     "part_number": "699-13767-0000-303 G.1",
@@ -666,5 +666,71 @@
       "all_complete": true,
       "stale_boot_anchor_live_regression_passed": true
     }
+  },
+  "operator_workflow_20261014": {
+    "generic_detection": "retired_at_user_request; panel controls removed, enabling RPC rejected; candidate edits reverted",
+    "yolo_input_choices": [
+      [
+        1,
+        3,
+        736,
+        1280
+      ],
+      [
+        1,
+        3,
+        1088,
+        1920
+      ]
+    ],
+    "default_input": [
+      1,
+      3,
+      736,
+      1280
+    ],
+    "recording_model_change": "rejected including when YOLO paused",
+    "notes": "autosave during recording; visible in scene list; immutable manifest preserved",
+    "field_dataset_scenes": 5,
+    "deleted_historical_codex_scenes": 40,
+    "historical_reclaimed_gib": 37.91502,
+    "sample_audit": {
+      "scene1": {
+        "sample_frames": 45,
+        "target_present_frames": 31,
+        "old_true_positive_frames": 29,
+        "new_true_positive_frames": 31,
+        "old_false_boxes": 0,
+        "new_false_boxes": 0
+      },
+      "scene2": {
+        "sample_frames": 44,
+        "target_present_frames": 36,
+        "old_true_positive_frames": 36,
+        "new_true_positive_frames": 36,
+        "old_false_boxes": 2,
+        "new_false_boxes": 4
+      }
+    },
+    "accuracy_scope": "89 reviewed samples from 2 correlated field sessions; no independent tight ground truth or mAP; full accuracy/endurance acceptance remains pending",
+    "evidence_document": "docs/外场素材与YOLO输入复核_2026-10-14.md",
+    "full_depth_downloads": [
+      {
+        "session_id": "session_4a4c6531-74ec-42f4-996c-768dd2972bad",
+        "decoded_frames": 3328,
+        "seconds": 221.86666666666667,
+        "decoded_sequence_matches_all_segments": true,
+        "all_invalid_segments": [
+          3
+        ]
+      },
+      {
+        "session_id": "session_b99666df-ec5d-4c5f-b820-ad900250b072",
+        "decoded_frames": 3305,
+        "seconds": 220.33333333333334,
+        "decoded_sequence_matches_all_segments": true,
+        "all_invalid_segments": []
+      }
+    ]
   }
 }

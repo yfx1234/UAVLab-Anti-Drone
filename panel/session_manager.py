@@ -90,7 +90,7 @@ class SessionManager:
             # snapshots; no extra SVO/log download is required.
             result['session_summary']=session['summary']
             folder=pathlib.Path(result['folder'])
-            for name,value in [('manifest.json',session.get('manifest',{})),('session_summary.json',session['summary'])]:
+            for name,value in [('manifest.json',session.get('manifest',{})),('session_summary.json',session['summary']),('notes.json',session.get('metadata',{}))]:
                 temp=folder/(name+'.download.tmp')
                 temp.write_text(json.dumps(value,ensure_ascii=False),encoding='utf-8');temp.replace(folder/name)
             return result

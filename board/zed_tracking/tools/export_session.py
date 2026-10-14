@@ -10,14 +10,21 @@ from collections import Counter
 
 # RGB pixels/timing stay compatible. Old depth assets used the SDK's default
 # millimeters with meter-sized limits, so they must be recomputed independently.
-MEDIA_CONTRACTS={'rgb_video':'native_stream_v1','depth_video':'native_depth_meter_view_v2'}
+MEDIA_CONTRACTS={'rgb_video':'native_stream_v1','depth_video':'native_depth_meter_view_v3'}
 
 def valid_depth_report(report):
     fraction=report.get('depth_valid_sample_fraction')
-    return (report.get('depth_unit')=='METER' and report.get('depth_view')=='SDK_VIEW_DEPTH'
+    contract=(report.get('depth_unit')=='METER' and report.get('depth_view')=='SDK_VIEW_DEPTH'
             and report.get('depth_minimum_m')==.3 and report.get('depth_maximum_m')==10.5
             and isinstance(fraction,(float,int)) and not isinstance(fraction,bool)
-            and math.isfinite(fraction) and 0<fraction<=1)
+            and math.isfinite(fraction) and 0<=fraction<=1)
+    if not contract:return False
+    if fraction>0:return True
+    frames=report.get('frames');total=report.get('depth_total_samples')
+    return (type(frames) is int and frames>0 and report.get('depth_measured_frames')==frames
+            and type(total) is int and total==frames*160*90 and report.get('depth_valid_samples')==0
+            and report.get('depth_frames_without_valid_samples')==frames
+            and report.get('depth_quality')=='all_invalid' and report.get('depth_invalid_label_burned_in') is True)
 
 def timestamp_frame_plan(stamps,fps):
     if not stamps:return []
@@ -84,7 +91,11 @@ def ready_media(session_id,mode):
     cached=read_json(folder/'media_assets.json').get(mode,{})
     sources=[{'name':p.name,'bytes':p.stat().st_size,'mtime_ns':p.stat().st_mtime_ns} for p in sorted((folder/'segments').glob('*.svo*'))]
     if not sources or summary.get('state')!='complete' or summary.get('metadata_complete') is not True or summary.get('tail_metadata_may_arrive') is not False:return result
-    if cached.get('sources')!=sources or cached.get('contract')!=MEDIA_CONTRACTS[mode] or not cached.get('reports'):return result
+    compatible=(cached.get('contract')==MEDIA_CONTRACTS[mode] or
+                mode=='depth_video' and cached.get('contract')=='native_depth_meter_view_v2')
+    # v2 already has the correct meter units and SDK rendering. Positive-depth
+    # assets remain usable; all-invalid v2 reports still fail the quality check.
+    if cached.get('sources')!=sources or not compatible or not cached.get('reports'):return result
     try:
         for r in cached['reports']:
             if mode=='depth_video' and not valid_depth_report(r):return result
@@ -114,7 +125,7 @@ def export(session_id,fps=2,mode='frames'):
         p=subprocess.run(cmd,capture_output=True,text=True,timeout=3600)
         if p.returncode:raise ValueError('SVO playback failed: '+p.stderr[-1000:])
         report=json.loads(p.stdout.strip().splitlines()[-1]);report['segment_id']=int(path.stem.removeprefix('segment_'))
-        if mode=='depth_video' and not valid_depth_report(report):raise ValueError('Depth export has no valid metric depth or uses an outdated rendering contract')
+        if mode=='depth_video' and not valid_depth_report(report):raise ValueError('Depth export lacks a verified metric measurement report or uses an outdated rendering contract')
         reports.append(report)
     if not reports:raise ValueError('no SVO segments')
     if mode=='yolo_video':

@@ -12,8 +12,10 @@ from session_manager import SessionManager
 HTML=(ROOT/'panel/index.html').read_text(encoding='utf-8')
 
 class GenericPanelTests(unittest.TestCase):
-    def test_generic_is_an_allowed_panel_action(self):
-        self.assertIn('set_generic_detector',BOARD_ACTIONS)
+    def test_generic_is_retired_from_operator_panel(self):
+        self.assertNotIn('set_generic_detector',BOARD_ACTIONS)
+        for control in ('genericStatus','genericSensitivity','enableGeneric','disableGeneric'):
+            self.assertNotIn('id="'+control+'"',HTML)
 
     def test_generic_cannot_receive_idle_rgb_download_acceleration(self):
         good={'pid':123,'camera_state':'running','profile':'rgb','last_status_age_s':.2,
@@ -33,13 +35,14 @@ class GenericPanelTests(unittest.TestCase):
         if not node:self.skipTest('Node required')
         result=subprocess.run([node,'-e',function+r'''
 const assert=require('node:assert/strict');let now=10;const performance={now:()=>now*1000};
-const s={observed_at_browser_s:10,connected:true,preview:{frame_age_s:.1},state:{pid:10,run_id:'r',boot_id:'b',camera_state:'running',last_status_age_s:.2,pipeline:{detector_generation:3,detector_enabled:false,generic_detector_enabled:true,targets_valid:true}}};
-const packet={observed_at_browser_s:10,run_id:'r',boot_id:'b',detector_generation:3,detector_enabled:true,yolo_enabled:false,generic_detector_enabled:true,received_age_s:.1,source_age_s:.1,targets:[{track_id:2147483649,detector_source:'generic'}]};
-assert.equal(currentTargets(packet,s).length,1,'generic-only observations must appear');
-for(const mutate of [p=>p.detector_generation=2,p=>p.run_id='old',p=>p.boot_id='old',p=>p.received_age_s=2,p=>p.source_age_s=2,p=>p.detector_enabled=false,p=>p.generic_detector_enabled=false]){
+const s={observed_at_browser_s:10,connected:true,preview:{frame_age_s:.1},state:{pid:10,run_id:'r',boot_id:'b',camera_state:'running',last_status_age_s:.2,pipeline:{detector_generation:3,detector_enabled:true,generic_detector_enabled:false,targets_valid:true}}};
+const packet={observed_at_browser_s:10,run_id:'r',boot_id:'b',detector_generation:3,detector_enabled:true,yolo_enabled:true,generic_detector_enabled:false,received_age_s:.1,source_age_s:.1,targets:[{track_id:1,detector_source:'yolo'}]};
+assert.equal(currentTargets(packet,s).length,1,'fresh YOLO observations must appear');
+const retired=structuredClone(packet);retired.targets[0].detector_source='generic';assert.equal(currentTargets(retired,s).length,0);
+for(const mutate of [p=>p.detector_generation=2,p=>p.run_id='old',p=>p.boot_id='old',p=>p.received_age_s=2,p=>p.source_age_s=2,p=>p.detector_enabled=false,p=>p.yolo_enabled=false]){
  const p=structuredClone(packet);mutate(p);assert.equal(currentTargets(p,s).length,0);
 }
-for(const mutate of [x=>x.connected=false,x=>x.state.camera_state='stopped',x=>x.state.last_status_age_s=5,x=>x.state.pipeline.generic_detector_enabled=false,x=>x.state.pipeline.targets_valid=false,x=>x.preview.frame_age_s=2]){
+for(const mutate of [x=>x.connected=false,x=>x.state.camera_state='stopped',x=>x.state.last_status_age_s=5,x=>x.state.pipeline.detector_enabled=false,x=>x.state.pipeline.targets_valid=false,x=>x.preview.frame_age_s=2]){
  const x=structuredClone(s);mutate(x);assert.equal(currentTargets(packet,x).length,0);
 }
 // The PC can keep receiving new board frames while this browser's JPEG/meta fetches fail.
@@ -52,12 +55,11 @@ now=70;assert.equal(currentTargets(packet,s).length,0,'all local requests failin
 '''],capture_output=True,text=True,encoding='utf-8',timeout=10)
         self.assertEqual(result.returncode,0,result.stderr)
 
-    def test_generic_controls_do_not_start_yolo_or_restart_camera(self):
-        self.assertTrue("byId('enableGeneric').onclick=" in HTML,'generic controls missing')
-        function=HTML.split("byId('enableGeneric').onclick=",1)[1].split("byId('disableGeneric').onclick=",1)[0]
-        self.assertIn("'set_generic_detector'",function)
-        self.assertNotIn("'set_detector'",function)
-        self.assertNotIn("'start_capture'",function)
+    def test_retired_generic_detector_cannot_be_enabled_through_board_rpc(self):
+        sys.path.insert(0,str(ROOT/'board/zed_tracking/tools'))
+        from perception_supervisor import validate_action
+        with self.assertRaisesRegex(ValueError,'停用'):validate_action('set_generic_detector',{'enabled':True})
+        validate_action('set_generic_detector',{'enabled':False})
 
     def test_expiry_tick_clears_overlays_without_waiting_for_network(self):
         self.assertTrue('function expireTargets(' in HTML,'independent expiry tick missing')

@@ -251,9 +251,9 @@ class Perception final:public rclcpp::Node {
       std::string action=cmd.at("operation");Json p=cmd.value("params",Json::object());
       if(action=="set_detector"){
         bool enabled=p.at("enabled");
-        if(enabled&&!zed_tracking::model_change_allowed(!session_id_.empty(),model_,p.value("model_id",model_)))
+        if((enabled||p.contains("model_id"))&&!zed_tracking::model_change_allowed(!session_id_.empty(),model_,p.value("model_id",model_)))
           throw std::runtime_error("finish recording before changing model identity");
-        if(enabled){{std::lock_guard<std::mutex> l(state_mutex_);engine_=p.value("engine_path",engine_);model_=p.value("model_id",model_);}apply_range_calibration();}
+        if(enabled||p.contains("model_id")){{std::lock_guard<std::mutex> l(state_mutex_);engine_=p.value("engine_path",engine_);model_=p.value("model_id",model_);}apply_range_calibration();}
         source.set_depth_enabled(enabled||generic_detector_);depth_enabled_=source.depth_enabled();
         ++detector_generation_;detector_=enabled;detector_state_=enabled?1:0;
         {std::lock_guard<std::mutex> l(queue_mutex_);if(latest_)pending_work_.release(latest_->session);latest_.reset();}queue_cv_.notify_all();
@@ -449,13 +449,13 @@ class Perception final:public rclcpp::Node {
     return boxes;
   }
   void infer_loop(){
-    std::unique_ptr<zed_tracking::TrtRunner> runner;zed_tracking::TargetAssociation association;
+    std::unique_ptr<zed_tracking::TrtRunner> runner;std::string runner_model;zed_tracking::TargetAssociation association;
     zed_tracking::GenericSkyDetector sky_detector;zed_tracking::GenericSkyTracker sky_tracker;
     uint64_t applied_generation=0;
     while(!stop_){std::shared_ptr<const Frame> f;
       {std::unique_lock<std::mutex> l(queue_mutex_);queue_cv_.wait_for(l,std::chrono::milliseconds(100),[&]{return stop_||bool(latest_);});
        if(stop_)break;if(latest_)f=std::move(latest_);}
-      if(!detector_)runner.reset(); // Release GPU memory even when both modes are now disabled.
+      if(!detector_){runner.reset();runner_model.clear();set_status("loaded_model_id",nullptr);set_status("yolo_input_nchw",nullptr);}
       if(!f)continue;
       auto release_work=[this](const Frame* frame){pending_work_.release(frame->session);};
       std::unique_ptr<const Frame,decltype(release_work)> work_guard(f.get(),release_work);
@@ -477,11 +477,11 @@ class Perception final:public rclcpp::Node {
         if(f->yolo_enabled){
           const auto start=Steady::now();
           try{
-            if(!runner){detector_state_=1;runner=std::make_unique<zed_tracking::TrtRunner>();std::string engine;
-              {std::lock_guard<std::mutex> l(state_mutex_);engine=engine_;}runner->load(engine);}
+            if(!runner||runner_model!=f->model){detector_state_=1;runner.reset();runner_model.clear();runner=std::make_unique<zed_tracking::TrtRunner>();std::string engine;
+              {std::lock_guard<std::mutex> l(state_mutex_);if(f->detector_generation!=detector_generation_)continue;engine=engine_;}runner->load(engine);runner_model=f->model;}
             boxes=detect(*f,*runner);
-            if(f->detector_generation==detector_generation_)detector_state_=2;
-          }catch(const std::exception& e){runner.reset();
+            if(f->detector_generation==detector_generation_){detector_state_=2;set_status("loaded_model_id",runner_model);set_status("yolo_input_nchw",runner->input_shape());}
+          }catch(const std::exception& e){runner.reset();runner_model.clear();set_status("loaded_model_id",nullptr);set_status("yolo_input_nchw",nullptr);
             if(f->detector_generation==detector_generation_){detector_=false;detector_state_=3;++detector_generation_;error("yolo",e.what());}}
           yolo_ms=std::chrono::duration<double,std::milli>(Steady::now()-start).count();
         }
