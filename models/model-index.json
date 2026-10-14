@@ -1,5 +1,5 @@
 {
-  "current_model": "platform_exp_20260909/exp_opt3.engine",
+  "current_model": "platform_exp_20260909/exp_nx16_fp16.engine",
   "input_nchw": [
     1,
     3,
@@ -22,6 +22,11 @@
       "repository_path": "models/platform_exp_20260909/exp.onnx",
       "bytes": 9996322,
       "sha256": "200a04975f82fb648bd4e83f76efdf4034bad187525b263fce4d6a2cb464e55e"
+    },
+    {
+      "repository_path": "models/platform_exp_1080_20261014/exp.onnx",
+      "bytes": 10467403,
+      "sha256": "de9152af6fe694c18d01ca050b69d175761f527ae0e20c45bb3b7bcea5d2f46d"
     }
   ],
   "nano_engine": {
@@ -31,5 +36,27 @@
   },
   "engine_in_git": false,
   "recognition_accuracy_validated": false,
-  "note": "Rebuild and check the engine on NX. Source hashes prove provenance, not inference equivalence or target accuracy."
+  "note": "NX native default and separate 1080 candidate; retain Nano provenance. Engines stay on their target module.",
+  "nx_engine": {
+    "path": "/home/uavlab/Jetson_ROS2_V0/weights/candidates/platform_exp_20260909/exp_nx16_fp16.engine",
+    "sha256": "817e1709350e806e7ab261a3fe4d62acfa4828b6c2062b581ac51e9eea3d7712"
+  },
+  "experimental_1080": {
+    "input_nchw": [
+      1,
+      3,
+      1088,
+      1920
+    ],
+    "output_shape": [
+      1,
+      300,
+      6
+    ],
+    "source_pt": "models/platform_exp_20260909/exp.pt",
+    "engine_sha256": "5ab47073e9c5b7afa55a4da617d58318d911c8d2765d0e744662227b9a4d21f9",
+    "manifest": "models/platform_exp_1080_20261014/exp_nx16_1080_fp16.manifest.json",
+    "default": false,
+    "real_target_accuracy_validated": false
+  }
 }

@@ -559,5 +559,112 @@
     "windows_fixed_address_in_active_and_persistent_store": true,
     "windows_dhcp_enabled": false,
     "verified_date": "2026-10-14"
+  },
+  "followup_20261014": {
+    "power_mode": "MAXN_SUPER/ID0",
+    "default_engine_unchanged": true,
+    "default_lossless_15fps_unchanged": true,
+    "cuda_inference_stream": "nonblocking",
+    "old_input_trials": [
+      {
+        "codec": null,
+        "seconds": 13.000000384000487,
+        "capture_hz": 30.076922188495942,
+        "inference_hz": 29.999999113845057,
+        "replaced": 0,
+        "metadata_drops": 0,
+        "session_id": null,
+        "max_temp": 67.75
+      },
+      {
+        "codec": "LOSSLESS",
+        "seconds": 12.999991487999978,
+        "capture_hz": 21.69232189577265,
+        "inference_hz": 21.69232189577265,
+        "replaced": 0,
+        "metadata_drops": 0,
+        "session_id": "session_90580c1f-b014-4d4d-9c34-129d65f21389",
+        "max_temp": 71.406
+      },
+      {
+        "codec": "H264_LOSSLESS",
+        "seconds": 91.00002748800034,
+        "capture_hz": 29.549441623570754,
+        "inference_hz": 29.538452615901146,
+        "replaced": 1,
+        "metadata_drops": 0,
+        "session_id": "session_66b19d93-b51a-4271-95da-f8c511e630cf",
+        "max_temp": 74.875
+      }
+    ],
+    "experimental_1080": {
+      "input_nchw": [
+        1,
+        3,
+        1088,
+        1920
+      ],
+      "source_pt_unchanged": true,
+      "manifest": "models/platform_exp_1080_20261014/exp_nx16_1080_fp16.manifest.json",
+      "default": false,
+      "trials": [
+        {
+          "codec": null,
+          "seconds": 12.999985919999745,
+          "capture_hz": 30.000032492343475,
+          "inference_hz": 22.615409109612774,
+          "replaced": 97,
+          "metadata_drops": 0,
+          "session_id": null,
+          "max_temp": 68.781
+        },
+        {
+          "codec": "LOSSLESS",
+          "seconds": 12.999996640000063,
+          "capture_hz": 19.615389685208317,
+          "inference_hz": 19.769235878817792,
+          "replaced": 0,
+          "metadata_drops": 0,
+          "session_id": "session_3db4e9c2-54e7-4874-a1e8-1deb0a926109",
+          "max_temp": 73.0
+        },
+        {
+          "codec": "H264_LOSSLESS",
+          "seconds": 88.00001260799945,
+          "capture_hz": 29.227268539802434,
+          "inference_hz": 22.227269542711337,
+          "replaced": 616,
+          "metadata_drops": 0,
+          "session_id": "session_fb238346-816f-442d-a764-fa4cbd028bc2",
+          "max_temp": 78.5
+        }
+      ],
+      "thermal_early_stop_c": 78.5,
+      "sustained_thermal_acceptance": false
+    },
+    "power_oc_events": {
+      "oc3_event_cnt": 0,
+      "oc1_event_cnt": 0,
+      "oc2_event_cnt": 0
+    },
+    "field_date_source": "saved_PC_start_request_recovered",
+    "whole_scene_video": "concat_without_reencoding_preserves_all_segment_frames",
+    "pc_tests": {
+      "total": 107,
+      "passed": 106,
+      "skipped": 1
+    },
+    "native_ctest_passed": 7,
+    "source_files_match": true,
+    "full_replays": {
+      "field_scenes": 5,
+      "field_segments": 13,
+      "field_unique_frames": 8894,
+      "trial_scenes": 8,
+      "trial_segments": 12,
+      "trial_unique_frames": 12205,
+      "all_complete": true,
+      "stale_boot_anchor_live_regression_passed": true
+    }
   }
 }

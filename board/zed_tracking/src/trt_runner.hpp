@@ -58,7 +58,9 @@ public:
     }
     release();
     runtime_.reset(nvinfer1::createInferRuntime(logger_));
-    cuda_check(cudaStreamCreate(&stream_), "cudaStreamCreate");
+    // CPU input is copied before enqueue; this runner shares no SDK GPU buffers.
+    // Avoid implicit waits on the ZED SDK's legacy default stream.
+    cuda_check(cudaStreamCreateWithFlags(&stream_, cudaStreamNonBlocking), "cudaStreamCreate");
     engine_.reset(runtime_->deserializeCudaEngine(blob.data(), blob.size()));
     if (engine_ == nullptr) {
       throw std::runtime_error("deserializeCudaEngine failed for " + engine_path);

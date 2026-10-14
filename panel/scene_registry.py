@@ -107,6 +107,9 @@ class SceneRegistry:
                     manifest = self._json(folder / 'manifest.json')
                     stamp = self._stamp(manifest.get('created_at_unix_s'))
                     uncertain = stamp is None or manifest.get('created_time_source') not in ('pc_reference_monotonic', 'pc_reference')
+                    pc = self._stamp(manifest.get('metadata', {}).get('client_started_at_unix_s'))
+                    if manifest.get('created_time_source', 'board_clock') == 'board_clock' and pc and 1704067200 <= pc < 4102444800:
+                        stamp = pc; uncertain = False
                     if stamp is None:
                         marker = folder / 'manifest.json'
                         stamp = (marker.stat() if marker.is_file() else folder.stat()).st_mtime

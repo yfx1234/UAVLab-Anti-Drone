@@ -27,6 +27,11 @@ def atomic(path,value):
 def scene_info(folder):
     manifest=read(folder/'manifest.json');summary=read(folder/'session_summary.json');display=read(folder/'display.json')
     stamp=manifest.get('created_at_unix_s');source=manifest.get('created_time_source','board_clock');uncertain=source=='board_clock'
+    pc=manifest.get('metadata',{}).get('client_started_at_unix_s')
+    if source=='board_clock' and type(pc) in (float,int) and math.isfinite(pc) and 1704067200<=pc<4102444800:
+        # Recover only from the original saved PC request, never from file mtime
+        # or an inferred offset. Keep the original manifest for audit.
+        stamp=pc;source='pc_request_recovered';uncertain=False
     if type(stamp) not in (float,int) or not math.isfinite(stamp) or not 0<stamp<4102444800:
         stamp=(folder/'manifest.json').stat().st_mtime;source='legacy_manifest_time';uncertain=True
     beijing=datetime.timezone(datetime.timedelta(hours=8))

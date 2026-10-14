@@ -84,7 +84,16 @@ class SessionManager:
         with self.lock:
             client=measured('ssh_connect_s',self.board.connection)
             with client as connected:
-                return self._transfer(connected,session_id,files,kind,cancelled,progress,measured,timings,operation_started)
+                result=self._transfer(connected,session_id,files,kind,cancelled,progress,measured,timings,operation_started)
+            # Selective MP4 transfers still need the authoritative segment list
+            # to assemble a complete scene. RPC already supplies these small
+            # snapshots; no extra SVO/log download is required.
+            result['session_summary']=session['summary']
+            folder=pathlib.Path(result['folder'])
+            for name,value in [('manifest.json',session.get('manifest',{})),('session_summary.json',session['summary'])]:
+                temp=folder/(name+'.download.tmp')
+                temp.write_text(json.dumps(value,ensure_ascii=False),encoding='utf-8');temp.replace(folder/name)
+            return result
 
     def _transfer(self,client,session_id,files,kind,cancelled,progress,measured,timings,operation_started):
         # The status cache is provided by Panel's existing poller. Standalone CLI

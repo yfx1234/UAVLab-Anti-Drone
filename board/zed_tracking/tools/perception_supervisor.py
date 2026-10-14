@@ -284,6 +284,12 @@ def dispatch(request):
                 pipe=s.get('pipeline',{})
                 if params['codec']!='LOSSLESS' and (pipe.get('camera_resolution')!='HD1080' or pipe.get('configured_capture_fps') not in (15,30)):
                     raise ValueError('高速录像当前仅验证1920×1080 / 15或30fps')
+                # The panel can remain connected across a board reboot. Refresh
+                # this boot's naming reference at every PC-initiated recording;
+                # never jump the Linux/camera clock during acquisition.
+                if 'client_started_at_unix_s' in params:
+                    from clock_reference import reference
+                    atomic_json(ROOT/'clock_reference.json',reference(params['client_started_at_unix_s'],s['boot_id']))
             if action=='set_detector' and params['enabled']:
                 model=model_by_id(s.get('model_id') or None)
                 if s.get('pipeline',{}).get('record_state')=='recording' and model['model_id']!=s.get('model_id'):

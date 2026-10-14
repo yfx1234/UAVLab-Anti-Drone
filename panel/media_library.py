@@ -98,7 +98,35 @@ class MediaLibrary:
                 finally:tmp.unlink(missing_ok=True)
             relative=output.relative_to(self.root).as_posix()
             media.append(dict(self._row(self.registry.scenes[sid],sid,result['kind'],source.parent.name,relative,source.name),path=str(output),preparation=method))
+        whole=self._whole_scene(folder,sid,result,media,cancelled)
+        if whole:media.insert(0,whole)
         return dict(result,folder=str(folder),session_id=sid,media=media)
+    def _whole_scene(self,folder,sid,result,media,cancelled):
+        kind=result.get('kind')
+        if kind not in ('rgb','depth') or len(media)<2:return None
+        summary=result.get('session_summary') or self.registry._json(folder/'session_summary.json')
+        expected={s['segment_id'] for s in summary.get('segments',[])}
+        actual={int(r['segment'].removeprefix('segment_')) for r in media}
+        if summary.get('state')!='complete' or expected!=actual:return None
+        rows=sorted(media,key=lambda r:int(r['segment'].removeprefix('segment_')))
+        sources=[self.path(r['relative']) for r in rows]
+        destination=folder/'exports/session';destination.mkdir(exist_ok=True)
+        output=destination/(kind+'_video.view.mp4');sidecar=output.with_suffix('.json')
+        binding={'method':'concat_stream_copy_v1','segments':[{'file':p.relative_to(folder).as_posix(),'bytes':p.stat().st_size,'mtime_ns':p.stat().st_mtime_ns} for p in sources]}
+        method='cache'
+        if not self._cache_matches(output,sidecar,binding):
+            if cancelled():raise ValueError('已取消整场视频准备；原分段保留')
+            listing=destination/'concat.txt';tmp=destination/(kind+'_video.view.tmp.mp4')
+            def quote(path):return str(path).replace('\\','/').replace("'","'\\''")
+            listing.write_text(''.join("file '"+quote(p)+"'\n" for p in sources),encoding='utf-8')
+            try:
+                self._run(['-y','-f','concat','-safe','0','-i',str(listing),'-map','0:v:0','-an','-c:v','copy','-movflags','+faststart',str(tmp)],destination,cancelled)
+                tmp.replace(output);sidecar_tmp=sidecar.with_name(sidecar.name+'.tmp')
+                sidecar_tmp.write_text(json.dumps(binding),encoding='utf-8');sidecar_tmp.replace(sidecar)
+            finally:tmp.unlink(missing_ok=True);listing.unlink(missing_ok=True)
+            method='concat_stream_copy'
+        row=self._row(self.registry.scenes[sid],sid,kind,'session',output.relative_to(self.root).as_posix(),output.name)
+        return dict(row,path=str(output),preparation=method,segment_count=len(rows))
     def list(self):
         with self.registry.lock:
             self.registry.discover();rows=[]
@@ -125,7 +153,7 @@ class MediaLibrary:
         return {'session_id':sid,'source_session_id':entry.get('source_session_id'),'display_name':entry['display_name'],
             'created_at_unix_s':entry['created_at_unix_s'],'created_time_uncertain':entry.get('created_time_uncertain',True),
             'kind':kind,'segment':segment,'relative':relative,'url':'/api/media/'+urllib.parse.quote(relative),
-            'name':entry['display_name']+' / '+('电脑预览 / ' if kind.startswith('preview_') else '')+segment+' / '+filename,
+            'name':entry['display_name']+' / '+('电脑预览 / ' if kind.startswith('preview_') else '')+('整场视频' if segment=='session' else segment)+' / '+filename,
             'local_sync_error':entry.get('local_sync_error')}
     def scene_names(self,rows):
         self.registry.update(rows)
