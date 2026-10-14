@@ -1,0 +1,1041 @@
+{
+  "source_commit": "9e18322aef0ad05e55875c3593ee374abe706de2",
+  "package": "perception-workbench",
+  "source_only": true,
+  "files": [
+    {
+      "path": ".gitattributes",
+      "git_blob": "b9cca9be8acb8ce2a595d31f031d27cc59e75b80",
+      "git_mode": "100644",
+      "sha256": "aaa05eec12097d6f071e6e9a7aa4db8d4d9d73175dfe0748c3ea46b59bd523df",
+      "bytes": 261
+    },
+    {
+      "path": ".gitignore",
+      "git_blob": "d20662b402ee8447895013a365ab788024206e5b",
+      "git_mode": "100644",
+      "sha256": "b9e78d99937fc5111a2bd3d6faa36301ed8a1df5a1b47aa90e05422891dc003a",
+      "bytes": 358
+    },
+    {
+      "path": ".impeccable/design.json",
+      "git_blob": "c045dc438bcd118034b4515b5713a3f54cc05228",
+      "git_mode": "100644",
+      "sha256": "d51dad4d2b80cddcbaf0503dbc3ec214423af701650281239bdf0fe3fefaf7e1",
+      "bytes": 29503
+    },
+    {
+      "path": ".impeccable/surface-briefs/console.md",
+      "git_blob": "8f1837013b0fd505e3cfa9d0df5f91ab7c69131a",
+      "git_mode": "100644",
+      "sha256": "e6f97a080e384ce329c87b7fbc0b442bc9331bca7801222a0cfce11085510b65",
+      "bytes": 3425
+    },
+    {
+      "path": "DESIGN.md",
+      "git_blob": "d6927236aaab23cad9f5c7248612a205affc3c92",
+      "git_mode": "100644",
+      "sha256": "090b99150cd39fac5e5258d53604235f29cbd66a227bcc3ec9a40cd9c4c8ee92",
+      "bytes": 14663
+    },
+    {
+      "path": "PRODUCT.md",
+      "git_blob": "92a57b9f95a2bc68fb656cd6f7b8d7995352b449",
+      "git_mode": "100644",
+      "sha256": "4db3c406b4ac321ef21b858fcc3b945a44f58f0d4cd46181a9a851fa82c9d68d",
+      "bytes": 2367
+    },
+    {
+      "path": "board/zed_perception_interfaces/CMakeLists.txt",
+      "git_blob": "0011382ca87892611c16241a418918c5763a3b84",
+      "git_mode": "100644",
+      "sha256": "58e0b7bd6a74d3b4be030d90acb8ae0a49c19d7cbe740bd692bb40991565a972",
+      "bytes": 457
+    },
+    {
+      "path": "board/zed_perception_interfaces/msg/PerceptionFrame.msg",
+      "git_blob": "863d5f6e649c4cc3f312d5be3abe8031999d8cfc",
+      "git_mode": "100644",
+      "sha256": "78e48a8acd5bee5eec4e495968df1709da0c79a5244f150662a6b1e2df355eba",
+      "bytes": 323
+    },
+    {
+      "path": "board/zed_perception_interfaces/msg/TargetObservation.msg",
+      "git_blob": "15eb6f0579e4c8bacaec9ffaa266e3fbca52c266",
+      "git_mode": "100644",
+      "sha256": "cd9d6d90a31e850363009be5e2ff67e249f85e0c3c4e15df80b81de933e78a2b",
+      "bytes": 623
+    },
+    {
+      "path": "board/zed_perception_interfaces/package.xml",
+      "git_blob": "ac487456179d354cb6c6f8d21d4a7896b62e65d2",
+      "git_mode": "100644",
+      "sha256": "dc19b2b3d79a9fa3890cdaafde495a969ac1dfacc5ff0acf0d40294ea56f6106",
+      "bytes": 609
+    },
+    {
+      "path": "board/zed_perception_interfaces/srv/PerceptionCommand.srv",
+      "git_blob": "46bf23dddf5a42525d0a2ba387a5628cd5bce4b4",
+      "git_mode": "100644",
+      "sha256": "3e5cbae37175517df0d27dea8fdc9987847c175cc8cb42103daf0d73cab2b901",
+      "bytes": 217
+    },
+    {
+      "path": "board/zed_tracking/CMakeLists.txt",
+      "git_blob": "080902bc235840088ae1ca4ce57dce2a34cf39a8",
+      "git_mode": "100644",
+      "sha256": "583139d5624f5f3ef84485f8f70de17ffeb10b564c1e8eefc9382c0dee943e94",
+      "bytes": 5085
+    },
+    {
+      "path": "board/zed_tracking/README.md",
+      "git_blob": "e1558dd9187dc3dc9981e21e1f23e0fdb564812f",
+      "git_mode": "100644",
+      "sha256": "c5af4554053ed9e4d8fc2b2162a48c0dcfb729eac6ff204d84fb45483de499aa",
+      "bytes": 340
+    },
+    {
+      "path": "board/zed_tracking/config/perception_nano.yaml",
+      "git_blob": "d67f482458c715ac1556f80817b26edfa1e648dd",
+      "git_mode": "100644",
+      "sha256": "74638e5647621940b8862d741fb93720092ee5e5392dce5854a2c4b02310b185",
+      "bytes": 469
+    },
+    {
+      "path": "board/zed_tracking/config/perception_nx16.yaml",
+      "git_blob": "65d6e3a1d65384987373b8ab7f33b523b628b8e7",
+      "git_mode": "100644",
+      "sha256": "758f9166e3ad8de79f7e9eeb2285e29810efe9669f68abe02bb2436b7b2a037d",
+      "bytes": 571
+    },
+    {
+      "path": "board/zed_tracking/config/zed_tracking.yaml",
+      "git_blob": "fb98818e81ba644ffe02462511beb7fec9a77b83",
+      "git_mode": "100644",
+      "sha256": "998e2153e59e6e213a606e167bb136f4fadf1fccf99776336883d46a24ecf908",
+      "bytes": 1787
+    },
+    {
+      "path": "board/zed_tracking/include/nlohmann/json.hpp",
+      "git_blob": "8b72ea6539f40e4e3f7762d17e30c67f2a8308ed",
+      "git_mode": "100644",
+      "sha256": "9bea4c8066ef4a1c206b2be5a36302f8926f7fdc6087af5d20b417d0cf103ea6",
+      "bytes": 919975
+    },
+    {
+      "path": "board/zed_tracking/include/zed_tracking/camera_modes.hpp",
+      "git_blob": "d21a1167e68582a95b946455759dfa912b3fe402",
+      "git_mode": "100644",
+      "sha256": "b7e9d68eae7d861c55bb5160cb96d5c70adbb5089c14f50d022563315153dd90",
+      "bytes": 474
+    },
+    {
+      "path": "board/zed_tracking/include/zed_tracking/camera_motion.hpp",
+      "git_blob": "a4310dfa658fa607a7821a0d8bf2bb2189e2e9dc",
+      "git_mode": "100644",
+      "sha256": "4d497a44e778ac848fd93f0e92414897eec68a7df733bd6330c7edf19a5fdea4",
+      "bytes": 1493
+    },
+    {
+      "path": "board/zed_tracking/include/zed_tracking/depth_stats.hpp",
+      "git_blob": "023f2f93a73e6258842841ce1ecd1dc8b5d29d9b",
+      "git_mode": "100644",
+      "sha256": "ce0786ad64520c0cb3787f74cea9c65b02c73d8b8470e4c08743e30842e20634",
+      "bytes": 3338
+    },
+    {
+      "path": "board/zed_tracking/include/zed_tracking/detector_execution.hpp",
+      "git_blob": "3cf43bf87ccdfe05e377f72be62b7062838dedf6",
+      "git_mode": "100644",
+      "sha256": "10e1836c9ef7a50333429f05e430db2f0389242badd08856ee15b90992b7d69b",
+      "bytes": 266
+    },
+    {
+      "path": "board/zed_tracking/include/zed_tracking/generic_sky_detector.hpp",
+      "git_blob": "d4e2f38ab802a780ace34ae4f68bff42a7f37c82",
+      "git_mode": "100644",
+      "sha256": "2279c80f82f6204357390555d34b7e01b0b194436189096b9898e93a21a2bc26",
+      "bytes": 10797
+    },
+    {
+      "path": "board/zed_tracking/include/zed_tracking/geometry.hpp",
+      "git_blob": "d8a9e1eccb98e3e19244e416ae98da593fffb2b6",
+      "git_mode": "100644",
+      "sha256": "10b1fd2f92184ac387199477481b62a36cccd7c6645aaaf729ddaa22c11872bb",
+      "bytes": 4673
+    },
+    {
+      "path": "board/zed_tracking/include/zed_tracking/perception_quality.hpp",
+      "git_blob": "d02c916e10252081725d963d8866c19f3bcc0ac1",
+      "git_mode": "100644",
+      "sha256": "5b8818394346a297979884abe66cff2527bebf2f658ed9311370e25b08447d49",
+      "bytes": 7908
+    },
+    {
+      "path": "board/zed_tracking/include/zed_tracking/yolo_decode.hpp",
+      "git_blob": "5a216f6053a535bc2f1cec59f3d20b4efa8f7b41",
+      "git_mode": "100644",
+      "sha256": "856e1300ae3eb6344441083ad556fc24269abdb5beed5d5868c96cf5a63f98a3",
+      "bytes": 4688
+    },
+    {
+      "path": "board/zed_tracking/launch/zed_perception.launch.py",
+      "git_blob": "5bbb55af8bd35d2455d278ca3872ee0640ccadd5",
+      "git_mode": "100644",
+      "sha256": "453419e20a1e9c34fb8e82cffc8aaa0e5815815bc5e5fb7a5a7d7fb3e7fb8852",
+      "bytes": 1721
+    },
+    {
+      "path": "board/zed_tracking/launch/zed_perception_standalone.launch.py",
+      "git_blob": "6dc2913552960b52e75f1f88bbf2398409781f0a",
+      "git_mode": "100644",
+      "sha256": "26144c713ff182cd793b43e3a466c36d64fc3bdb7102d45cbf74da94d90eb13b",
+      "bytes": 464
+    },
+    {
+      "path": "board/zed_tracking/package.xml",
+      "git_blob": "61f65e0a3847e39ede6adb4c78edcc37751bcba4",
+      "git_mode": "100644",
+      "sha256": "9997c4743428aec2228e68fbdf4f375652992e75e6b7b6efd84d6cc8b345250f",
+      "bytes": 748
+    },
+    {
+      "path": "board/zed_tracking/src/trt_runner.hpp",
+      "git_blob": "edfd0bade3913f30a730aa13d1bf3dd7f0c5f96f",
+      "git_mode": "100644",
+      "sha256": "20f3f43675ea8d8d6dc3daf3e68640abd134b995f2f72af933da8ec8c7e443c0",
+      "bytes": 7306
+    },
+    {
+      "path": "board/zed_tracking/src/zed_perception_node.cpp",
+      "git_blob": "42faeab8545665085f8536f5a6a581f47e65053c",
+      "git_mode": "100644",
+      "sha256": "c0565fd0731bb0757e058620cb3c492ce357163c1995ea21017037eaceae73cf",
+      "bytes": 24466
+    },
+    {
+      "path": "board/zed_tracking/src/zed_perception_standalone.cpp",
+      "git_blob": "69d4f366081e347e14ef012ee6cfb62adcd0ef07",
+      "git_mode": "100644",
+      "sha256": "925684dd551b6992201acc366b2c731d024900b4a3fbcaf4652a14c6f134a362",
+      "bytes": 53938
+    },
+    {
+      "path": "board/zed_tracking/src/zed_source.hpp",
+      "git_blob": "b6b72d3a2562036f42b2c628426a534993ffd8de",
+      "git_mode": "100644",
+      "sha256": "5b36f05575a0cf0148d5dd5dd6537115494d5fd512800b4efb5138a031195095",
+      "bytes": 9803
+    },
+    {
+      "path": "board/zed_tracking/test/test_camera_modes.cpp",
+      "git_blob": "7d940f2aabfbe779df2d0b25defb1fb94a73caf2",
+      "git_mode": "100644",
+      "sha256": "f3d324cead96dd0849b28c3df304c67bd36b06ce41e256738217112193a7d732",
+      "bytes": 598
+    },
+    {
+      "path": "board/zed_tracking/test/test_depth_stats.cpp",
+      "git_blob": "a78af40e7d00001acc4cf9644e7af3ea2db343fd",
+      "git_mode": "100644",
+      "sha256": "be71b0167eb8de35cc6e0486a6a3a8bec91b81a0b5832989951e9e9ce3733383",
+      "bytes": 4308
+    },
+    {
+      "path": "board/zed_tracking/test/test_detector_execution.cpp",
+      "git_blob": "f99ed24de00bbec77d4eb2e46fee1bfa83daf9f7",
+      "git_mode": "100644",
+      "sha256": "15e2432894b9a91fc147f349a3886af5c42a3a73f7225f7b99749532f9ec216e",
+      "bytes": 914
+    },
+    {
+      "path": "board/zed_tracking/test/test_generic_sky.cpp",
+      "git_blob": "0f5bcb79af19a9a9ea88bd71d10ce5769988cbfe",
+      "git_mode": "100644",
+      "sha256": "dc95bb0aea38f137122ec4a49bc4a2d75c0e7994a306a4b83ab281602a34a70c",
+      "bytes": 6971
+    },
+    {
+      "path": "board/zed_tracking/test/test_geometry.cpp",
+      "git_blob": "b9bee85f7ebddcd5970ede2ccc6c3a5f8d54f20c",
+      "git_mode": "100644",
+      "sha256": "c68fba10a8f83c7935d4337911676041822e7c2fd80534c864fd592fcc234fa2",
+      "bytes": 4032
+    },
+    {
+      "path": "board/zed_tracking/test/test_perception_quality.cpp",
+      "git_blob": "b3ca12ff089bd10d65e1ea71b53eeebc58d430d1",
+      "git_mode": "100644",
+      "sha256": "6f82ec95f7a4e9070bd49a838ac1deb68987fc04ad62f0d5a03a6e76a593f6a0",
+      "bytes": 4207
+    },
+    {
+      "path": "board/zed_tracking/test/test_yolo_decode.cpp",
+      "git_blob": "6ed7f3d0b909d6095ced6f9f19d30ef6e9dfc486",
+      "git_mode": "100644",
+      "sha256": "ebb9e4d64dbd58b0cdf3230f411f107b748c616c8bac2199968b647c41ec8214",
+      "bytes": 3303
+    },
+    {
+      "path": "board/zed_tracking/tools/build_model_manifest.py",
+      "git_blob": "bfdb94e82cc3ce721d5b419ab177849b1289269d",
+      "git_mode": "100644",
+      "sha256": "e37eb13072d7a2c4735f608e2708d4e85b1527de8f6add13901c690bf0fb941c",
+      "bytes": 2292
+    },
+    {
+      "path": "board/zed_tracking/tools/clock_reference.py",
+      "git_blob": "8f973eb08f3881eaa404ddb0d206668bdddfebe4",
+      "git_mode": "100644",
+      "sha256": "e2e698fd7f5f8aaa3084654a94d2d81affa605940d67ad4f5d9fe3bdec17c0cd",
+      "bytes": 631
+    },
+    {
+      "path": "board/zed_tracking/tools/clock_sync_helper.py",
+      "git_blob": "56b769970c4f4bbce54660ccc334a2fa43172f8a",
+      "git_mode": "100644",
+      "sha256": "3e15e159738bb6442a1a0a1caa0fb429994a2109e50e4a59539605ed02a2378f",
+      "bytes": 3561
+    },
+    {
+      "path": "board/zed_tracking/tools/device_capabilities.py",
+      "git_blob": "742fd6ceeb7ce21f60155002e169907eed171566",
+      "git_mode": "100644",
+      "sha256": "e337562bc016e7824242971da4e89b52fadfe7061cb1525672bc5c216c6bf048",
+      "bytes": 3485
+    },
+    {
+      "path": "board/zed_tracking/tools/export_session.py",
+      "git_blob": "22b2660c30bb25077950d6fb13a71f5340b89a5c",
+      "git_mode": "100644",
+      "sha256": "2adb367da25cecaea5d480e4d72767d5aed03e43850f37cc9e8482a22b443304",
+      "bytes": 12312
+    },
+    {
+      "path": "board/zed_tracking/tools/export_svo_rgb.cpp",
+      "git_blob": "642cfb78769da91dc03c03821cabe95a6fc39c79",
+      "git_mode": "100644",
+      "sha256": "7ae725377287d3091ca7aee1f9aed5d35491c3575b9e83230ad88c1905395f44",
+      "bytes": 8093
+    },
+    {
+      "path": "board/zed_tracking/tools/hardware_health.py",
+      "git_blob": "8ff718c78961553ce0ebdebc66b3a8637f13e075",
+      "git_mode": "100644",
+      "sha256": "f40deef77f0501eaaa50e1d8328207fd5f6c1ca808f4a89ef698582e016f7708",
+      "bytes": 4129
+    },
+    {
+      "path": "board/zed_tracking/tools/inspect_observations.py",
+      "git_blob": "6185dd49fe5dc2e7d226e532c46bd2074b87f7c4",
+      "git_mode": "100644",
+      "sha256": "a563109778e648039bcd865dd0e4f8e03d7a138b1bd48787108260900b4444bb",
+      "bytes": 3545
+    },
+    {
+      "path": "board/zed_tracking/tools/install_clock_sync.sh",
+      "git_blob": "10b3c778f01e87da15bcc793b944d20a2ed07070",
+      "git_mode": "100644",
+      "sha256": "148b8d9914e98bd2bd63eb8831867ea2c2259ed6f3dd40ee627ea0f310e3acc8",
+      "bytes": 669
+    },
+    {
+      "path": "board/zed_tracking/tools/perception_supervisor.py",
+      "git_blob": "0ae15ad23e68580924e22c53ee418dfdb71343bd",
+      "git_mode": "100644",
+      "sha256": "ef496570cdcb049161deb4713315217ee1723ce15a7bd5c0d48dcaa5b5733455",
+      "bytes": 21368
+    },
+    {
+      "path": "board/zed_tracking/tools/recording_profiles.py",
+      "git_blob": "f018c862fbe949d10e1203cd92eeed69f7d1db31",
+      "git_mode": "100644",
+      "sha256": "100926fa0b8a4254042f72d5f84223aac0e3bf6ae385737debd06678f8ad2fe3",
+      "bytes": 682
+    },
+    {
+      "path": "board/zed_tracking/tools/session_catalog.py",
+      "git_blob": "3295e8d1fafe1f76414c5299a1602c62bf3a2f77",
+      "git_mode": "100644",
+      "sha256": "b506a11bc3b0699d0b7613842c90da5eb52cf18b4c0ef3b80c0afa48a0feb611",
+      "bytes": 5229
+    },
+    {
+      "path": "docs/NX修复与优化_2026-10-13.md",
+      "git_blob": "7f2baa2f9ba6ff896c570c7d02d9788f92e335ca",
+      "git_mode": "100644",
+      "sha256": "67c5be65f3df4241310eacb4c21fc452f493cf39562129e394612084db218adc",
+      "bytes": 6127
+    },
+    {
+      "path": "docs/NX完整检查_2026-10-13.md",
+      "git_blob": "f3d183973f4e7d16e05f675d625303aba5a63075",
+      "git_mode": "100644",
+      "sha256": "08e5ba7c7547d960b8c95dab0d73c2003e0460a2fa7c338684aea63e217426dd",
+      "bytes": 10020
+    },
+    {
+      "path": "docs/NX性能与外场复核_2026-10-14.md",
+      "git_blob": "a12321b1a5898228f636b2f1e94eb6e8bffab1d2",
+      "git_mode": "100644",
+      "sha256": "2dd203e9f3f63309ada9db804f84fbc99eba4fb951b79482ee1bbb0c3421e63f",
+      "bytes": 8487
+    },
+    {
+      "path": "docs/NX结项复核_2026-10-14.md",
+      "git_blob": "ed14e854a82c44088880396d7220830fbe0340d2",
+      "git_mode": "100644",
+      "sha256": "d5530ababcd191b156fc3dde9efc4597849984346889598713dadc32a37b76dc",
+      "bytes": 4764
+    },
+    {
+      "path": "docs/RGB清晰度与本机视频定位复核_2026-10-14.md",
+      "git_blob": "f36872f4704c9cb1ee049b6463e4276a5bd11930",
+      "git_mode": "100644",
+      "sha256": "2b3241a2ea0878ab4ecd6f6ec3a07d4e2600ff4d4ea1170073f6af91e7bf71fd",
+      "bytes": 4174
+    },
+    {
+      "path": "docs/ZED感知与采集平台_修改与验证记录.md",
+      "git_blob": "56adfba9ff2bdb8121a4da947ab7b52c915b1eda",
+      "git_mode": "100644",
+      "sha256": "834bcc87f599fcfacfa10b61c421dc098e8c9c781d5a98d7b289474a39d1c9e9",
+      "bytes": 13721
+    },
+    {
+      "path": "docs/ZED感知与采集平台_简单使用版.md",
+      "git_blob": "420a084d10ccf234cac07de4be9a590de53f7b39",
+      "git_mode": "100644",
+      "sha256": "e61db64f6c3117e425170bb91dd4b4d9124705abd85615ec6f527d47a4ee76c8",
+      "bytes": 9659
+    },
+    {
+      "path": "docs/development-workflow.md",
+      "git_blob": "27ee13ad6c946101af2f6f3debdd94f74aaa975d",
+      "git_mode": "100644",
+      "sha256": "fc9ac8370db75eeb09045917cb2a7092964c1230558b406af436b2098bbbc766",
+      "bytes": 2079
+    },
+    {
+      "path": "docs/generic-sky-field-test.md",
+      "git_blob": "6e889339c4133aa1ce8ccd7e52035aa0b4d65ec2",
+      "git_mode": "100644",
+      "sha256": "99a5b0ffd09893a647b03bece030f3af2add52400ab13aee26c5eb7a37c27575",
+      "bytes": 7823
+    },
+    {
+      "path": "docs/generic-sky-spec.md",
+      "git_blob": "06b65ca37a789537f5280c98c900ac2934eb6389",
+      "git_mode": "100644",
+      "sha256": "1f929ab96aa746d60630f5c2588b6821cdf1e233cc9ffe0a49bbd24b5b26b2da",
+      "bytes": 1608
+    },
+    {
+      "path": "docs/nx-migration.md",
+      "git_blob": "afead5ec9eee42dffd0dae9301ccfe434c8e136b",
+      "git_mode": "100644",
+      "sha256": "7213ba8a5156a80acde24bde04ba59c16ce10143b07a359f97bab98ade40bb51",
+      "bytes": 4842
+    },
+    {
+      "path": "docs/operator-guide.md",
+      "git_blob": "2d87381a3a4b73cd79c6ac00df066769532f7764",
+      "git_mode": "100644",
+      "sha256": "9515da50a5ee18c9ebb881e4fcfccb33651332e57efe19d2cfa4b5614e114c5b",
+      "bytes": 10638
+    },
+    {
+      "path": "docs/selective-media-workflow.md",
+      "git_blob": "b8fa1f321e59aa5bed29b50a8bff7f0f64e1668e",
+      "git_mode": "100644",
+      "sha256": "4f734514817053f8c71bd15d03721d5440359b38eac26966550ff111eb828ad1",
+      "bytes": 5808
+    },
+    {
+      "path": "docs/superpowers/plans/2026-10-11-beijing-media-library-polish.md",
+      "git_blob": "a7569d95de949b6857f00b4a234a423ba3352483",
+      "git_mode": "100644",
+      "sha256": "6b237e8a79f6d3b178102b5f17b4c06a3b1e4151afa6cbab80f605479c92431a",
+      "bytes": 7148
+    },
+    {
+      "path": "docs/superpowers/plans/2026-10-11-console-and-download-optimization.md",
+      "git_blob": "0a9ad6bcb57fe7c385b02d9953ccd07c6194ef0e",
+      "git_mode": "100644",
+      "sha256": "042da68fd4a66fda1bf2ea472b1232095d630d8efcdc0a79dbb4ec9984acc303",
+      "bytes": 3880
+    },
+    {
+      "path": "docs/superpowers/plans/2026-10-11-selective-video-download.md",
+      "git_blob": "d8e0d3fdfa6afad40c2cc430c47003017ef3fb0b",
+      "git_mode": "100644",
+      "sha256": "5257f65d70937a93da98aee340fa6f752992db009cc46954e18cbc9223f1830f",
+      "bytes": 3797
+    },
+    {
+      "path": "docs/superpowers/plans/2026-10-11-session-management-depth-clock.md",
+      "git_blob": "e682eb0d2db15c46dd7ba5ab3e574ee5e04fcc3a",
+      "git_mode": "100644",
+      "sha256": "7820e2adee4ece025c4ad00449f236f4b95c56c571d0bd78ab2bd865d48fb632",
+      "bytes": 2865
+    },
+    {
+      "path": "docs/superpowers/plans/2026-10-12-camera-controls-and-fixed-rail.md",
+      "git_blob": "4d55be0bef6d1699e972dcc78e9ab9f26dccf1bc",
+      "git_mode": "100644",
+      "sha256": "2ff1355b41647be2160e32c8766d9745d1dca7e73fa8af8da0994be865732947",
+      "bytes": 2884
+    },
+    {
+      "path": "docs/superpowers/plans/2026-10-12-generic-sky-detection.md",
+      "git_blob": "130606ab9d318dbfe6a8e4b9f598dc3e86c9a97e",
+      "git_mode": "100644",
+      "sha256": "2e23236a116dfcbdfa807221df1604b85bda2217cca6a6d2693416ce98a8574e",
+      "bytes": 6677
+    },
+    {
+      "path": "docs/superpowers/plans/2026-10-13-nx-repair.md",
+      "git_blob": "29b44e02bc2a047cd0d507229412ff04395fa800",
+      "git_mode": "100644",
+      "sha256": "8bbedfa6c8b565d75846d06bdc4ac7d9d3a79d92321132a83c326477a4c4a2d3",
+      "bytes": 6473
+    },
+    {
+      "path": "docs/启动ZED感知与采集平台.ps1",
+      "git_blob": "d9b67a11960d8a96986641fefcdc1d511df581c5",
+      "git_mode": "100644",
+      "sha256": "ee61e5e93073369b8e38d442900dc7989cec5f9ab4e1fdff7b7b265532d61ff4",
+      "bytes": 1758
+    },
+    {
+      "path": "docs/外场素材与YOLO输入复核_2026-10-14.md",
+      "git_blob": "1e8bce0e687f6639c38573e8604b23bc359030cf",
+      "git_mode": "100644",
+      "sha256": "813288b594d398079a595b84bb9b7e4bfedb2d65b99f46bc060846448d447e77",
+      "bytes": 7635
+    },
+    {
+      "path": "docs/工作台与链路优化_2026-10-14.md",
+      "git_blob": "b51be2db48596bc1b02515d038bbd0bbab23ddba",
+      "git_mode": "100644",
+      "sha256": "ee1e4d7a95aef23dd1ef526a1dffe37e79bd29463046d52fa275b3f7e0671158",
+      "bytes": 3892
+    },
+    {
+      "path": "docs/工作台窗口适配与源码副本_2026-10-14.md",
+      "git_blob": "0c6357cb8708d2e70e7777e3c36748347b6a52fc",
+      "git_mode": "100644",
+      "sha256": "05c3ca5ec6fb633c0e40380e2e174b74a26c3ccb262975ad6ba7e1f0cefccd95",
+      "bytes": 3004
+    },
+    {
+      "path": "docs/界面圆角与播放器修复_2026-10-14.md",
+      "git_blob": "1680e5c72aef40ed84f8ebc04b0318b146f5fc97",
+      "git_mode": "100644",
+      "sha256": "1cebd8502c25e7bcc8be5f42d374cd5897a1f0a18d10830572008d279f9bf007",
+      "bytes": 1977
+    },
+    {
+      "path": "docs/观测接口与设备状态.md",
+      "git_blob": "a9de4e6675970f4e17fb443f55ba3557f7394273",
+      "git_mode": "100644",
+      "sha256": "c48cf6f244c37ca6e6e29df5bb63c33a05233d3762a2a2cbfd256f48b894241f",
+      "bytes": 4604
+    },
+    {
+      "path": "docs/通用检测_简单使用版.md",
+      "git_blob": "128d854903b6585fb8a686af829496c329f3005f",
+      "git_mode": "100644",
+      "sha256": "efd974ba336183c22e2aa0bf4c2b1876a533fc3111d6d3fe11ff06f1d6e030cc",
+      "bytes": 1741
+    },
+    {
+      "path": "environment/README.md",
+      "git_blob": "d3b185a752a54448f438da4c2fa495c28ab7e052",
+      "git_mode": "100644",
+      "sha256": "1d08c5a6608073bc44baca0a38191127a6ceb9186bf5b2e68b3ad1220aaa2642",
+      "bytes": 1046
+    },
+    {
+      "path": "environment/current-nano.json",
+      "git_blob": "ae6dcb5cfcf614155b92a4bd656bd04107b3d164",
+      "git_mode": "100644",
+      "sha256": "17d848114b19cb2073ef6b742e2fea892fd7ce9edddec3836e88cd010441a41e",
+      "bytes": 26634
+    },
+    {
+      "path": "environment/current-nx16.json",
+      "git_blob": "c9026d08971c777e048c31b9079df7f56a874b39",
+      "git_mode": "100644",
+      "sha256": "00e9ec3337c5a48205f80a132f9652211ef9ae1135e76a9ef057799bb521141d",
+      "bytes": 21858
+    },
+    {
+      "path": "environment/current-pc.json",
+      "git_blob": "671444cb5ff6e156718034cd3feaa792112bed80",
+      "git_mode": "100644",
+      "sha256": "fe2bee1096340b57fd139fb27e3770c4d062ebcfee2eb0f7c07ef22d72d65202",
+      "bytes": 198
+    },
+    {
+      "path": "environment/detection-stability-validation.json",
+      "git_blob": "9df7de06653bbc0aece74fd37ac12fb77da4a83b",
+      "git_mode": "100644",
+      "sha256": "c22793fead7693a5213bc131b81498f3c02e99c9daf050e8f50e17655994a55f",
+      "bytes": 1976
+    },
+    {
+      "path": "environment/generic-detection-validation.json",
+      "git_blob": "36f83e97a39b94a4f384808de37f0c017e7fe76a",
+      "git_mode": "100644",
+      "sha256": "78d111a07f5d42aed87c61359008ba5ef621af1162506ef6b2151b6c9f1067f7",
+      "bytes": 1885
+    },
+    {
+      "path": "environment/hardware/README.md",
+      "git_blob": "ebbb5b4212ba859fe3c16cbe27f83761d037d2d2",
+      "git_mode": "100644",
+      "sha256": "a5d6b654ed0ed849d7db79b1fb92565e7ec8610021ab6c961fa7c26c1f05d965",
+      "bytes": 1369
+    },
+    {
+      "path": "environment/hardware/current-nano/damiao-zed-mono.dts.reference",
+      "git_blob": "eca363e6f50b17d515b63bc2b5ba01e4213d5cdd",
+      "git_mode": "100644",
+      "sha256": "8a87522a7eecd7a70eb3673c5c4b69f19237dd934f28f2534b71db2b87e74b97",
+      "bytes": 127650
+    },
+    {
+      "path": "environment/hardware/current-nano/extlinux.conf.reference",
+      "git_blob": "5a3ff187b5cc7619ca34e9296ea1c060c06d0e3d",
+      "git_mode": "100644",
+      "sha256": "724f92c0e95aa66c7c02f2c5f88c1e1734497158b53025072db25c902aed5fc0",
+      "bytes": 1910
+    },
+    {
+      "path": "environment/hardware/nx16/README.md",
+      "git_blob": "6467fc3af7fbff946553dd7f832853f528938c75",
+      "git_mode": "100644",
+      "sha256": "a57b5a85f78bcb1768e109bad98ac9a13126cf184e04505c0409b98e9f481efb",
+      "bytes": 2627
+    },
+    {
+      "path": "environment/hardware/zed-x-mini-setup.md",
+      "git_blob": "1d8ff5a9eb115fa5ec8aff30b2aa31b51e6542c8",
+      "git_mode": "100644",
+      "sha256": "23e040f48ac435c9659e0a7a920190f8166f1eb3b3724877603ab0a7858de214",
+      "bytes": 8253
+    },
+    {
+      "path": "environment/migration-tool-validation.json",
+      "git_blob": "1d1f7f0a55e193c4b3f05f0ce03b5a156c87f33c",
+      "git_mode": "100644",
+      "sha256": "fb58459c819e919e8f1fe2fc32085cbf12092024371036e7d659f351c0c17355",
+      "bytes": 756
+    },
+    {
+      "path": "panel/board_client.py",
+      "git_blob": "e85d83428d8e8cd0093bcdef3f9494863da6e2e8",
+      "git_mode": "100644",
+      "sha256": "0b9080a93bfd66d2b6109b009608cc72f0bc94b0877a941144e5761a223f572d",
+      "bytes": 2631
+    },
+    {
+      "path": "panel/dashboard.py",
+      "git_blob": "681834850a927b059611d9b7bc4f455eba727fca",
+      "git_mode": "100644",
+      "sha256": "0153da9b9ef6476336a41be8b5d31e2c29933d52994b26e4e9a0846156794666",
+      "bytes": 18861
+    },
+    {
+      "path": "panel/frame_receiver.py",
+      "git_blob": "1aab005e54eaedee56e4c3533b1894f7aeb7a03e",
+      "git_mode": "100644",
+      "sha256": "3442ec2dbc9c35c33d138913dc3a4857050239e4a9826f07243b2fd993e92d83",
+      "bytes": 5382
+    },
+    {
+      "path": "panel/index.html",
+      "git_blob": "3be50525e156c0a73108742a8fa8ab5b4a2e9781",
+      "git_mode": "100644",
+      "sha256": "0ea5aab28fc3b4878f34692c968d43383fd96744a55dc13ee469d30eabab0302",
+      "bytes": 73555
+    },
+    {
+      "path": "panel/job_manager.py",
+      "git_blob": "1431c386b02e2d952514220a029863f07d1a0a11",
+      "git_mode": "100644",
+      "sha256": "60b193683731461b40cf0af6a50baf681269a0936a34062476c1876e9a0d51af",
+      "bytes": 1612
+    },
+    {
+      "path": "panel/media_library.py",
+      "git_blob": "c52b2d8f5f293709a2f6f0cf23cbfdcd92ef1994",
+      "git_mode": "100644",
+      "sha256": "bb26df2188b02c69f35e6e84bc722aa942540064f973d893768b73723c880f1e",
+      "bytes": 12788
+    },
+    {
+      "path": "panel/preview_recorder.py",
+      "git_blob": "b5c160f71e31b266facfb3a4fc9e90c71b34f49b",
+      "git_mode": "100644",
+      "sha256": "13c759e3aa514759999b5736e46b6297822e7e8e452ccd385d1b4157e33f75aa",
+      "bytes": 6350
+    },
+    {
+      "path": "panel/scene_registry.py",
+      "git_blob": "d1960f0ccf74b047bd9e99dd225778fbf7363637",
+      "git_mode": "100644",
+      "sha256": "40a63a712005512edc6652ad81143905970fb4d4787749b624ae4a97ab246620",
+      "bytes": 12212
+    },
+    {
+      "path": "panel/session_manager.py",
+      "git_blob": "4331bbe00681a20879808eba84da7ce9b47278b7",
+      "git_mode": "100644",
+      "sha256": "384399086f347a1889b73c83880021ce6fa14435b47a4e6b31822f916676b0a8",
+      "bytes": 13431
+    },
+    {
+      "path": "panel/test_dashboard.py",
+      "git_blob": "9b6cf22df23d6af36b783aaee0ba7b559c3bf208",
+      "git_mode": "100644",
+      "sha256": "08f4b299c77118c952760125baf7f22803b7527b604cf02f5d6e850769066099",
+      "bytes": 837
+    },
+    {
+      "path": "panel/windows_file_location.py",
+      "git_blob": "431ae0d6d3c3774ae5a69d2a73caf8fe94d9245c",
+      "git_mode": "100644",
+      "sha256": "a6a6955847e7dc94ebe31d6831b1f74c5f715836a3fcc4bb6ce506c7fe7467e7",
+      "bytes": 1950
+    },
+    {
+      "path": "requirements-panel.txt",
+      "git_blob": "799bb43a7ebea970a79780424c7c28705e895466",
+      "git_mode": "100644",
+      "sha256": "ee2cffcc96785472d12c93421dc057c5435c68cc9981af456c19701974254566",
+      "bytes": 57
+    },
+    {
+      "path": "scripts/build_board.sh",
+      "git_blob": "b9f1b1bc341e885b6ee32ed97b458b6075ac8cf1",
+      "git_mode": "100644",
+      "sha256": "249ed04d9f59530fd65dfb4212a14602d7904cee7faf26d50b56dd4f9c7494eb",
+      "bytes": 1070
+    },
+    {
+      "path": "scripts/check_repository.py",
+      "git_blob": "68043ec83017458bc3df809759fa371336939a44",
+      "git_mode": "100644",
+      "sha256": "b6b85bc983e338dd8db9c0db32f8397e93cf20a94a069911c3fc8d816282c6a1",
+      "bytes": 2698
+    },
+    {
+      "path": "scripts/prepare_nx_boot.py",
+      "git_blob": "d5b19fbd11ac9a40b37bf3748c866476cf10798b",
+      "git_mode": "100644",
+      "sha256": "11455ee8655e33d80aa4eab4d2b638fa8e6549638950946619fa1c1c42aefc15",
+      "bytes": 7440
+    },
+    {
+      "path": "scripts/stage_board.py",
+      "git_blob": "bdbb9a63a39cb6d2f82bf4f68731b9454362d8c7",
+      "git_mode": "100644",
+      "sha256": "11612f7248d717e09f49123c6765dfd172052f192f8692955f739c1b1c87c95e",
+      "bytes": 3796
+    },
+    {
+      "path": "scripts/start_panel.ps1",
+      "git_blob": "2c997f08596f8c182a50bee6f1d0a946d6259353",
+      "git_mode": "100644",
+      "sha256": "028041f37636fb7c327eab4711ad8a2d9eac850bb5d8c344757b228c8be0c4a9",
+      "bytes": 1630
+    },
+    {
+      "path": "tests/generic_live_acceptance.py",
+      "git_blob": "7ea24a1bb2372c8de1a93e27815c5137e11ead1d",
+      "git_mode": "100644",
+      "sha256": "696d1a6475b1fe3de513167afff6ed9abb815a4635d04ba5ac3e35e683851485",
+      "bytes": 7341
+    },
+    {
+      "path": "tests/test_board_smoke.py",
+      "git_blob": "9c411a8a197ce5b3582831f10d71bc6e603d88ae",
+      "git_mode": "100644",
+      "sha256": "04cd4110b727d241060f342c65fd17d51524001a9c194ef4b6fe40bba541c81d",
+      "bytes": 2847
+    },
+    {
+      "path": "tests/test_cached_workflow.py",
+      "git_blob": "3cbb1c64c6646a5cf479e1f1bceb275fa01ddde0",
+      "git_mode": "100644",
+      "sha256": "3753b343e697e53ec88a59e85c962682317bff5e2edbfd320d27e4fbcc138f81",
+      "bytes": 1455
+    },
+    {
+      "path": "tests/test_camera_configuration.py",
+      "git_blob": "65fa6664f03f11118cce20f181499246ba88fc04",
+      "git_mode": "100644",
+      "sha256": "4ff16a42ae5b1dafcacbab56bb4a873779d99db5b87a3e33f5006da019669671",
+      "bytes": 2951
+    },
+    {
+      "path": "tests/test_clock_folder.py",
+      "git_blob": "48cc0c68e116aa070955d1ffb53181db1081b71d",
+      "git_mode": "100644",
+      "sha256": "4747020c983f0982c39fd3312b34beb891143ab46c0c76c2bc4107000a92d96d",
+      "bytes": 2002
+    },
+    {
+      "path": "tests/test_depth_video_cache.py",
+      "git_blob": "e7cda3db77d00040336e012b3cef50e8e7e33a70",
+      "git_mode": "100644",
+      "sha256": "b7bd23264be1caee122b49f31963d8d073ff0129bcfa1d7499c6b46c524ea375",
+      "bytes": 4435
+    },
+    {
+      "path": "tests/test_detection_stability.py",
+      "git_blob": "024b42db82d2cd279104a6cf289d5808ed222dcc",
+      "git_mode": "100644",
+      "sha256": "7d9a3a1689bb43227f6b28674b0695be6fa2d50e1c675e72268e814441a72398",
+      "bytes": 4014
+    },
+    {
+      "path": "tests/test_device_capabilities.py",
+      "git_blob": "f442739144b48eb5372f727f7cd2e886d9c7de4d",
+      "git_mode": "100644",
+      "sha256": "f4608a6e1c2e1aa15654af32fba108f5338992faed12dce7cfa07bbfc3cdf39c",
+      "bytes": 3727
+    },
+    {
+      "path": "tests/test_download_performance.py",
+      "git_blob": "1126e714d43945b6f0eb06ffd3f7480a59e76371",
+      "git_mode": "100644",
+      "sha256": "a01c47de1c492f216f23ea531e1d73b403c80ccedd55064bf3c01cebcd0a8ad2",
+      "bytes": 10951
+    },
+    {
+      "path": "tests/test_export_mapping_board.py",
+      "git_blob": "f57d274c8063d480c73632e5961adda06d2ace31",
+      "git_mode": "100644",
+      "sha256": "c9b1f4936d55e2e2f020bad18ab2f4afd20dec6f5b1b2bdad06c5dd44d579b89",
+      "bytes": 933
+    },
+    {
+      "path": "tests/test_followup_recordings.py",
+      "git_blob": "a6c4745294b76bac034291dee3819717ce2ecb62",
+      "git_mode": "100644",
+      "sha256": "4b69d512239c078c016e51b902edf65c2a39db2ed11120c49b288f8341a647e7",
+      "bytes": 5810
+    },
+    {
+      "path": "tests/test_frontend_hardware_state.py",
+      "git_blob": "1a4caeafc9750d8023c907d0b1408e410ee137c8",
+      "git_mode": "100644",
+      "sha256": "ff31f7e63579c4e805ee122927f84491d14a3e34cafdbadbe53f5d8d952dbc02",
+      "bytes": 1893
+    },
+    {
+      "path": "tests/test_frontend_media_refresh.py",
+      "git_blob": "47a85b0b4977c6fd25cf497f4b724e609eb1d105",
+      "git_mode": "100644",
+      "sha256": "bc84db10348ab744b4f2f8015cfc8b1ce5d0050ad19a8f8dd071d78047a52b8e",
+      "bytes": 1817
+    },
+    {
+      "path": "tests/test_frontend_operator_notes.py",
+      "git_blob": "4229b8cbe4b11aaa6bcb9ee2134c97af90c964b0",
+      "git_mode": "100644",
+      "sha256": "087cf7b230a18ed7281f34936902da0d006877ab585a3834c69c5c7566d03dd8",
+      "bytes": 2824
+    },
+    {
+      "path": "tests/test_frontend_workspace.py",
+      "git_blob": "3a4608740e2cd70fe96d2e7893d46f516ecef636",
+      "git_mode": "100644",
+      "sha256": "64f2040d772e28b1360892f31eb2fda51a8360e8024036242837149a6c08592e",
+      "bytes": 14386
+    },
+    {
+      "path": "tests/test_generic_configuration.py",
+      "git_blob": "0c79ab7deb46a4dbae2f82f88f6141714235b6f4",
+      "git_mode": "100644",
+      "sha256": "bfc3c2f63990b6a8775e53c35efd109f6ddeef916157ba650227d46f9f720817",
+      "bytes": 2178
+    },
+    {
+      "path": "tests/test_generic_panel.py",
+      "git_blob": "f762256bca6066c1c98340f66a359930cc012edf",
+      "git_mode": "100644",
+      "sha256": "8d255110a97d43889a11bb0e13ff52c25c422e9a5c10fbc16fb76985a69d1516",
+      "bytes": 7140
+    },
+    {
+      "path": "tests/test_hardware_health.py",
+      "git_blob": "ef0e0e56e98e2ab44f9f02ade16fc0cdbdcd5264",
+      "git_mode": "100644",
+      "sha256": "61e1ac785dbf3cf19f65ab3e54dcbbd7ea0c5187e95a58e825fb793e1cb9058e",
+      "bytes": 3088
+    },
+    {
+      "path": "tests/test_live_panel.py",
+      "git_blob": "dcb51da52a51c64fbdcb5349699f340b173d9c62",
+      "git_mode": "100644",
+      "sha256": "b66157254d8c3c11e06728b203332ba5c1d3a25058363042a4f4fecb6ed5a68b",
+      "bytes": 6400
+    },
+    {
+      "path": "tests/test_media_preparation.py",
+      "git_blob": "86e7c935ada00fb2f79ca635ecfdd4dfb0d9957d",
+      "git_mode": "100644",
+      "sha256": "fcc3545746a3e546b74c2c7073e24fc69678a2448991364be6648879842f6755",
+      "bytes": 5460
+    },
+    {
+      "path": "tests/test_media_workflow.py",
+      "git_blob": "847559f2b4a40ea7ec1103ac66ebf1748aaaaed5",
+      "git_mode": "100644",
+      "sha256": "37507b2d24d13bb47f15e81716e9a6a2b3f05e333b87a4846155c5d8bdba54b9",
+      "bytes": 1327
+    },
+    {
+      "path": "tests/test_native_video_board.py",
+      "git_blob": "b6c6867a1bf66af959351c6455de33775bc3528d",
+      "git_mode": "100644",
+      "sha256": "3ece72c7eca29e3111f6103754225da238f539532aced054eeeaf47a3609a712",
+      "bytes": 3166
+    },
+    {
+      "path": "tests/test_nx_boot.py",
+      "git_blob": "e5e6095073e17b4a45ac3c23671111d409b5bfbc",
+      "git_mode": "100644",
+      "sha256": "75d0bcca5cdb759bc8e1d0c2e8711593c0dc05354b5527e2c63bea151936040c",
+      "bytes": 1641
+    },
+    {
+      "path": "tests/test_observation_contract.py",
+      "git_blob": "4144989769724fdc87166c48bad3a0abf6585ab8",
+      "git_mode": "100644",
+      "sha256": "d7745288ac77e8004ec94034dce54c5b53ca4ec611c8ed92e309149863b5f8ad",
+      "bytes": 1923
+    },
+    {
+      "path": "tests/test_operator_notes_models.py",
+      "git_blob": "c17edf6be04e4114e90b8ad7594bcf6b8ed302d5",
+      "git_mode": "100644",
+      "sha256": "1eb3ea1c541a29c2b40aecf0d5c32982cbb9e60af3f68d6c303930aebf66969e",
+      "bytes": 4055
+    },
+    {
+      "path": "tests/test_pc_scene_registry.py",
+      "git_blob": "fa69bb77318d5ab86130f33b5ca39161c98ba4a1",
+      "git_mode": "100644",
+      "sha256": "814effc977dcbce4ee2ae56bd43b8398f6c52ed870e46a87caa437bc46778a1b",
+      "bytes": 16694
+    },
+    {
+      "path": "tests/test_platform.py",
+      "git_blob": "53a9f38c20910ea569fe6b556c6b977fcb016122",
+      "git_mode": "100644",
+      "sha256": "b300dfffe0e043368d88613a9f30fabfe0e4125a514bb4e86a837a0cedd9526c",
+      "bytes": 10982
+    },
+    {
+      "path": "tests/test_recording_profiles.py",
+      "git_blob": "821257cfbdcc4fad9241a047a272154b4f9fc135",
+      "git_mode": "100644",
+      "sha256": "4b0f294536c5af591e6ed74de3b52d0d5fe415aa8c0a26357883fc2bf5a29a92",
+      "bytes": 1861
+    },
+    {
+      "path": "tests/test_scene_busy.py",
+      "git_blob": "f3c490bf6a2d84ac04ed2f37e4a2b756c4d97bae",
+      "git_mode": "100644",
+      "sha256": "e6ecdbedb6635fbb8951f272428e16a0916123ea53c3ad764ce58401c3bb1e7a",
+      "bytes": 1151
+    },
+    {
+      "path": "tests/test_selective_download.py",
+      "git_blob": "1e74e4a341b70e0361f2f0652d84501a1133761c",
+      "git_mode": "100644",
+      "sha256": "bc332559f98fcb7d98bd710ac827842226494980b0e6390e87ac8ce23673e59a",
+      "bytes": 4616
+    },
+    {
+      "path": "tests/test_session_catalog.py",
+      "git_blob": "76f42786b9ef04f9a7f79ebc17fd806561ae9a23",
+      "git_mode": "100644",
+      "sha256": "10ab66dc9b208fd4b1f53bc5cddc89e846ec09d7d64d85b1cb62c816857e52b6",
+      "bytes": 4113
+    },
+    {
+      "path": "tests/test_session_finalization.py",
+      "git_blob": "2e5d44234a014ffa6f860c27de38bba97ebb290b",
+      "git_mode": "100644",
+      "sha256": "53fd46481d55d15b9dcaec04e7f57c2f319c832eb19a318069ebf7d1442aecf2",
+      "bytes": 4079
+    },
+    {
+      "path": "tests/test_transfer_live.py",
+      "git_blob": "b6a76ab34857e09e947f2de3f5b300f5759a8861",
+      "git_mode": "100644",
+      "sha256": "301b4573074290d7e19c1c4a9e0fe395ab5e9707710d1f27aaa8d47f601e463b",
+      "bytes": 1038
+    },
+    {
+      "path": "tests/test_transfer_regression.py",
+      "git_blob": "386843424a1b11748245bfcd2603d73b827bd027",
+      "git_mode": "100644",
+      "sha256": "85b74c07ead44ca971629e49f40101898420110b8bfcff57cecb3697359d4bc9",
+      "bytes": 3062
+    },
+    {
+      "path": "tests/test_transport_freshness.py",
+      "git_blob": "af867c73f8ce5ee475cfe778971b739dbf002917",
+      "git_mode": "100644",
+      "sha256": "56957cca0a20799742a0b038b664668112bd150bf28bb141c683ce2fbdae4c22",
+      "bytes": 2489
+    },
+    {
+      "path": "tests/test_windows_file_location.py",
+      "git_blob": "3f1ced40c994d5bc9d645c72bb76905355f8abbd",
+      "git_mode": "100644",
+      "sha256": "90c00aec9a2517b914a53aa267f21b76ca5a2a5f61bbbf42de9c94172539d74c",
+      "bytes": 2944
+    }
+  ],
+  "excluded_source_paths": [
+    "AGENTS.md",
+    "README.md",
+    "board/zed_tracking/scripts/track_hold_node.py",
+    "board/zed_tracking/scripts/zed_track_filter_node.py",
+    "board/zed_tracking/test/test_track_hold.py",
+    "board/zed_tracking/test/test_zed_track_filter.py",
+    "board/zed_tracking/tools/board_flight_status.sh",
+    "board/zed_tracking/tools/field_flight_zed.sh",
+    "board/zed_tracking/tools/flight_status_watcher.py",
+    "board/zed_tracking/tools/mock_attitude_publisher.py",
+    "board/zed_tracking/tools/mock_perception_node.py",
+    "board/zed_tracking/tools/mock_vehicle_node.py",
+    "board/zed_tracking/tools/replay_track_check.py",
+    "board/zed_tracking/tools/run_sim_test.sh",
+    "board/zed_tracking/tools/shot_event_bridge.py",
+    "board/zed_tracking/tools/sim_analyze.py",
+    "docs/archive/search-camera/README.md",
+    "docs/archive/search-camera/deepstream_three_camera_node.cpp",
+    "docs/archive/search-camera/deepstream_three_camera_v0.launch.py",
+    "docs/archive/zed-tracking-before-perception-only.md",
+    "environment/hardware/current-nano/damiao-zed-mono.dtbo.reference",
+    "models/README.md",
+    "models/model-index.json",
+    "models/platform_exp_1080_20261014/exp.onnx",
+    "models/platform_exp_1080_20261014/exp_nx16_1080_fp16.manifest.json",
+    "models/platform_exp_20260909/exp.onnx",
+    "models/platform_exp_20260909/exp.pt",
+    "models/platform_exp_20260909/exp_opt3.manifest.json",
+    "panel/legacy_dashboard.py",
+    "panel/legacy_test_dashboard.py",
+    "progress.md"
+  ]
+}

@@ -1,5 +1,7 @@
 # Anti-drone-interceptor
 
+当前感知、录像与电脑工作台源码位于 [perception-workbench](perception-workbench/README.md)。该目录为源码副本，模型权重与采集素材需另行提供；默认仅运行感知与采集。
+
 #### 介绍
 {**以下是 Gitee 平台说明，您可以替换此简介**
 Gitee 是 OSCHINA 推出的基于 Git 的代码托管平台（同时支持 SVN）。专为开发者提供稳定、高效、安全的云端软件开发协作平台

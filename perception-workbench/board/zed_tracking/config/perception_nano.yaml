@@ -1,0 +1,8 @@
+zed_perception_standalone:
+  ros__parameters:
+    profile: rgb
+    engine_path: /home/uavlab/Jetson_ROS2_V0/weights/candidates/platform_exp_20260909/exp_opt3.engine
+    model_id: f5ca6203076e96531ac9eae0f04f1da16fc31cfa51cdc04532bf1ac815ea66a2
+# Current Nano: HD1080@15; NEURAL_LIGHT is initialized, with depth computation
+# disabled in RGB and enabled together with YOLO. LOSSLESS SVO, 60-second segments.
+# Shared preview: 640x360, <=8 fps, 2 Mbps soft token budget.

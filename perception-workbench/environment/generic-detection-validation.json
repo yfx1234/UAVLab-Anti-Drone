@@ -1,0 +1,72 @@
+{
+  "date": "2026-10-12",
+  "hardware": "Jetson Orin Nano 8GB / ZED X Mini",
+  "camera_resolution": "HD1080",
+  "configured_fps": 15,
+  "scene": "indoor, no real quadrotor target",
+  "native_test_groups_passed": 6,
+  "pc_tests_run": 83,
+  "pc_tests_passed": 82,
+  "pc_tests_skipped": 1,
+  "recording": {
+    "recorded_frames": 503,
+    "observations": 330,
+    "comparison_rows": 330,
+    "imu_valid_frames": 503,
+    "toggle_events": 4,
+    "verified_frames": 503,
+    "state": "complete",
+    "integrity_errors": [],
+    "unique_capture_hz": 13.741348835472696
+  },
+  "stages": [
+    {
+      "mode": "RGB",
+      "mean_capture_hz": 13.01,
+      "mean_inference_hz": 0.0,
+      "min_mem_available_gib": 4.76,
+      "max_temperature_c": 53.562,
+      "max_preview_source_age_s": 0.009
+    },
+    {
+      "mode": "generic",
+      "mean_capture_hz": 13.83,
+      "mean_inference_hz": 13.67,
+      "min_mem_available_gib": 4.47,
+      "max_temperature_c": 56.156,
+      "max_preview_source_age_s": 0.119
+    },
+    {
+      "mode": "combined",
+      "mean_capture_hz": 13.14,
+      "mean_inference_hz": 7.86,
+      "min_mem_available_gib": 4.21,
+      "max_temperature_c": 56.875,
+      "max_preview_source_age_s": 0.226
+    },
+    {
+      "mode": "YOLO",
+      "mean_capture_hz": 14.33,
+      "mean_inference_hz": 14.33,
+      "min_mem_available_gib": 4.32,
+      "max_temperature_c": 57.5,
+      "max_preview_source_age_s": 0.073
+    },
+    {
+      "mode": "RGB resumed",
+      "mean_capture_hz": 14.97,
+      "mean_inference_hz": 0.0,
+      "min_mem_available_gib": 4.34,
+      "max_temperature_c": 57.781,
+      "max_preview_source_age_s": 0.009
+    }
+  ],
+  "not_validated": [
+    "sky false positives / recall",
+    "real moving camera geometry",
+    "real quadrotor position error",
+    "long-duration load",
+    "Orin NX / true 30fps"
+  ],
+  "review_important_findings_fixed": 2
+}

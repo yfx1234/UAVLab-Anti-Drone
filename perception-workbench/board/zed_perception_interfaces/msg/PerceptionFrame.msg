@@ -1,0 +1,15 @@
+std_msgs/Header header
+string run_id
+string model_id
+uint32 sequence
+uint32 image_width
+uint32 image_height
+bool detector_enabled
+bool yolo_enabled
+bool generic_detector_enabled
+uint64 detector_generation
+TargetObservation[] targets
+uint32 schema_version
+string boot_id
+bool observations_fresh
+float64 processing_latency_s

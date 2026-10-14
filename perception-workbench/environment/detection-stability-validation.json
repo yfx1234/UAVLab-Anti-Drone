@@ -1,0 +1,54 @@
+{
+  "date": "2026-10-12",
+  "hardware": "Jetson Orin Nano 8GB / ZED X Mini",
+  "camera_resolution": "HD1080",
+  "configured_fps": 15,
+  "scene": "indoor bench, no real quadrotor target",
+  "native_test_groups_passed": 6,
+  "pc_tests_run": 86,
+  "pc_tests_passed": 85,
+  "pc_tests_skipped": 1,
+  "regressions": [
+    "fresh image survives three-layer status polling skew",
+    "status cache age increases",
+    "transient SSH status error does not invalidate independent fresh image",
+    "old image/owner/configuration remains rejected",
+    "same-size redraw retains canvas backing store",
+    "small grain and boundary halos rejected",
+    "small translating target retained",
+    "camera rotation plus target translation retained",
+    "random alternating speckles rejected",
+    "confirmed track reacquired without new warmup after one miss"
+  ],
+  "flicker_live_observation": {
+    "samples": 180,
+    "errors": 0,
+    "unique_frames": 117,
+    "board_empty_target_frames": 0,
+    "new_gate_clears_with_nonempty_frame": 0,
+    "old_1_5s_status_gate_clears": 112,
+    "max_status_age_s": 3.0965747200204987
+  },
+  "generic_live_probe": {
+    "unique_frames": 64,
+    "median_confirmed_targets": 0.0,
+    "max_confirmed_targets": 3,
+    "unique_track_ids": 28,
+    "observations_under_8px": 0,
+    "observations_under_12px": 4,
+    "median_capture_hz": 15.00001320066663,
+    "median_inference_hz": 15.00001320066663,
+    "max_temperature_c": 59.343,
+    "minimum_available_gib": 4.542243957519531
+  },
+  "same_camera_owner_during_probe": true,
+  "original_controls_restored": true,
+  "not_validated": [
+    "sky/cloud false positives and recall",
+    "real quadrotor range accuracy",
+    "real rapid target/camera acceleration",
+    "long-duration stability",
+    "Orin NX / true 30fps"
+  ],
+  "comparison_limit": "No matched live pre/post generic baseline: earlier attempt was interrupted by reboot/link failure; candidate counts are not a measured improvement ratio."
+}

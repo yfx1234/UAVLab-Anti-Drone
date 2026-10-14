@@ -1,0 +1,736 @@
+{
+  "audit_date": "2026-10-14",
+  "status": "NX boot, native engine and NVENC deployed; MAXN_SUPER user-selected; default pixel-exact training1080p15; real-target field validation pending",
+  "module": {
+    "part_number": "699-13767-0000-303 G.1",
+    "sku": "P3767-0000",
+    "name": "Jetson Orin NX 16GB",
+    "linux_memtotal_kib": 16030520,
+    "online_cpus": "0-7",
+    "cuda": {
+      "init": 0,
+      "name": "Orin",
+      "multiprocessors": {
+        "code": 0,
+        "value": 8
+      },
+      "compute_major": {
+        "code": 0,
+        "value": 8
+      },
+      "compute_minor": {
+        "code": 0,
+        "value": 7
+      }
+    }
+  },
+  "carrier": "DAMIAO ORIN NX V2 (user retained carrier; minor revision not independently identified)",
+  "software": {
+    "ubuntu": "22.04.5",
+    "l4t": "36.4.3",
+    "kernel": "5.15.148-tegra",
+    "qspi_bootloader": "36.4.4",
+    "cuda": "12.6",
+    "tensorrt": "10.3.0.30",
+    "zed_sdk": "5.5.0",
+    "ros": "Humble",
+    "multimedia_package_mismatch": "gstreamer / multimedia-api / dla-compiler at 36.4.7; remaining core at 36.4.3"
+  },
+  "boot": {
+    "active_compatible": "nvidia,p3768-0000+p3767-0000-super nvidia,p3767-0000 nvidia,tegra234",
+    "default_label": "UAVLAB_NX16",
+    "fdt": "/boot/dtb/uavlab-damiao-nx16-36.4.3.dtb",
+    "overlay": "/boot/damiao-zed-mono.dtbo",
+    "nvpmodel_target": "/etc/nvpmodel/nvpmodel_p3767_0000_super.conf",
+    "mode": "MAXN_SUPER / ID0 (user requested; rollback ID3 / 25W)",
+    "gpu_tpc_mask_actual": 15,
+    "gpu_tpc_mask_config": 240,
+    "backup": "/var/backups/uavlab-nx16-20261013T115705Z"
+  },
+  "camera": {
+    "devices": [
+      "/dev/video0",
+      "/dev/video1"
+    ],
+    "driver": "1.4.4",
+    "active_i2c_bus": 10,
+    "stream": "1920x1080",
+    "neural_depth_cache": "optimized on new GPU during initial open",
+    "rgb_export_valid": true,
+    "depth_export_valid": true
+  },
+  "yolo": {
+    "source_onnx_sha256": "200a04975f82fb648bd4e83f76efdf4034bad187525b263fce4d6a2cb464e55e",
+    "engine_sha256": "817e1709350e806e7ab261a3fe4d62acfa4828b6c2062b581ac51e9eea3d7712",
+    "input_nchw": [
+      1,
+      3,
+      736,
+      1280
+    ],
+    "output_shape": [
+      1,
+      300,
+      6
+    ],
+    "contract_check_passed": true,
+    "cross_device_warning": false,
+    "nx_engine_rebuilt": true,
+    "real_quad_accuracy_validated": false,
+    "engine_name": "exp_nx16_fp16.engine",
+    "comparison": "9 indoor right-clipped false-positive frames, one near-tied NMS choice differs7 modelpixels/IoU.921; no real quad acceptance"
+  },
+  "nvenc": {
+    "device": "/dev/v4l2-nvenc",
+    "active_dt_status": "okay",
+    "gst_h264_factory_available": true,
+    "fresh_registry_result": "H264/H265/AV1/VP9 registered after corrected NX identity and user cache refresh",
+    "encoding_verified": true,
+    "svo_codecs": {
+      "LOSSLESS": {
+        "rgb_pixel_exact": true,
+        "default": true
+      },
+      "H264_LOSSLESS": {
+        "rgb_pixel_exact": false,
+        "explicit_opt_in": true,
+        "mean_rgb_abs_difference": 1.3819,
+        "max_rgb_abs_difference": 24,
+        "verified_fps": [
+          15,
+          30
+        ],
+        "verified_resolution": "HD1080",
+        "pre_disable_drain_ms": 250
+      }
+    }
+  },
+  "source_check": {
+    "board_functional_files_match": true,
+    "matching_files": 57,
+    "panel_functional_files_match": true,
+    "verified_date": "2026-10-14"
+  },
+  "recording_measurements": [
+    {
+      "fps": 15,
+      "mode": "rgb",
+      "seconds": 12.00015945600012,
+      "unique_frames": 180,
+      "actual_hz": 14.99980068264838,
+      "inference_hz": 0.0,
+      "skipped_inference_frames": 0,
+      "new_metadata_drops": 0
+    },
+    {
+      "fps": 30,
+      "mode": "rgb",
+      "seconds": 11.99998691199994,
+      "unique_frames": 279,
+      "actual_hz": 23.250025358027774,
+      "inference_hz": 0.0,
+      "skipped_inference_frames": 0,
+      "new_metadata_drops": 0
+    },
+    {
+      "fps": 30,
+      "mode": "yolo",
+      "seconds": 12.650584191999997,
+      "unique_frames": 255,
+      "actual_hz": 20.157171884699004,
+      "inference_hz": 20.078124151817832,
+      "skipped_inference_frames": 0,
+      "new_metadata_drops": 0
+    },
+    {
+      "fps": 30,
+      "mode": "combined",
+      "seconds": 12.000039040000047,
+      "unique_frames": 222,
+      "actual_hz": 18.499939813529068,
+      "inference_hz": 10.749965026780405,
+      "skipped_inference_frames": 95,
+      "new_metadata_drops": 0
+    }
+  ],
+  "verification": {
+    "native_groups": 6,
+    "native_groups_passed": 6,
+    "pc_regression_total": 86,
+    "pc_regression_passed": 85,
+    "pc_regression_skipped": 1,
+    "pc_dashboard_tests": 2,
+    "panel_unique_fresh_frames": 46,
+    "max_temperature_c": 70.0,
+    "min_available_memory_kib": 12372684,
+    "camera_stopped_after_audit": true,
+    "no_flash_or_driver_or_power_changes": true,
+    "recording_svo_validation": {
+      "session_08f52558-4733-407a-aa0b-2c5ae6ca61c9": {
+        "state": null,
+        "verified_frames": null,
+        "rename_state": "complete"
+      },
+      "session_3f7e776f-5300-44c5-adfd-47b3dc24f7cf": {
+        "state": "complete",
+        "verified_frames": 306,
+        "rename_state": "complete"
+      },
+      "session_7efebc6a-50e4-4c3e-85ed-0b40aed0390b": {
+        "state": "complete",
+        "verified_frames": 268,
+        "rename_state": "complete"
+      },
+      "session_7993469f-cace-49c8-a34d-a9e7323b3601": {
+        "state": "complete",
+        "verified_frames": 249,
+        "rename_state": "complete"
+      }
+    }
+  },
+  "pending": [
+    "real moving-camera outdoor quad detection and positioning",
+    "RTC full power loss retention",
+    "physical supply/connector and thermal capacity inspection before higher power",
+    "all-detector 1080p30 pixel-exact recording acceptance"
+  ],
+  "download": {
+    "rgb": {
+      "kind": "rgb",
+      "transfer_bytes": 10399625,
+      "transfer_bytes_s": 1232621.192366704,
+      "timings_s": {
+        "metadata_s": 0.75,
+        "registry_s": 0.0,
+        "ssh_connect_s": 0.6090000000003783,
+        "sftp_open_s": 0.5159999999996217,
+        "path_check_s": 0.030999999999039574,
+        "remote_checksum_s": 0.15599999999903957,
+        "local_publish_s": 0.0,
+        "transfer_s": 8.437000000001717,
+        "total_download_s": 10.53099999999904,
+        "ready_check_s": 0.875,
+        "local_prepare_s": 1.125,
+        "total_job_s": 12.53099999999904
+      }
+    },
+    "depth": {
+      "kind": "depth",
+      "transfer_bytes": 0,
+      "transfer_bytes_s": 0.0,
+      "timings_s": {
+        "metadata_s": 1.1869999999980791,
+        "registry_s": 0.0,
+        "ssh_connect_s": 0.23500000000058208,
+        "sftp_open_s": 0.375,
+        "path_check_s": 0.4530000000013388,
+        "remote_checksum_s": 0.3279999999977008,
+        "local_hash_s": 0.014999999999417923,
+        "transfer_s": 0.0,
+        "total_download_s": 2.5929999999971187,
+        "ready_check_s": 0.5320000000028813,
+        "local_prepare_s": 0.0,
+        "total_job_s": 3.125
+      }
+    }
+  },
+  "pre_repair_measurements": [
+    {
+      "fps": 15,
+      "mode": "rgb",
+      "seconds": 12.999980992000019,
+      "unique_frames": 195,
+      "actual_hz": 15.000021932339738,
+      "inference_hz": 0.0,
+      "new_dropped_frames": 0
+    },
+    {
+      "fps": 15,
+      "mode": "yolo",
+      "seconds": 13.000000640000053,
+      "unique_frames": 195,
+      "actual_hz": 14.999999261538436,
+      "inference_hz": 14.999999261538436,
+      "new_dropped_frames": 0
+    },
+    {
+      "fps": 15,
+      "mode": "combined",
+      "seconds": 12.998185024000122,
+      "unique_frames": 195,
+      "actual_hz": 15.00209449549671,
+      "inference_hz": 11.924741778471743,
+      "new_dropped_frames": 40
+    },
+    {
+      "fps": 15,
+      "mode": "generic",
+      "seconds": 12.999977152000156,
+      "unique_frames": 195,
+      "actual_hz": 15.000026363123077,
+      "inference_hz": 15.000026363123077,
+      "new_dropped_frames": 0
+    },
+    {
+      "fps": 30,
+      "mode": "rgb",
+      "seconds": 13.000009952000028,
+      "unique_frames": 390,
+      "actual_hz": 29.999977033863672,
+      "inference_hz": 0.0,
+      "new_dropped_frames": 0
+    }
+  ],
+  "measurements": [
+    {
+      "fps": 15,
+      "mode": "rgb",
+      "codec": "LOSSLESS",
+      "session_id": "session_11685ae6-bf92-44b9-87d4-dd34f4f87452",
+      "seconds": 13.000005599999895,
+      "capture_hz_actual": 14.999993538464443,
+      "inference_hz_actual": 0.0,
+      "replaced_inference_frames": 0,
+      "metadata_drops": 0,
+      "preview_unique": 6,
+      "preview_timestamps": 6
+    },
+    {
+      "fps": 15,
+      "mode": "rgb",
+      "codec": "H264_LOSSLESS",
+      "session_id": "session_9739369c-0ffd-4af6-ad34-bc60ef0dfe4e",
+      "seconds": 12.99996480000027,
+      "capture_hz_actual": 15.000040615494278,
+      "inference_hz_actual": 0.0,
+      "replaced_inference_frames": 0,
+      "metadata_drops": 0,
+      "preview_unique": 6,
+      "preview_timestamps": 6
+    },
+    {
+      "fps": 15,
+      "mode": "yolo",
+      "codec": "LOSSLESS",
+      "session_id": "session_138c5e1d-dcfd-483c-96da-230cf67625a1",
+      "seconds": 12.999974463999934,
+      "capture_hz_actual": 15.00002946467334,
+      "inference_hz_actual": 15.00002946467334,
+      "replaced_inference_frames": 0,
+      "metadata_drops": 0,
+      "preview_unique": 6,
+      "preview_timestamps": 6
+    },
+    {
+      "fps": 15,
+      "mode": "yolo",
+      "codec": "H264_LOSSLESS",
+      "session_id": "session_5c018cb1-be4f-403e-98a8-26d647767cd6",
+      "seconds": 13.00000617600017,
+      "capture_hz_actual": 14.999992873849344,
+      "inference_hz_actual": 14.999992873849344,
+      "replaced_inference_frames": 0,
+      "metadata_drops": 0,
+      "preview_unique": 6,
+      "preview_timestamps": 6
+    },
+    {
+      "fps": 15,
+      "mode": "combined",
+      "codec": "LOSSLESS",
+      "session_id": "session_c872794b-625b-4021-9e1e-3de857549964",
+      "seconds": 13.000032416000067,
+      "capture_hz_actual": 14.999962597016266,
+      "inference_hz_actual": 12.769198928742052,
+      "replaced_inference_frames": 29,
+      "metadata_drops": 0,
+      "preview_unique": 6,
+      "preview_timestamps": 6
+    },
+    {
+      "fps": 15,
+      "mode": "combined",
+      "codec": "H264_LOSSLESS",
+      "session_id": "session_1f338aee-f5bf-474e-b993-49d29805a6f7",
+      "seconds": 12.999975039999754,
+      "capture_hz_actual": 15.00002880005558,
+      "inference_hz_actual": 13.153871409279509,
+      "replaced_inference_frames": 23,
+      "metadata_drops": 0,
+      "preview_unique": 6,
+      "preview_timestamps": 6
+    },
+    {
+      "fps": 15,
+      "mode": "generic",
+      "codec": "LOSSLESS",
+      "session_id": "session_27f2bfc6-d251-4a4f-ab69-89d7034f2eb0",
+      "seconds": 12.999539679999998,
+      "capture_hz_actual": 15.00053115726941,
+      "inference_hz_actual": 14.000495746784784,
+      "replaced_inference_frames": 13,
+      "metadata_drops": 0,
+      "preview_unique": 6,
+      "preview_timestamps": 6
+    },
+    {
+      "fps": 15,
+      "mode": "generic",
+      "codec": "H264_LOSSLESS",
+      "session_id": "session_026fe861-03f0-46cc-b4e5-e87fce345323",
+      "seconds": 12.999990527999671,
+      "capture_hz_actual": 15.000010929239112,
+      "inference_hz_actual": 14.692318397357283,
+      "replaced_inference_frames": 4,
+      "metadata_drops": 0,
+      "preview_unique": 6,
+      "preview_timestamps": 6
+    },
+    {
+      "fps": 30,
+      "mode": "rgb",
+      "codec": "LOSSLESS",
+      "session_id": "session_1126c0b1-679d-4f2c-9a95-4f023d11f572",
+      "seconds": 12.999999520000074,
+      "capture_hz_actual": 18.153846824141933,
+      "inference_hz_actual": 0.0,
+      "replaced_inference_frames": 0,
+      "metadata_drops": 0,
+      "preview_unique": 6,
+      "preview_timestamps": 6
+    },
+    {
+      "fps": 30,
+      "mode": "rgb",
+      "codec": "H264_LOSSLESS",
+      "session_id": "session_022d7282-c431-4e7d-8524-fdf461a90e5f",
+      "seconds": 13.000043936000111,
+      "capture_hz_actual": 29.999898609573183,
+      "inference_hz_actual": 0.0,
+      "replaced_inference_frames": 0,
+      "metadata_drops": 0,
+      "preview_unique": 6,
+      "preview_timestamps": 6
+    },
+    {
+      "fps": 30,
+      "mode": "yolo",
+      "codec": "LOSSLESS",
+      "session_id": "session_3886d7c4-a562-44d6-8752-07d9c59066d8",
+      "seconds": 12.999988479999956,
+      "capture_hz_actual": 16.846168774451154,
+      "inference_hz_actual": 16.846168774451154,
+      "replaced_inference_frames": 0,
+      "metadata_drops": 0,
+      "preview_unique": 6,
+      "preview_timestamps": 6
+    },
+    {
+      "fps": 30,
+      "mode": "yolo",
+      "codec": "H264_LOSSLESS",
+      "session_id": "session_fd9bba6e-57a3-48f1-9648-67184f4f6c55",
+      "seconds": 13.000045312000111,
+      "capture_hz_actual": 18.61531973097156,
+      "inference_hz_actual": 18.61531973097156,
+      "replaced_inference_frames": 0,
+      "metadata_drops": 0,
+      "preview_unique": 6,
+      "preview_timestamps": 6
+    },
+    {
+      "fps": 30,
+      "mode": "combined",
+      "codec": "LOSSLESS",
+      "session_id": "session_dce44393-9dc8-4fa2-80e7-223956086082",
+      "seconds": 13.000028832000226,
+      "capture_hz_actual": 13.692277324942852,
+      "inference_hz_actual": 12.076896292224875,
+      "replaced_inference_frames": 21,
+      "metadata_drops": 0,
+      "preview_unique": 6,
+      "preview_timestamps": 6
+    },
+    {
+      "fps": 30,
+      "mode": "combined",
+      "codec": "H264_LOSSLESS",
+      "session_id": "session_2c665cb3-3646-4ceb-b4b3-5a94548c3e96",
+      "seconds": 13.0000297280003,
+      "capture_hz_actual": 19.384571056574295,
+      "inference_hz_actual": 13.307661876140289,
+      "replaced_inference_frames": 79,
+      "metadata_drops": 0,
+      "preview_unique": 6,
+      "preview_timestamps": 6
+    },
+    {
+      "fps": 30,
+      "mode": "generic",
+      "codec": "LOSSLESS",
+      "session_id": "session_9a81342b-691c-4365-815f-da364e723209",
+      "seconds": 12.999998528000106,
+      "capture_hz_actual": 13.46153998579888,
+      "inference_hz_actual": 12.076924444402424,
+      "replaced_inference_frames": 17,
+      "metadata_drops": 0,
+      "preview_unique": 6,
+      "preview_timestamps": 6
+    },
+    {
+      "fps": 30,
+      "mode": "generic",
+      "codec": "H264_LOSSLESS",
+      "session_id": "session_9ccec352-98f5-49c6-92b5-c6f50d07757e",
+      "seconds": 12.999871200000143,
+      "capture_hz_actual": 24.461780821335868,
+      "inference_hz_actual": 14.615529421552877,
+      "replaced_inference_frames": 129,
+      "metadata_drops": 0,
+      "preview_unique": 6,
+      "preview_timestamps": 6
+    }
+  ],
+  "short_matrix_resources": {
+    "maximum_temperature_c": 69.906,
+    "minimum_available_memory_gib": 9.93746566772461
+  },
+  "power_supply": {
+    "battery": "6S 22.2V nominal 5300mAh user supplied",
+    "full_charge_v": 25.2,
+    "vendor_v2_input_range_v": [
+      12,
+      28
+    ],
+    "module_regulated_input_v_observed": 4.984,
+    "current_mode_w": null,
+    "current_mode_name": "MAXN_SUPER",
+    "current_mode_id": 0
+  },
+  "validation": {
+    "native_test_groups_passed": 7,
+    "pc_tests": 100,
+    "pc_passed": 99,
+    "pc_skipped_windows_symlink": 1,
+    "short_svo_replays_complete": 16
+  },
+  "sustained_measurements": [
+    {
+      "fps": 15,
+      "mode": "combined",
+      "codec": "LOSSLESS",
+      "session_id": "session_18e8a1e4-d352-4a0f-84e7-86e696519218",
+      "seconds": 151.99999318400023,
+      "capture_hz_actual": 13.98684273246261,
+      "inference_hz_actual": 12.2697373923061,
+      "replaced_inference_frames": 261,
+      "metadata_drops": 0,
+      "preview_unique": 69,
+      "preview_timestamps": 69
+    }
+  ],
+  "sustained_resources": {
+    "maximum_temperature_c": 70.687,
+    "minimum_available_memory_gib": 10.083599090576172
+  },
+  "last_verified_date": "2026-10-14",
+  "maxn_rgb_sustained": {
+    "fps": 30,
+    "mode": "rgb",
+    "codec": "H264_LOSSLESS",
+    "session_id": "session_cbab0251-3456-4281-b57d-7cda000b0102",
+    "seconds": 610.999956608,
+    "capture_hz_actual": 29.435353972600456,
+    "inference_hz_actual": 0.0,
+    "replaced_inference_frames": 0,
+    "metadata_drops": 0,
+    "preview_unique": 247,
+    "preview_timestamps": 247,
+    "maximum_temperature_c": 65.781,
+    "minimum_available_memory_gib": 12.647159576416016,
+    "segments_seen": 11,
+    "full_playback_status": "complete",
+    "verified_frames": 18076,
+    "segments_verified": 11
+  },
+  "network": {
+    "pc_ipv4": "192.168.50.101/24",
+    "board_ipv4": "192.168.50.100",
+    "windows_fixed_address_in_active_and_persistent_store": true,
+    "windows_dhcp_enabled": false,
+    "verified_date": "2026-10-14"
+  },
+  "followup_20261014": {
+    "power_mode": "MAXN_SUPER/ID0",
+    "default_engine_unchanged": true,
+    "default_lossless_15fps_unchanged": true,
+    "cuda_inference_stream": "nonblocking",
+    "old_input_trials": [
+      {
+        "codec": null,
+        "seconds": 13.000000384000487,
+        "capture_hz": 30.076922188495942,
+        "inference_hz": 29.999999113845057,
+        "replaced": 0,
+        "metadata_drops": 0,
+        "session_id": null,
+        "max_temp": 67.75
+      },
+      {
+        "codec": "LOSSLESS",
+        "seconds": 12.999991487999978,
+        "capture_hz": 21.69232189577265,
+        "inference_hz": 21.69232189577265,
+        "replaced": 0,
+        "metadata_drops": 0,
+        "session_id": "session_90580c1f-b014-4d4d-9c34-129d65f21389",
+        "max_temp": 71.406
+      },
+      {
+        "codec": "H264_LOSSLESS",
+        "seconds": 91.00002748800034,
+        "capture_hz": 29.549441623570754,
+        "inference_hz": 29.538452615901146,
+        "replaced": 1,
+        "metadata_drops": 0,
+        "session_id": "session_66b19d93-b51a-4271-95da-f8c511e630cf",
+        "max_temp": 74.875
+      }
+    ],
+    "experimental_1080": {
+      "input_nchw": [
+        1,
+        3,
+        1088,
+        1920
+      ],
+      "source_pt_unchanged": true,
+      "manifest": "models/platform_exp_1080_20261014/exp_nx16_1080_fp16.manifest.json",
+      "default": false,
+      "trials": [
+        {
+          "codec": null,
+          "seconds": 12.999985919999745,
+          "capture_hz": 30.000032492343475,
+          "inference_hz": 22.615409109612774,
+          "replaced": 97,
+          "metadata_drops": 0,
+          "session_id": null,
+          "max_temp": 68.781
+        },
+        {
+          "codec": "LOSSLESS",
+          "seconds": 12.999996640000063,
+          "capture_hz": 19.615389685208317,
+          "inference_hz": 19.769235878817792,
+          "replaced": 0,
+          "metadata_drops": 0,
+          "session_id": "session_3db4e9c2-54e7-4874-a1e8-1deb0a926109",
+          "max_temp": 73.0
+        },
+        {
+          "codec": "H264_LOSSLESS",
+          "seconds": 88.00001260799945,
+          "capture_hz": 29.227268539802434,
+          "inference_hz": 22.227269542711337,
+          "replaced": 616,
+          "metadata_drops": 0,
+          "session_id": "session_fb238346-816f-442d-a764-fa4cbd028bc2",
+          "max_temp": 78.5
+        }
+      ],
+      "thermal_early_stop_c": 78.5,
+      "sustained_thermal_acceptance": false
+    },
+    "power_oc_events": {
+      "oc3_event_cnt": 0,
+      "oc1_event_cnt": 0,
+      "oc2_event_cnt": 0
+    },
+    "field_date_source": "saved_PC_start_request_recovered",
+    "whole_scene_video": "concat_without_reencoding_preserves_all_segment_frames",
+    "pc_tests": {
+      "total": 107,
+      "passed": 106,
+      "skipped": 1
+    },
+    "native_ctest_passed": 7,
+    "source_files_match": true,
+    "full_replays": {
+      "field_scenes": 5,
+      "field_segments": 13,
+      "field_unique_frames": 8894,
+      "trial_scenes": 8,
+      "trial_segments": 12,
+      "trial_unique_frames": 12205,
+      "all_complete": true,
+      "stale_boot_anchor_live_regression_passed": true
+    }
+  },
+  "operator_workflow_20261014": {
+    "generic_detection": "retired_at_user_request; panel controls removed, enabling RPC rejected; candidate edits reverted",
+    "yolo_input_choices": [
+      [
+        1,
+        3,
+        736,
+        1280
+      ],
+      [
+        1,
+        3,
+        1088,
+        1920
+      ]
+    ],
+    "default_input": [
+      1,
+      3,
+      736,
+      1280
+    ],
+    "recording_model_change": "rejected including when YOLO paused",
+    "notes": "autosave during recording; visible in scene list; immutable manifest preserved",
+    "field_dataset_scenes": 5,
+    "deleted_historical_codex_scenes": 40,
+    "historical_reclaimed_gib": 37.91502,
+    "sample_audit": {
+      "scene1": {
+        "sample_frames": 45,
+        "target_present_frames": 31,
+        "old_true_positive_frames": 29,
+        "new_true_positive_frames": 31,
+        "old_false_boxes": 0,
+        "new_false_boxes": 0
+      },
+      "scene2": {
+        "sample_frames": 44,
+        "target_present_frames": 36,
+        "old_true_positive_frames": 36,
+        "new_true_positive_frames": 36,
+        "old_false_boxes": 2,
+        "new_false_boxes": 4
+      }
+    },
+    "accuracy_scope": "89 reviewed samples from 2 correlated field sessions; no independent tight ground truth or mAP; full accuracy/endurance acceptance remains pending",
+    "evidence_document": "docs/外场素材与YOLO输入复核_2026-10-14.md",
+    "full_depth_downloads": [
+      {
+        "session_id": "session_4a4c6531-74ec-42f4-996c-768dd2972bad",
+        "decoded_frames": 3328,
+        "seconds": 221.86666666666667,
+        "decoded_sequence_matches_all_segments": true,
+        "all_invalid_segments": [
+          3
+        ]
+      },
+      {
+        "session_id": "session_b99666df-ec5d-4c5f-b820-ad900250b072",
+        "decoded_frames": 3305,
+        "seconds": 220.33333333333334,
+        "decoded_sequence_matches_all_segments": true,
+        "all_invalid_segments": []
+      }
+    ]
+  }
+}

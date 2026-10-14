@@ -1,0 +1,46 @@
+# zed_tracking 感知节点默认参数。
+# 外参为占位值,标定后以 config/extrinsics_zed.yaml 的实测结果覆盖。
+zed_perception_node:
+  ros__parameters:
+    # ---- 采集(ZED SDK) ----
+    resolution: HD1080          # 可选 HD2K/HD1200/HD1080/HD720/SVGA
+    camera_fps: 30
+    depth_mode: NEURAL_LIGHT    # SDK 5.5 推荐;PERFORMANCE 已标记废弃
+    depth_min_m: 0.3
+    depth_max_m: 12.0
+    runtime_confidence: 80      # SDK 逐像素置信度阈值,越低越严格
+    detect_every_n: 2           # 30Hz 采集,15Hz 检测
+
+    # ---- 推理 ----
+    engine_path: /home/uavlab/Jetson_ROS2_V0/weights/candidates/platform_exp_20260909/exp_v_736x1280.engine
+    score_threshold: 0.55
+    iou_threshold: 0.45
+    class_count: 1
+
+    # ---- 深度统计 ----
+    depth_box_shrink: 0.6       # 框边长收缩比,剔除目标边缘坏深度
+    depth_min_valid_pixels: 12
+    depth_confidence_max: 95.0
+    depth_usable_max_m: 10.5    # 超过该距离视为远距,降级为伪测距
+
+    # ---- 伪测距(10m 外,RGB 检测兜底) ----
+    target_size_m: 0.30
+    reference_range_m: 10.0
+    reference_bbox_px: 33.0
+    reference_image_width: 1920.0
+
+    # ---- 相机->机体外参(占位,待标定) ----
+    # 纯竖直朝天 + 基线沿机身纵轴安装下,若装配满足
+    # "相机右=机头、相机下=机体左、相机前=机体上",旋转恰为单位阵。
+    q_body_from_camera_wxyz: [1.0, 0.0, 0.0, 0.0]
+    camera_translation_body_m: [0.10, 0.0, 0.12]   # 机体[前,左,上],米
+
+    # ---- 录像 ----
+    record_enabled: true
+    svo_directory: /home/uavlab/Jetson_ROS2_V0/flight_zed_records
+    svo_compression: H264
+
+    # ---- 快照(调试) ----
+    snapshot_enabled: true
+    snapshot_directory: /tmp/zed_tracking
+    snapshot_period_s: 1.0

@@ -1,0 +1,45 @@
+TIMEOUT 30
+DEFAULT ZED_DAMIAO
+
+MENU TITLE L4T boot options
+
+LABEL primary
+      MENU LABEL primary kernel
+      LINUX /boot/Image
+      INITRD /boot/initrd.pre-zed-damiao
+      APPEND ${cbootargs} root=PARTUUID=616eb584-532a-4150-b947-01ad0136143d rw rootwait rootfstype=ext4 mminit_loglevel=4 console=ttyTCU0,115200 firmware_class.path=/etc/firmware fbcon=map:0 nospectre_bhb video=efifb:off console=tty0 
+
+# When testing a custom kernel, it is recommended that you create a backup of
+# the original kernel and add a new entry to this file so that the device can
+# fallback to the original kernel. To do this:
+#
+# 1, Make a backup of the original kernel
+#      sudo cp /boot/Image /boot/Image.backup
+#
+# 2, Copy your custom kernel into /boot/Image
+#
+# 3, Uncomment below menu setting lines for the original kernel
+#
+# 4, Reboot
+
+# LABEL backup
+#    MENU LABEL backup kernel
+#    LINUX /boot/Image.backup
+#    INITRD /boot/initrd.pre-zed-damiao
+#    APPEND ${cbootargs}
+
+LABEL JetsonIO
+	MENU LABEL Custom Header Config: <CSI Camera IMX477 Dual Seeed>
+	LINUX /boot/Image
+	FDT /boot/dtb/kernel_tegra234-j401-p3768-0000+p3767-0003-recomputer.dtb
+	INITRD /boot/initrd.pre-zed-damiao
+	APPEND ${cbootargs} root=PARTUUID=616eb584-532a-4150-b947-01ad0136143d rw rootwait rootfstype=ext4 mminit_loglevel=4 console=ttyTCU0,115200 firmware_class.path=/etc/firmware fbcon=map:0 nospectre_bhb video=efifb:off console=tty0
+	OVERLAYS /boot/tegra234-p3767-camera-p3768-imx477-dual-seeed.dtbo
+
+LABEL ZED_DAMIAO
+	MENU LABEL DAMIAO V2 ZED Link Mono
+	LINUX /boot/Image
+	FDT /boot/dtb/kernel_tegra234-j401-p3768-0000+p3767-0003-recomputer.dtb
+	INITRD /boot/initrd
+	APPEND ${cbootargs} root=PARTUUID=616eb584-532a-4150-b947-01ad0136143d rw rootwait rootfstype=ext4 mminit_loglevel=4 console=ttyTCU0,115200 firmware_class.path=/etc/firmware fbcon=map:0 nospectre_bhb video=efifb:off console=tty0
+	OVERLAYS /boot/damiao-zed-mono.dtbo

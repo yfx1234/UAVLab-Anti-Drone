@@ -1,0 +1,10 @@
+{
+  "python": "3.12.4",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "packages": {
+    "paramiko": "2.8.1",
+    "Pillow": "12.3.0",
+    "imageio-ffmpeg": "0.6.0"
+  },
+  "tested_environment": true
+}

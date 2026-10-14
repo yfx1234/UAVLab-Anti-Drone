@@ -1,0 +1,12 @@
+string request_id
+string expected_boot_id
+string expected_run_id
+uint64 expected_revision
+string operation
+string parameters_json
+---
+bool accepted
+uint64 revision
+string operation_id
+string error_code
+string message
