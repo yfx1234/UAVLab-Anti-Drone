@@ -1,24 +1,25 @@
 ---
 name: "UAVLab 感知与采集工作台"
-description: "以真实画面为中心、控制与状态稳定的中性采集软件。"
+description: "以真实画面为中心、无外围描边与轻浮起圆角表面的稳定采集软件。"
 colors:
   primary: "#303033"
   primary-hover: "#171719"
-  background: "#f5f5f4"
+  background: "#f4f4f6"
   paper: "#fff"
-  rail: "#fafaf9"
+  rail: "#f7f7f9"
   ink: "#252526"
   muted: "#626266"
-  line: "#dededc"
-  control-line: "#c8c8c6"
+  control-fill: "#ededf0"
+  placeholder: "#64646a"
   image: "#202124"
   success: "#216d50"
   danger: "#ac3e43"
   warning: "#856020"
-  selection: "#e9e9e6"
-  hover: "#f0f0ee"
-  pressed: "#e8e8e6"
-  disabled-surface: "#f2f2f0"
+  hover: "#e2e2e7"
+  pressed: "#d9d9df"
+  danger-surface: "#f8e9eb"
+  danger-hover: "#f2dce0"
+  disabled-surface: "#eeeef1"
   disabled-text: "#858589"
 typography:
   brand:
@@ -55,11 +56,11 @@ typography:
     fontWeight: 400
     lineHeight: 1.5
 rounded:
-  segment: "5px"
-  control: "7px"
-  feedback: "8px"
-  surface: "10px"
-  dialog: "12px"
+  pill: "999px"
+  field: "12px"
+  feedback: "20px"
+  surface: "24px"
+  dialog: "32px"
 spacing:
   tight: "4px"
   inset: "8px"
@@ -71,32 +72,32 @@ components:
   button-primary:
     backgroundColor: "{colors.primary}"
     textColor: "{colors.paper}"
-    rounded: "{rounded.control}"
-    padding: "7px 12px"
+    rounded: "{rounded.pill}"
+    padding: "7px 14px"
   button-primary-hover:
     backgroundColor: "{colors.primary-hover}"
   button-secondary:
-    backgroundColor: "{colors.paper}"
+    backgroundColor: "{colors.control-fill}"
     textColor: "{colors.ink}"
-    rounded: "{rounded.control}"
-    padding: "7px 12px"
+    rounded: "{rounded.pill}"
+    padding: "7px 14px"
   button-danger:
-    backgroundColor: "{colors.paper}"
+    backgroundColor: "{colors.danger-surface}"
     textColor: "{colors.danger}"
-    rounded: "{rounded.control}"
-    padding: "7px 12px"
+    rounded: "{rounded.pill}"
+    padding: "7px 14px"
   input:
-    backgroundColor: "{colors.paper}"
+    backgroundColor: "{colors.control-fill}"
     textColor: "{colors.ink}"
-    rounded: "{rounded.control}"
-    padding: "7px 10px"
+    rounded: "{rounded.field}"
+    padding: "8px 13px"
   workspace-tab:
     textColor: "{colors.muted}"
-    rounded: "{rounded.control}"
-    padding: "6px 13px"
+    rounded: "{rounded.pill}"
+    padding: "6px 14px"
     typography: "{typography.control}"
   workspace-tab-selected:
-    backgroundColor: "{colors.selection}"
+    backgroundColor: "{colors.paper}"
     textColor: "{colors.ink}"
   section:
     backgroundColor: "{colors.paper}"
@@ -110,18 +111,19 @@ components:
 
 **Creative North Star: "稳定的软件工作台"**
 
-以真实画面为中心的成熟采集软件。柔和中性工具面、石墨主操作与细分界让控制保持清楚；UAVLab 品牌和中文操作语言沿用。系统 UI 字体服务连续操作，测量数据用等宽数字对齐。
+以真实画面为中心的成熟采集软件。柔和中性工具面、石墨主操作、胶囊按钮与轻浮起的大圆角表面让控制保持清楚；常驻表面和控件不加外围描边。UAVLab 品牌和中文操作语言沿用。系统 UI 字体服务连续操作，测量数据用等宽数字对齐。
 
 实时数据不改变操作布局。导航、控制、设备健康与反馈有稳定的位置；工作区切换只改变前端视图，相机、YOLO、录像与后台下载的生命周期独立。视觉层级由空间、字重、选中状态和真实图像建立，不依靠装饰标题或重复卡片。
 
 **Key Characteristics:**
 
-- 中性工具面与石墨主要操作。
+- 中性工具面、石墨主要操作与无外围描边的轻浮起表面。
+- 小按钮两端半圆，大容器按尺度使用柔和圆角。
 - 真实画面为中心，控制和状态保持稳定。
 - 中文系统 UI 排版，测量数字对齐。
 - 完整的焦点、禁用、错误、确认与可恢复反馈。
 
-本文据 `panel/index.html` 当前实现合并既有有效规则；本轮已获整体重设计授权。旧版蓝色、全场 13px、通用检测与形式候选记录不再作为视觉规范。具体页面故事与首屏构图留在 `.impeccable/surface-briefs/console.md`。
+本文据 `panel/index.html` 当前实现合并既有有效规则；用户已确认无外围描边、胶囊按钮、大圆角与轻微浮起效果。旧版永久边框、小圆角、蓝色主操作、全场 13px、通用检测与形式候选记录不再作为视觉规范。具体页面故事与首屏构图留在 `.impeccable/surface-briefs/console.md`。
 
 ## Colors
 
@@ -136,9 +138,10 @@ components:
 
 - **工作台底色 / 白色内容面 / 浅灰工具面**：页面、图像与表格容器、工具条和设备健康区。
 - **墨色 / 辅助灰**：主要内容与状态说明。
-- **分界灰 / 控件边界灰**：细分界与输入边界。
+- **控件浅灰 / 占位文字灰**：输入、选择与次级操作的填色；placeholder 保持完整可读。
 - **图像石墨**：监看和回放底面。
-- **选择灰 / 悬停灰 / 按下灰**：中性选择与短操作反馈。
+- **悬停灰 / 按下灰**：次级操作的短状态反馈；工作区选中项使用白色面与轻阴影。
+- **危险浅红 / 危险悬停浅红**：停止与删除入口的低面积语义填色。
 - **禁用底色 / 禁用文字**：不可用控件，不降低整个区域的透明度。
 
 运行绿、故障红与警示棕分别对应 success、danger、warning；保留实际状态文字。图像内 YOLO 绿色框为数据叠加，不是界面品牌色。
@@ -171,7 +174,9 @@ components:
 
 桌面控制 sticky 于工具栏下方 22px，最大高度扣除工具栏、健康栏与 44px 留白，内部滚动。1100px 以下控制可折叠，展开为三列；599px 以下为单列。素材库在 800px 以下改为单列。健康指标由八列减至四列、两列；窄屏默认折叠，保持可查。
 
-目标表外容器固定 264px，sticky 表头、双向内部滚动与 stable scrollbar gutter；测量数据不换行。监看与回放容器为 16:9，画面 contain 展示，最大高度 650px，默认最小高度 200px、窄屏 180px；原生全屏保持画面比例。播放视频绝对定位在明确媒体边界，文件信息在正常文档流中。
+目标表外容器固定 264px，sticky 表头、双向内部滚动与 stable scrollbar gutter；测量数据不换行。实时监看明确占满容器宽度、采用 16:9，保留最大高度 650px、默认最小高度 200px、窄屏 180px；原生全屏保持画面比例。
+
+本机回放 stage 明确为 100% 宽，由 16:9 决定高度，最小高度为 0，不设 650px 高度上限。视频绝对定位填满 stage，使用 object-fit: contain 保留完整画面；不得通过裁切或拉伸消除右侧空白。文件信息在正常文档流中。
 
 **The Stable Targets Rule.** 目标区保持固定高度、sticky 表头和内部滚动；更新复用行节点并保留双向滚动位置，不随目标数量移动外部布局。
 
@@ -179,27 +184,29 @@ components:
 
 ## Elevation & Depth
 
-常驻区域依靠浅灰工具面、白色内容面、石墨图像面与 1px 分界产生层次。侧栏为开放工具区；反馈用固定石墨面覆盖显示，不推移内容。选中分段按钮有低幅阴影，模态确认有柔和阴影与半透明背景；精确值见 sidecar extensions.shadows。
+常驻区域依靠浅灰底色、白色内容面、石墨图像面与柔和环境阴影产生层次。控制栏、素材来源栏和内容容器使用同一低幅表面阴影；工作区选中项和图像分段按钮用更小的阴影表示选择。设备健康栏由向上阴影与内容分离；反馈固定覆盖显示，不推移内容。模态确认有柔和阴影与半透明背景。精确值见 sidecar extensions.shadows。
 
-**The Quiet Surfaces Rule.** 常驻工具面使用背景色与细边界区分；阴影只用于选中分段按钮和模态对话框。
+**The Quiet Surfaces Rule.** 常驻表面以填色、间距和轻微浮起阴影区分，不加外围描边；目标表内部行分隔与键盘焦点轮廓保留。
 
 ## Shapes
 
-圆角按对象尺度使用：分段子按钮、基础控件、反馈、内容容器、模态对话框分别使用 frontmatter 的圆角角色。工具栏、控制分组与健康栏以直线分界；状态圆点辅助真实状态。图标为内联线性 SVG，常规尺寸 18px、工作区图标 16px，不用字符图标或装饰标题图标。
+圆角按对象尺度使用：按钮、工作区导航与分段切换使用胶囊角色，两端呈半圆；输入与选择字段使用字段角色；反馈与下载进度使用反馈角色；控制栏、来源栏和内容容器使用表面角色；模态确认使用对话框角色。媒体在大容器内裁出明确矩形边界；容器外缘保持圆角。工具栏、控制分组与健康栏常态无外围边框，表格保留必要的内部行分隔。状态圆点辅助真实状态。图标为内联线性 SVG，常规尺寸 18px、工作区图标 16px，不用字符图标或装饰标题图标。
+
+**The Rounded Controls Rule.** 小按钮两端半圆，大容器使用表面圆角；输入字段保持独立的较小圆角，不把所有对象改成同一轮廓。
 
 ## Components
 
 ### Buttons
 
-基础控件最小高度 36px；石墨主按钮、白色次按钮、红字停止/删除按钮、透明低频按钮区分操作层级。控制栏使用 13px 与 7px 8px 内边距。不可逆确认用红色填充并置于模态操作区。禁用态有独立文字、底色与边界。focus-visible 为 2px 轮廓、3px 外偏移；悬停与边界使用 150ms ease-out。
+基础控件最小高度 36px、无边框、两端半圆；石墨主按钮、浅灰次按钮、浅红底红字停止/删除按钮、透明低频按钮区分操作层级。基础按钮内边距见 frontmatter；控制栏使用 13px 与 7px 8px 内边距。低频工具、图像切换与反馈按钮可使用局部 28–34px 高度。不可逆确认用红色填充并置于模态操作区。禁用态使用独立文字和填色，不恢复边框。focus-visible 为 2px 轮廓、3px 外偏移；背景与阴影使用 150ms ease-out。
 
 ### Inputs / Fields
 
-白底、可见边界、基础控件圆角与 7px 10px 内边距。placeholder 保持完整可读灰色；焦点沿用公共轮廓。改名为原位置内联编辑，字段下方显示错误；失败保留重试入口与内容。
+浅灰填色、无边框、字段圆角与 frontmatter 的内边距。placeholder 使用独立可读灰色且 opacity 为 1；焦点沿用公共轮廓。改名为原位置内联编辑，字段下方显示错误；失败保留重试入口与内容。
 
 ### Navigation
 
-工作区浅灰选中面和较强字重表示当前位置；使用 tab、aria-selected 与方向键/Home/End。RGB / YOLO 是图像局部分段切换，pressed 状态使用白色子按钮与轻阴影，不与硬件识别开关混淆。
+工作区白色胶囊选中面、轻阴影和较强字重表示当前位置；未选中项透明，悬停为浅灰。使用 tab、aria-selected 与方向键/Home/End。RGB / YOLO 是浅灰胶囊内的图像局部分段切换，pressed 状态使用白色胶囊子按钮与轻阴影，不与硬件识别开关混淆。
 
 ### Status
 
@@ -207,7 +214,7 @@ components:
 
 ### Cards / Containers
 
-图像、目标表与回放是细边界内容容器；侧栏和工具区开放，不复制等尺寸卡片。标题区、测量区与内容区用细分界组织。
+控制栏、来源栏、图像、目标表与回放使用白色、无外围边框、大圆角与共用表面阴影；保留各自功能尺度，不复制等尺寸卡片。标题区使用留白组织，测量条使用浅灰局部底色，表格内部行分隔用于测量阅读。标题区一般内边距为 15px 20px；窄屏按现有响应式规则缩减。
 
 ### Stable target table
 
@@ -215,7 +222,7 @@ components:
 
 ### Feedback / Confirmation
 
-固定反馈位于设备健康栏上方，错误用独立暗红面，文字可换行、可关闭。原生 dialog 承载永久删除，明确板上范围与本机副本保留，初始焦点在取消。展开箭头只用 160ms ease-out 旋转；prefers-reduced-motion 禁用过渡。
+固定反馈位于设备健康栏上方，使用反馈圆角与独立阴影，错误用独立暗红面，文字可换行、可关闭。下载进度面使用同一反馈圆角。原生 dialog 使用更大的对话框圆角与 28px 内边距，承载永久删除，明确板上范围与本机副本保留，初始焦点在取消。展开箭头只用 160ms ease-out 旋转；prefers-reduced-motion 禁用过渡。
 
 ## Do's and Don'ts
 
@@ -226,6 +233,8 @@ components:
 - Do 用文字配合状态色；未知、过期、未标定与错误保持明确。
 - Do 让桌面控制内部滚动，窄屏控制可折叠；反馈固定显示且不改变内容流。
 - Do 保留键盘焦点、禁用、空状态、失败重试、取消与不可逆确认。
+- Do 用胶囊按钮、分尺度圆角与轻环境阴影；常驻控件和表面保持无外围描边。
+- Do 让本机回放 stage 占满容器宽度，以原比例和 contain 展示完整画面。
 
 ### Don't:
 
@@ -234,3 +243,5 @@ components:
 - Don't 把工作区切换与相机、识别、录像生命周期耦合。
 - Don't 将历史通用检测配色、双源标记或灵敏度控件继承为日常组件。
 - Don't 用模拟画面、装饰效果图或推算状态替代实际数据。
+- Don't 将遗留边框变量继承为当前常驻控件边框，或把实时监看的 650px 上限施加到本机回放。
+- Don't 用裁切或拉伸视频遮盖布局空白。
