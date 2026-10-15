@@ -26,6 +26,7 @@ import re
 import signal
 import subprocess
 import sys
+import threading
 import time
 
 import rclpy
@@ -81,6 +82,7 @@ class Rehearsal(Node):
         self.result = {"pass": False, "stages": {}, "errors": []}
         self.procs = {}
         self._finished = False
+        self._pub_last = {}
 
         self.create_subscription(
             String, "/test/mock_px4/state", self._on_mock, 10)
@@ -153,14 +155,25 @@ class Rehearsal(Node):
             return ""
 
     def _cli_pub(self, topic, value, seconds=4):
-        try:
-            subprocess.run(
-                ["ros2", "topic", "pub", "-t", str(seconds), "-r", "2",
-                 topic, "std_msgs/msg/Bool", "{data: %s}" % value],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                timeout=seconds + 10)
-        except subprocess.TimeoutExpired:
-            pass
+        """后台线程跑一次性 CLI 发布：时长要够长（本板新参与者发现需
+        1–3s，发完即退会一条都送不到）；不阻塞节点自旋，否则 mock 状态
+        断流会让合成感知跳帧、IMM 被误复位。同话题 8s 内不重复。"""
+        now = time.monotonic()
+        if now - self._pub_last.get(topic, -1e9) < 8.0:
+            return
+        self._pub_last[topic] = now
+
+        def run():
+            try:
+                subprocess.run(
+                    ["ros2", "topic", "pub", "-t", str(seconds * 2),
+                     "-r", "2", topic, "std_msgs/msg/Bool",
+                     "{data: %s}" % value],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    timeout=seconds + 20)
+            except subprocess.TimeoutExpired:
+                pass
+        threading.Thread(target=run, daemon=True).start()
 
     # ---- 阶段推进 ----
 
@@ -205,11 +218,16 @@ class Rehearsal(Node):
                     return
                 self._advance("S2", "飞控在线/心跳正常/待机零指令")
         elif self.stage == "S2":
-            if elapsed < 1.0:
-                self._cli_pub("/test/mock_px4/arm", "true", seconds=2)
-                self._log("S2: 已解锁（手动模式），mock 模拟飞手爬升")
             mock = self.mock_state or {}
             height = -mock.get("pos", [0, 0, 0])[2] if mock else 0.0
+            # 本板 CLI 新参与者的发现时长不稳定（1–3s 抖动）：解锁命令
+            # 持续重发直到 mock 高度开始爬升（arm 状态在 mock 侧锁存，
+            # 重复无害；_pub_last 8s 节流）
+            if height < 0.5:
+                self._cli_pub("/test/mock_px4/arm", "true", seconds=4)
+            if not getattr(self, "_s2_logged", False):
+                self._s2_logged = True
+                self._log("S2: 已解锁（手动模式），mock 模拟飞手爬升")
             alive = parse_alive(log_text)
             if height > 4.0 and elapsed > 8:
                 sp_ok = alive.get("sp") == 0
@@ -231,12 +249,17 @@ class Rehearsal(Node):
                     "S2 超时：高度 %.1f" % height)
                 self._finish()
         elif self.stage == "S3":
-            if elapsed < 1.0:
-                self._cli_pub("/test/mock_px4/engage", "true", seconds=2)
-                self._log("S3: 已切 offboard，拦截链接管")
             alive = parse_alive(log_text)
-            if alive.get("phase") in ("TAKEOFF", "TRACK", "AIM") and \
-                    alive.get("sp", 0) > 0:
+            # engage 同样持续重发直到指令开始流动
+            if alive.get("sp", 0) == 0:
+                self._cli_pub("/test/mock_px4/engage", "true", seconds=4)
+            if not getattr(self, "_s3_logged", False):
+                self._s3_logged = True
+                self._log("S3: 已切 offboard，拦截链接管")
+            # 已在 5m 高度时接管后可能秒级跑完全程（TAKEOFF→…→DONE），
+            # 判据放宽为"离开 WAITING 且指令在流"
+            if alive.get("sp", 0) > 0 and \
+                    (alive.get("phase") or "WAITING") != "WAITING":
                 self.result["stages"]["S3"] = {
                     "接管阶段": alive.get("phase"),
                     "指令开始流动": alive.get("sp", 0) > 0,
@@ -249,8 +272,7 @@ class Rehearsal(Node):
                     (alive.get("phase"), alive.get("sp")))
                 self._finish()
         elif self.stage == "S4":
-            if elapsed < 1.0:
-                self._cli_pub("/test/mock_px4/engage", "true", seconds=2)
+            self._cli_pub("/test/mock_px4/engage", "true", seconds=4)
             fires = re.findall(r"NETGUN FIRE (.+)", log_text)
             if fires:
                 self.result["stages"]["S4"] = {"开火": fires[-1]}
@@ -261,42 +283,51 @@ class Rehearsal(Node):
                     (parse_estimator(log_text), parse_alive(log_text)))
                 self._finish()
         elif self.stage == "S5":
-            phases = re.findall(r"phase → (\w+)", log_text)
-            if "SETTLE" in phases and "SPIN" in phases:
-                self.result["stages"]["S5"] = {"开火后阶段": phases[-3:]}
-                self._advance("S6", "SETTLE→SPIN 完成")
+            alive = parse_alive(log_text)
+            # SETTLE/SPIN 切换不打 "phase →" 日志行，以 alive 行的 phase 为准
+            if (alive.get("phase") or "") in ("SETTLE", "SPIN", "DONE"):
+                self.result["stages"]["S5"] = {
+                    "开火后阶段": alive.get("phase")}
+                self._advance("S6", "开火后进入 %s" % alive.get("phase"))
             elif elapsed > 30:
                 self.result["errors"].append(
-                    "S5 超时：phases=%s" % phases)
+                    "S5 超时：alive phase=%s" % alive.get("phase"))
                 self._finish()
         elif self.stage == "S6":
+            alive = parse_alive(log_text)
             if elapsed < 1.0:
-                sp_before = parse_alive(log_text).get("sp", 0)
-                self._sp_at_disengage = sp_before
-                self._disengage_time = time.monotonic()
-                self._cli_pub("/test/mock_px4/arm", "true", seconds=2)
+                self._cli_pub("/test/mock_px4/arm", "true", seconds=4)
                 self._log("S6: 飞手切出 offboard（arm=true 保持解锁）")
-            if elapsed > 12:
-                alive = parse_alive(log_text)
+            # 切出经 CLI 送达有 1–3s 发现延迟：先等制导真正回到 WAITING
+            # （切出生效），以该时刻 sp 为基准，再等 6s 验证指令冻结。
+            went_waiting = (alive.get("phase") or "") == "WAITING"
+            if went_waiting and getattr(self, "_sp_at_waiting", None) is None:
+                self._sp_at_waiting = alive.get("sp", 0)
+                self._waiting_since = time.monotonic()
+                self._log("S6: 切出生效（phase=WAITING，sp 基准 %d）"
+                          % self._sp_at_waiting)
+            if went_waiting and getattr(self, "_sp_at_waiting", None) is not None \
+                    and time.monotonic() - self._waiting_since > 6:
                 mock = self.mock_state or {}
                 sp_after = alive.get("sp", 0)
-                sp_stopped = sp_after <= self._sp_at_disengage + 2
-                went_waiting = (alive.get("phase") or "") == "WAITING"
+                sp_stopped = sp_after <= self._sp_at_waiting + 2
                 counts = re.findall(
                     r"guidance alive: ob=(\d+)", log_text)
                 tail_obs = [int(v) for v in counts[-3:]] if len(counts) >= 3 else [0, 0]
                 heartbeat_ok = tail_obs[-1] > tail_obs[0]
                 self.result["stages"]["S6"] = {
                     "切出后零指令": sp_stopped,
-                    "回待命": went_waiting,
+                    "回待命": True,
                     "心跳持续": heartbeat_ok,
                     "ob_tail": tail_obs,
                     "rc_gated_零指令字": mock.get("cmd_count", -1),
                 }
-                if not (sp_stopped and went_waiting):
+                if not sp_stopped:
                     self.result["errors"].append(
-                        "S6 失败：sp %d→%d phase=%s" %
-                        (self._sp_at_disengage, sp_after, alive.get("phase")))
+                        "S6 失败：切出生效后 sp %d→%d 仍在增长" %
+                        (self._sp_at_waiting, sp_after))
+                if not heartbeat_ok:
+                    self.result["errors"].append("S6 失败：切出后心跳停滞")
                 if mock.get("cmd_count", 0):
                     self.result["errors"].append(
                         "rc_gated 不变量违反：VehicleCommand x%d"
@@ -304,6 +335,10 @@ class Rehearsal(Node):
                 self._advance("DONE", "彩排完成")
                 self._finish()
                 return
+            if elapsed > 40:
+                self.result["errors"].append(
+                    "S6 超时：phase=%s" % alive.get("phase"))
+                self._finish()
 
     def _advance(self, stage, note):
         if self.stage != "DONE":
