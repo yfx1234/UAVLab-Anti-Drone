@@ -113,6 +113,9 @@ def generate_launch_description():
                         "spin_flag_enabled": True,
                         "spin_rate_rad_s": 1.8,
                         "spin_total_rad": 6.2832,
+                        # 初始搜索慢自旋：无目标时原地转机头扫整圆天顶
+                        "search_spin_enabled": True,
+                        "search_spin_rate_rad_s": 0.42,
                         "weapon_authorization_topic": "/tracking/weapon_authorization",
                     }
                 ],

@@ -69,6 +69,8 @@ def generate_launch_description():
             ),
             # （仅 intercept_nav=true 时生效）死区外推逼近速度
             DeclareLaunchArgument("intercept_speed_mps", default_value="8.0"),
+            # 初始搜索慢自旋（实机默认开；仿真默认关保矩阵口径，验证传 true）
+            DeclareLaunchArgument("search_spin_enabled", default_value="false"),
             # 授权：就位后最短延时 + 连续有效跟踪时长（strike）
             DeclareLaunchArgument("attack_enable_delay_s", default_value="12.0"),
             DeclareLaunchArgument("stable_track_time_s", default_value="2.0"),
@@ -293,6 +295,9 @@ def generate_launch_description():
                         "spin_settle_speed_mps": 0.25,
                         "spin_settle_confirm_s": 0.3,
                         "spin_settle_timeout_s": 4.0,
+                        "search_spin_enabled": LaunchConfiguration(
+                            "search_spin_enabled"
+                        ),
                     }
                 ],
             ),

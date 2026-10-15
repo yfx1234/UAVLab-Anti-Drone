@@ -154,6 +154,12 @@ public:
       declare_parameter<double>("spin_settle_confirm_s", 0.3);
     spin_settle_timeout_s_ =
       declare_parameter<double>("spin_settle_timeout_s", 4.0);
+    // 初始搜索慢自旋（2026-10-15）：从未捕获目标时原地慢转机头，
+    // 把矩形视场扫成整圆。实机默认开；仿真 launch 显式关（矩阵口径）
+    search_spin_enabled_ =
+      declare_parameter<bool>("search_spin_enabled", true);
+    search_spin_rate_rad_s_ =
+      declare_parameter<double>("search_spin_rate_rad_s", 0.42);
 
     rclcpp::QoS px4_qos(rclcpp::KeepLast(1));
     px4_qos.best_effort().durability_volatile();
@@ -272,6 +278,8 @@ private:
           aim_seeded_ = false;
           spin_accum_rad_ = 0.0;
           settle_ok_since_s_ = -1.0;
+          ever_had_est_ = false;      // 重新搜索（自旋至再捕获）
+          search_spin_logged_ = false;
           RCLCPP_INFO(
             get_logger(),
             "offboard exited → standby (setpoints STOPPED, RC authority)");
@@ -434,6 +442,15 @@ private:
     }
     const double target_speed = est_ok ?
       std::hypot(est_->velocity.x, est_->velocity.y) : 0.0;
+
+    // 首次捕获闩锁（搜索自旋停转判据）
+    if (est_ok && !ever_had_est_) {
+      ever_had_est_ = true;
+      if (search_spin_logged_) {
+        RCLCPP_INFO(
+          get_logger(), "estimate acquired → search spin stopped");
+      }
+    }
 
     // 模式切换（单向）：目标静止 → 位置保持（消速度环悬停游荡，起跑前
     // 把水平间隙收敛到 cm 级）；估计速度越过阈值 → 永久切换速度+前馈
@@ -634,6 +651,23 @@ private:
           get_logger(), "yaw servo engaged: %.1f° (target %.1f m/s)",
           yaw_sp_ * 180.0 / M_PI, target_speed);
       }
+    }
+    // 初始搜索慢自旋（2026-10-15，用户需求）：从未捕获目标时原地
+    // 慢转机头——矩形视场（宽±37°沿机头/窄±22.5°垂直机头）下，
+    // 天顶角 22.5°~37° 的环带天空只有机头转到对应方位才可见，自旋
+    // 一周必然扫过（等效把捕获区从矩形扩成整圆）。首次估计有效即
+    // 停（上方闩锁），交班 yaw 伺服/锁定；位置保持不受影响（yaw 与
+    // 位置解耦，SPIN 段已验证同款手法）。
+    const bool search_spinning = search_spin_enabled_ && !ever_had_est_ &&
+      phase_ == Phase::TRACK;
+    if (search_spinning) {
+      if (!search_spin_logged_) {
+        search_spin_logged_ = true;
+        RCLCPP_INFO(
+          get_logger(), "no estimate yet → search spin (%.0f°/s)",
+          search_spin_rate_rad_s_ * 57.29577951308232);
+      }
+      yaw_sp_ += search_spin_rate_rad_s_ / ctrl_hz_;
     }
     const double yaw_cmd = yaw_servo_enabled_ ? frozen_yaw() : 0.0;
 
@@ -900,7 +934,7 @@ private:
       "phase=%s hold=%d bh=%d aim=%d auth=%d est=%d tspd=%.2f "
       "stab=%.1f aim_t=%.2f | pos=%.2f,%.2f,%.2f vel=%.2f,%.2f "
       "yaw=%.1f tgt=%.2f,%.2f,%.2f | spv=%.2f,%.2f spa=%.2f,%.2f "
-      "spin=%.2f to=%d",
+      "spin=%.2f srch=%d to=%d",
       phase_name(phase_), static_cast<int>(hold_mode_),
       static_cast<int>(bearing_hold_ && !hold_mode_),
       static_cast<int>(phase_ == Phase::AIM),
@@ -911,7 +945,10 @@ private:
       yaw_sp_ * 57.29577951308232,
       hold_target_[0], hold_target_[1], hold_target_[2],
       last_vx_, last_vy_, dbg_ax_, dbg_ay_,
-      spin_accum_rad_, static_cast<int>(to_pub_done_));
+      spin_accum_rad_,
+      static_cast<int>(search_spin_enabled_ && !ever_had_est_ &&
+        phase_ == Phase::TRACK),
+      static_cast<int>(to_pub_done_));
     msg.data = buf;
     debug_pub_->publish(msg);
   }
@@ -990,6 +1027,10 @@ private:
   double spin_settle_timeout_s_{4.0};
   double shot_time_s_{0.0};
   double settle_ok_since_s_{-1.0};
+  bool search_spin_enabled_{true};
+  double search_spin_rate_rad_s_{0.42};
+  bool ever_had_est_{false};
+  bool search_spin_logged_{false};
   double yaw_engage_speed_mps_{0.5};
   double hold_target_[3]{0.0, 0.0, 0.0};  // [2] 构造后即设为 -takeoff_h_
   double last_vx_{0}, last_vy_{0}, last_vz_{0};
