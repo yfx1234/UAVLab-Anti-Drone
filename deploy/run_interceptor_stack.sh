@@ -29,6 +29,8 @@ LAUNCH_FILE="netgun_real.launch.py"
 mkdir -p "$LOG_DIR"
 
 env_setup() {
+  # ROS 的 setup 脚件不兼容 set -u（引用未定义变量），sourcing 期间临时关闭
+  set +u
   # shellcheck disable=SC1091
   source /opt/ros/humble/setup.bash
   # shellcheck disable=SC1091
@@ -37,6 +39,7 @@ env_setup() {
   source "$HOME/Jetson_ROS2_V0/ros2_ws/install_perception/setup.bash"
   # shellcheck disable=SC1091
   source "$INTERCEPTOR_WS/install/setup.bash"
+  set -u
   # 域与板上感知节点一致（domain 0）；感知节点 ROS_LOCALHOST_ONLY=0，
   # 这里必须保持一致否则 DDS 互相不可见（2026-10-15 板上实测）
   export ROS_DOMAIN_ID=0
