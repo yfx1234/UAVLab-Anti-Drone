@@ -103,6 +103,16 @@ def generate_launch_description():
                 namespace="pursuer",
                 name="netgun_guidance_node",
                 output="screen",
+                # 输出话题在节点内硬编码为仿真命名空间 /px4_1/fmu/in/*（实机
+                # 交接文档预留的 remap 方案），实机 PX4 走 /fmu/in/*
+                remappings=[
+                    ("/px4_1/fmu/in/offboard_control_mode",
+                     "/fmu/in/offboard_control_mode"),
+                    ("/px4_1/fmu/in/trajectory_setpoint",
+                     "/fmu/in/trajectory_setpoint"),
+                    ("/px4_1/fmu/in/vehicle_command",
+                     "/fmu/in/vehicle_command"),
+                ],
                 parameters=[
                     {
                         "relative_estimate_topic": ESTIMATE_TOPIC,
