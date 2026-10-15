@@ -33,6 +33,24 @@ class BoardClient:
     def call(self,action,params=None,request=None,timeout=50):
         with self.connection() as client:
             return self.call_on(client,action,params,request,timeout)
+    def exec_command(self,command,timeout=45):
+        """Run a fixed read/control command on the board (interceptor stack ops).
+
+        Same pinned-connection and output limits as the RPC channel; callers
+        must only pass constant command strings, never user input.
+        """
+        with self.connection() as client:
+            return self.exec_on(client,command,timeout)
+    def exec_on(self,client,command,timeout=45):
+        stdin,stdout,stderr=client.exec_command(command,timeout=timeout)
+        try:
+            raw=stdout.read();error=stderr.read().decode(errors='replace')
+            text=raw.decode(errors='replace')
+            if len(raw)>512*1024:raise ValueError('板上命令输出过大')
+            if not text.strip():raise ValueError('板上命令无输出'+('：'+error[-400:] if error.strip() else ''))
+            return text
+        finally:
+            stdin.close();stdout.close();stderr.close()
     def call_on(self,client,action,params=None,request=None,timeout=50):
         """Use a new RPC channel on an already pinned/authenticated connection."""
         data=dict(request or {});data.update(action=action,params=params or {})
