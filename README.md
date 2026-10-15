@@ -51,6 +51,7 @@ ros2 launch netgun_intercept netgun_sim_12m.launch.py \
 | `docs/项目开发手册.md` | 红线/参数真源/环境配方 |
 | `docs/网枪联仿结果.md` | 联仿矩阵与决定性实验 |
 | `docs/交接/网枪拦截项目交接文档.md` | 状态总览 + 下一步清单 |
+| `docs/实机部署记录_2026-10-15.md` | Jetson 实机部署、感知桥接口与验证结果 |
 | `docs/交接/主动瞄准开发交接.md` | AIM+SPIN 设计与实现记录 |
 | `docs/交接/网枪拦截项目工作日志.md` | 按日工作日志 |
 | `docs/仓库维护指南.md` | 目录职责与审计工具用法 |
