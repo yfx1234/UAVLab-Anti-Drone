@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdio>
 #include <string>
 
 #include "netgun_intercept/netgun_fire_control.hpp"
@@ -13,6 +14,7 @@
 #include <px4_offboard_tracking/msg/relative_estimate.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/bool.hpp>
+#include <std_msgs/msg/string.hpp>
 #include <virtual_interception_interfaces/msg/virtual_shot_event.hpp>
 
 namespace netgun_intercept
@@ -182,6 +184,9 @@ public:
       declare_parameter<std::string>(
         "weapon_authorization_topic", "/tracking/weapon_authorization"),
       rclcpp::QoS(1).transient_local());
+    // 调试状态话题（实物外场，2026-10-15）
+    debug_pub_ = create_publisher<std_msgs::msg::String>(
+      declare_parameter<std::string>("debug_topic", "/debug/strike_state"), 10);
     // 授权锚点：就位信号（latched，与目标运动同一锚）。attack_enable_delay_s
     // 与目标运动延时取同值时，授权与目标起跑严格同步（对齐镜像 SETTLE 语义；
     // 旧实现锚在"armed+offboard+高度门"，会比目标起跑早开数秒，导致开火
@@ -319,6 +324,46 @@ private:
       weapon_auth_pub_->publish(auth_msg);
     }
 
+    // 调试状态话题（实物外场检索/失败归因，2026-10-15）：授权链逐项
+    // 分解 + 五门各自通断——不开火时直接看哪个门卡住。纯只读诊断，
+    // 不改火控律任何逻辑。
+    if (last_debug_pub_s_ < 0.0 || now_s - last_debug_pub_s_ >= 0.5) {
+      last_debug_pub_s_ = now_s;
+      const auto & fc = fire_control_.config();
+      const bool g_range =
+        input.range_m >= fc.effective_range_min_m &&
+        input.range_m <= fc.effective_range_max_m;
+      const bool g_axis_p = input.axis_error_rad < fc.primary_axis_error_rad;
+      const bool g_axis_w = input.axis_error_rad < fc.window_axis_error_rad;
+      const bool g_los = input.los_rate_rad_s < fc.maximum_los_rate_rad_s;
+      std_msgs::msg::String msg;
+      char buf[512];
+      std::snprintf(buf, sizeof(buf),
+        "est=%d auth=%d arm=%d ob=%d h=%d rdy=%.1f/%.1f stb=%.1f/%.1f | "
+        "range=%.2f[%.1f,%.1f] axis=%.2fdeg(p=%.1f w=%.1f) los=%.3f/%.2f | "
+        "gates r=%d p=%d w=%d l=%d shots=%d",
+        static_cast<int>(input.estimate_valid),
+        static_cast<int>(input.authorization_passed),
+        static_cast<int>(armed_and_offboard),
+        static_cast<int>(latest_status_->nav_state ==
+        px4_msgs::msg::VehicleStatus::NAVIGATION_STATE_OFFBOARD),
+        static_cast<int>(height_ok),
+        ready_time_s_ > 0.0 ? now_s - ready_time_s_ : -1.0,
+        attack_enable_delay_s_,
+        est_valid_since_s_ > 0.0 ? now_s - est_valid_since_s_ : -1.0,
+        stable_track_time_s_,
+        input.range_m, fc.effective_range_min_m, fc.effective_range_max_m,
+        input.axis_error_rad * 57.29577951308232,
+        fc.primary_axis_error_rad * 57.29577951308232,
+        fc.window_axis_error_rad * 57.29577951308232,
+        input.los_rate_rad_s, fc.maximum_los_rate_rad_s,
+        static_cast<int>(g_range), static_cast<int>(g_axis_p),
+        static_cast<int>(g_axis_w), static_cast<int>(g_los),
+        fire_control_.shot_count());
+      msg.data = buf;
+      debug_pub_->publish(msg);
+    }
+
     const FireDecision decision = fire_control_.update(input);
     // 节流诊断：估计有效性/距离/轴误差/LOS率/授权（不开火时排查用）。
     if (now_s - last_diagnostic_s_ >= 2.0) {
@@ -396,6 +441,7 @@ private:
   double ready_time_s_ = -1.0;
   double first_valid_estimate_s_ = -1.0;
   double last_auth_pub_s_ = -1.0;
+  double last_debug_pub_s_ = -1.0;
   double last_diagnostic_s_ = 0.0;
   double los_rate_filtered_{0.0};
   double est_valid_since_s_{-1.0};
@@ -419,6 +465,7 @@ private:
   rclcpp::Publisher<
     virtual_interception_interfaces::msg::VirtualShotEvent>::SharedPtr shot_pub_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr weapon_auth_pub_;
+  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr debug_pub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr ready_sub_;
   rclcpp::TimerBase::SharedPtr timer_;
 };

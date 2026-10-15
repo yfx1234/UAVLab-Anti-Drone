@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <limits>
 #include <string>
 
@@ -12,6 +13,7 @@
 #include <px4_offboard_tracking/msg/relative_estimate.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/bool.hpp>
+#include <std_msgs/msg/string.hpp>
 #include <virtual_interception_interfaces/msg/virtual_shot_event.hpp>
 
 namespace netgun_intercept
@@ -20,6 +22,19 @@ namespace
 {
 double clampd(double v, double lo, double hi) { return std::max(lo, std::min(hi, v)); }
 enum class Phase { WAITING, TAKEOFF, TRACK, AIM, SETTLE, SPIN, DONE };
+const char * phase_name(Phase p)
+{
+  switch (p) {
+    case Phase::WAITING: return "WAITING";
+    case Phase::TAKEOFF: return "TAKEOFF";
+    case Phase::TRACK: return "TRACK";
+    case Phase::AIM: return "AIM";
+    case Phase::SETTLE: return "SETTLE";
+    case Phase::SPIN: return "SPIN";
+    case Phase::DONE: return "DONE";
+  }
+  return "?";
+}
 }  // namespace
 
 /// netgun 制导节点（架构 v2）：自动解锁+起飞+前馈跟踪。
@@ -211,6 +226,13 @@ public:
       declare_parameter<std::string>(
         "takeoff_ready_topic", "/simulation/pursuer_takeoff_ready"),
       rclcpp::QoS(1).transient_local());
+
+    // 调试状态话题（实物外场检索/失败归因，2026-10-15）：2Hz 独立定时器
+    // 读成员状态拼 key=value 单行——echo/bag/grep 三友好，不碰控制流
+    debug_pub_ = create_publisher<std_msgs::msg::String>(
+      declare_parameter<std::string>("debug_topic", "/debug/guidance_state"), 10);
+    debug_timer_ = create_wall_timer(
+      std::chrono::milliseconds(500), [this]() { publish_debug(); });
 
     auto period = std::chrono::duration<double>(1.0 / ctrl_hz_);
     timer_ = create_wall_timer(
@@ -786,6 +808,7 @@ private:
     vy = last_vy_ + clampd(vy - last_vy_, -max_dv, max_dv);
     vz = last_vz_ + clampd(vz - last_vz_, -max_dv, max_dv);
     last_vx_ = vx; last_vy_ = vy; last_vz_ = vz;
+    dbg_ax_ = ax; dbg_ay_ = ay;  // 调试话题用（AIM 倾角指令）
     px4_msgs::msg::TrajectorySetpoint sp;
     sp.timestamp = static_cast<std::uint64_t>(now().nanoseconds() / 1000);
     const float nan = std::numeric_limits<float>::quiet_NaN();
@@ -852,6 +875,45 @@ private:
       yaw_sp_init_ = true;
     }
     return yaw_sp_;
+  }
+
+  // 调试状态发布（2Hz）：phase/形态/授权/估计/目标速度/瞄准计时 +
+  // 本机位姿/航向/站位目标/最近指令 + SPIN 进度。外场排查按字段对表
+  // （见 docs/实物调试指南.md）。
+  void publish_debug()
+  {
+    if (!lp_) {return;}
+    const double t = now().seconds();
+    bool est_ok = false;
+    double tspd = 0.0;
+    if (est_ && est_->valid) {
+      const double age = std::abs(
+        t - est_->header.stamp.sec - est_->header.stamp.nanosec * 1e-9);
+      est_ok = age <= est_timeout_;
+      if (est_ok) {
+        tspd = std::hypot(est_->velocity.x, est_->velocity.y);
+      }
+    }
+    std_msgs::msg::String msg;
+    char buf[640];
+    std::snprintf(buf, sizeof(buf),
+      "phase=%s hold=%d bh=%d aim=%d auth=%d est=%d tspd=%.2f "
+      "stab=%.1f aim_t=%.2f | pos=%.2f,%.2f,%.2f vel=%.2f,%.2f "
+      "yaw=%.1f tgt=%.2f,%.2f,%.2f | spv=%.2f,%.2f spa=%.2f,%.2f "
+      "spin=%.2f to=%d",
+      phase_name(phase_), static_cast<int>(hold_mode_),
+      static_cast<int>(bearing_hold_ && !hold_mode_),
+      static_cast<int>(phase_ == Phase::AIM),
+      static_cast<int>(weapon_auth_), static_cast<int>(est_ok), tspd,
+      aim_stable_since_s_ > 0.0 ? t - aim_stable_since_s_ : -1.0,
+      phase_ == Phase::AIM ? t - aim_since_s_ : -1.0,
+      lp_->x, lp_->y, lp_->z, lp_->vx, lp_->vy,
+      yaw_sp_ * 57.29577951308232,
+      hold_target_[0], hold_target_[1], hold_target_[2],
+      last_vx_, last_vy_, dbg_ax_, dbg_ay_,
+      spin_accum_rad_, static_cast<int>(to_pub_done_));
+    msg.data = buf;
+    debug_pub_->publish(msg);
   }
 
   Phase phase_{Phase::WAITING};
@@ -931,6 +993,7 @@ private:
   double yaw_engage_speed_mps_{0.5};
   double hold_target_[3]{0.0, 0.0, 0.0};  // [2] 构造后即设为 -takeoff_h_
   double last_vx_{0}, last_vy_{0}, last_vz_{0};
+  double dbg_ax_{0.0}, dbg_ay_{0.0};
   double takeoff_h_, min_h_, gain_, max_spd_, max_acc_, ff_, v_gain_, max_vz_;
   double engage_delay_, est_timeout_, ctrl_hz_;
   double track_engage_speed_mps_{0.3};
@@ -952,6 +1015,8 @@ private:
   rclcpp::Subscription<virtual_interception_interfaces::msg::VirtualShotEvent>::SharedPtr shot_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr auth_sub_;
   rclcpp::TimerBase::SharedPtr timer_;
+  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr debug_pub_;
+  rclcpp::TimerBase::SharedPtr debug_timer_;
 };
 
 }  // namespace netgun_intercept

@@ -1,12 +1,14 @@
 #include <anti_drone_interfaces/msg/depth_observation.hpp>
 #include <px4_msgs/msg/vehicle_attitude.hpp>
 #include <rclcpp/rclcpp.hpp>
+#include <std_msgs/msg/string.hpp>
 
 #include <algorithm>
 #include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <limits>
 #include <memory>
 #include <stdexcept>
@@ -118,6 +120,9 @@ public:
       });
     estimate_pub_ = create_publisher<px4_offboard_tracking::msg::RelativeEstimate>(
       estimate_topic_, 10);
+    // 调试状态话题（实物外场检索/失败归因，2026-10-15）
+    debug_pub_ = create_publisher<std_msgs::msg::String>(
+      declare_parameter<std::string>("debug_topic", "/debug/estimator_state"), 10);
     const auto period = std::chrono::duration_cast<std::chrono::nanoseconds>(
       std::chrono::duration<double>(1.0 / estimator_rate_hz_));
     timer_ = create_wall_timer(period, [this]() {publish_estimate();});
@@ -357,6 +362,36 @@ private:
       out.data_age <= max_data_age_s_ &&
       maximum_position_variance <= max_position_variance_;
     estimate_pub_->publish(out);
+    // 调试状态话题（实物外场检索/失败归因，2026-10-15）：计数器全景 +
+    // 位置方差 + IMM 模型概率（CV/CA/CT）——观测断流/革新门死锁/模型
+    // 误锁三类故障一眼可辨。2Hz，echo/bag/grep 友好。
+    {
+      const double dbg_time_s = current_time.seconds();
+      if (dbg_time_s - last_debug_pub_s_ >= 0.5) {
+        last_debug_pub_s_ = dbg_time_s;
+        std_msgs::msg::String msg;
+        char buf[512];
+        std::snprintf(buf, sizeof(buf),
+          "init=%d valid=%d age=%.2f obs=%llu inv=%llu att=%llu acc=%llu "
+          "bo=%llu rst=%llu | pos=%.2f,%.2f,%.2f vel=%.2f,%.2f,%.2f "
+          "var=%.3f mp=%.2f,%.2f,%.2f",
+          static_cast<int>(state.initialized), static_cast<int>(out.valid),
+          out.data_age,
+          static_cast<unsigned long long>(diag_obs_received_),
+          static_cast<unsigned long long>(diag_rejected_invalid_),
+          static_cast<unsigned long long>(diag_rejected_attitude_),
+          static_cast<unsigned long long>(diag_updates_accepted_),
+          static_cast<unsigned long long>(diag_bearing_only_),
+          static_cast<unsigned long long>(diag_filter_resets_),
+          state.position[0], state.position[1], state.position[2],
+          state.velocity[0], state.velocity[1], state.velocity[2],
+          maximum_position_variance,
+          state.model_probabilities[0], state.model_probabilities[1],
+          state.model_probabilities[2]);
+        msg.data = buf;
+        debug_pub_->publish(msg);
+      }
+    }
     // 节流诊断（数据链排障埋点）：观测流入/拒绝原因/接受数/滤波器状态。
     const double diag_time_s = current_time.seconds();
     if (diag_time_s - last_diag_time_ >= 2.0) {
@@ -396,6 +431,7 @@ private:
   bool last_measurement_accepted_{false};
   rclcpp::Subscription<anti_drone_interfaces::msg::DepthObservation>::SharedPtr observation_sub_;
   rclcpp::Publisher<px4_offboard_tracking::msg::RelativeEstimate>::SharedPtr estimate_pub_;
+  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr debug_pub_;
   rclcpp::TimerBase::SharedPtr timer_;
   std::uint64_t diag_obs_received_{0};
   std::uint64_t diag_rejected_invalid_{0};
@@ -409,6 +445,7 @@ private:
   double last_filter_update_s_{-1.0};
   std::uint64_t diag_filter_resets_{0};
   double last_diag_time_{0.0};
+  double last_debug_pub_s_{0.0};
 };
 
 }  // namespace px4_offboard_tracking
