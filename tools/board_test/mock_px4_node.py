@@ -265,6 +265,12 @@ class MockPx4Node(Node):
         msg.ax, msg.ay, msg.az = 0.0, 0.0, 0.0
         msg.heading = self._yaw
         msg.z_deriv = self._vel[2]
+        # 制导节点只接受 xy_valid && z_valid 的位置消息（真实 PX4 会置位）
+        msg.xy_valid = True
+        msg.z_valid = True
+        msg.v_xy_valid = True
+        msg.v_z_valid = True
+        msg.heading_good_for_control = True
         self._lp_pub.publish(msg)
 
     def _publish_status(self):
