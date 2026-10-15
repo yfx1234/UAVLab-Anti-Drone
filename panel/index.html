@@ -18,6 +18,7 @@ main{max-width:1760px;margin:auto;padding:22px 24px calc(var(--health-height) + 
 @media(max-width:599px){.identity-row,.workspace-nav{padding:0 16px;gap:12px}.identity-row{height:54px}.identity-copy{gap:10px}.brand-name{font-size:21px}.identity-copy h1{font-size:12px;padding-left:10px}.header-meta{font-size:11px;gap:0}.header-meta .status-pill{font-size:11px}.workspace-nav{height:44px}.workspace-tabs{gap:3px}.workspace-tab{font-size:12px}.operating-state{gap:12px;font-size:11px}.operating-state .status-pill{font-size:11px}.operating-state #cameraState{display:none}main{padding:16px 12px calc(var(--health-height) + 16px)}.controls-content{grid-template-columns:1fr;gap:0}.group{padding:18px 0;border:0}.group:last-child{border:0}.controls button,.controls select{font-size:13px}.section-head{padding:11px 13px;gap:10px;align-items:flex-start}.section-title{display:block}.section-title h2{font-size:16px}.capture-spec{display:block;margin-top:3px;font-size:11px}.view-switch{flex:none}.view-switch button{font-size:11px;padding:4px 8px}.viewer{min-height:180px}.measurements{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 0;padding:12px 0}.measurements>span{font-size:11px;padding:0 12px}.measurements b{font-size:13px}.measurements>span:nth-child(2){border:0}.target-heading{gap:10px}.target-heading h2{font-size:16px}.target-units{font-size:11px}.target-section{margin-top:16px}.source-pane{padding:16px}.source-session{display:block}.session-toolbar{margin-top:8px}.download-actions{grid-template-columns:1fr;gap:7px}.download-actions button{min-height:50px}.download-actions .icon{display:block}.media-head{padding:12px;gap:7px}.media-head h2{font-size:16px}.media-head button{font-size:11px;padding:6px 8px}.media-select-row{padding:10px 12px}.media-stage{min-height:0}.media-info{padding:12px}.media-meta{font-size:11px}.device-health{padding:0 16px}.health-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 20px}.device-health>summary{min-height:34px}.health-grid dd{font-size:13px}.health-grid dt{font-size:11px}.feedback{right:12px;bottom:calc(var(--health-height) + 10px)}.target-counter{min-width:66px;font-size:11px}}
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
 .interceptor-facts{margin-top:12px;font-size:12px;line-height:1.9;color:var(--muted);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}.interceptor-facts b{color:var(--ink);font-weight:600}.interceptor-facts .bad{color:var(--red)}.interceptor-facts .good{color:var(--green)}.interceptor-tail{margin:10px 0 0;font:11px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;color:var(--muted);background:#f7f7f9;border-radius:12px;padding:8px 10px;max-height:150px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}
+.interceptor-stage{display:flex;flex-wrap:wrap;gap:5px;margin-top:13px}.stage-chip{font-size:11px;line-height:1;padding:6px 9px;border-radius:999px;background:var(--control-fill);color:var(--muted);white-space:nowrap}.stage-chip.done{background:#e2efe8;color:var(--green)}.stage-chip.now{background:var(--blue);color:#fff;font-weight:600}.interceptor-checks{margin-top:11px;font-size:12px;line-height:2;color:var(--muted);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}.interceptor-checks b{color:var(--ink);font-weight:600}.interceptor-checks .good{color:var(--green)}.interceptor-checks .bad{color:var(--red)}.interceptor-checks .row-line{display:flex;justify-content:space-between;gap:10px}.interceptor-checks .row-line span:first-child{flex:none}.interceptor-raw{margin-top:10px}.interceptor-raw summary{width:fit-content;font-size:11px;color:var(--muted);cursor:pointer}
 </style>
 </head>
 <body>
@@ -32,7 +33,7 @@ main{max-width:1760px;margin:auto;padding:22px 24px calc(var(--health-height) + 
 <section class="group"><h2>设备连接</h2><div class="row"><button id="connect" class="primary">连接板子</button><button id="disconnect">断开连接</button></div><details><summary>密码连接</summary><label for="password">SSH 密码</label><input id="password" type="password" autocomplete="current-password" placeholder="输入会话密码"></details></section>
 <section class="group"><h2>相机采集</h2><label for="captureResolution">分辨率</label><select id="captureResolution"><option value="HD1080">1920 × 1080</option><option value="HD1200">1920 × 1200</option><option value="SVGA">960 × 600</option></select><div class="camera-settings-row"><div><label for="captureFps">采集帧率</label><select id="captureFps"><option value="15">15 fps</option><option value="30">30 fps · 实验</option><option value="60">60 fps · 实验</option></select></div><span id="detectorStatus" class="status-pill">YOLO 已暂停</span></div><div class="row"><button id="startCapture" class="primary">启动相机</button><button id="stopCapture" class="danger">停止相机</button></div><label for="yoloInput">YOLO 输入</label><select id="yoloInput"><option value="">连接后读取模型</option></select><div class="row detector-actions"><button id="enableDetector">开启 YOLO</button><button id="disableDetector">暂停 YOLO</button></div></section>
 <section class="group"><h2>板上录像</h2><label for="recordCodec">素材类型</label><select id="recordCodec"><option value="LOSSLESS">LOSSLESS</option><option value="H264_LOSSLESS">H264_LOSSLESS</option></select><div class="row"><button id="startRaw" class="primary">开始板上录像</button><button id="stopRaw">停止板上录像</button></div><div id="recordMetrics" class="record-metrics" hidden><span>已录制 <b id="recordDuration">00:00</b></span><span>可录约 <b id="recordRemaining">—</b></span></div><p id="sessionInfo" class="session-active" hidden></p><details><summary>采集备注</summary><label for="sessionLabel">备注</label><input id="sessionLabel" placeholder="采集备注" maxlength="100"><label for="scene">场景</label><input id="scene" placeholder="场景 / 背景" maxlength="200"><label for="lighting">光照</label><input id="lighting" placeholder="光照条件" maxlength="100"><p id="noteStatus" class="help" role="status" aria-live="polite">起录时保存到新场次</p><button id="retryNotes" class="quiet-button" hidden>重试保存备注</button></details></section>
-<section class="group"><h2>拦截链</h2><div class="row"><button id="interceptorStart" class="primary">启动拦截链</button><button id="interceptorStop" class="danger">停止拦截链</button></div><div id="interceptorFacts" class="interceptor-facts">连接板子后显示拦截链状态</div><pre id="interceptorTail" class="interceptor-tail" hidden></pre><p class="help">飞手手动起飞后切 offboard 交由拦截链接管；任意时刻切出立即回到手动。开火为软事件（无硬件触发）。</p></section>
+<section class="group"><h2>拦截链</h2><div class="row"><button id="interceptorStart" class="primary">启动拦截链</button><button id="interceptorStop" class="danger">停止拦截链</button></div><div id="interceptorStage" class="interceptor-stage" hidden></div><div id="interceptorChecks" class="interceptor-checks">连接板子后显示拦截链状态</div><details class="interceptor-raw"><summary>原始日志（调试）</summary><pre id="interceptorTail" class="interceptor-tail" hidden></pre></details><p class="help">飞手手动起飞后切 offboard 交由拦截链接管；任意时刻切出立即回到手动。开火为软事件（无硬件触发）。</p></section>
 
 </div></details>
 <div class="content"><section class="section"><div class="section-head"><div class="section-title"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h12v12H3zM15 10l6-3v10l-6-3"/></svg><h2>实时画面</h2><span id="captureSpec" class="capture-spec">采集 1920 × 1080 · 15 fps</span></div><div class="view-switch" aria-label="显示方式"><button id="viewRgb" aria-pressed="true">RGB</button><button id="viewYolo" aria-pressed="false">检测叠加</button></div></div><div id="viewer" class="viewer"><canvas id="canvas" aria-label="实时相机画面及识别框"></canvas><span class="live-badge">实时</span><button id="fullscreenPreview" class="image-tool" data-utility="true" aria-label="全屏监看" title="全屏监看"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M3 16v5h5M21 16v5h-5"/></svg></button><div class="empty"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v12H3zM8 21h8m-4-4v4"/><path d="m9 9 2 2 4-3"/></svg><strong id="emptyTitle">相机尚未启动</strong><span id="emptyHelp">连接板子并启动相机</span></div></div><div class="measurements"><span>采集<b id="captureHz">—</b><small>Hz</small></span><span>识别<b id="inferHz">—</b><small>Hz</small></span><span>画面时效<b id="frameAge" title="画面年龄的保守上限，包含传输时间估计；不是实测网络延迟">—</b><small>s</small></span><span>图传<b id="bandwidth">—</b><small>Mbps</small></span></div></section>
@@ -150,26 +151,75 @@ function update(){
  renderInterceptor(interceptorRunning);
 }
 function escapeHtml(text){return String(text).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));}
+const interceptorStageNames={WAITING:'待命',TAKEOFF:'起飞爬升',TRACK:'跟踪',AIM:'瞄准',SETTLE:'开火稳定',SPIN:'旋转标记',DONE:'完成'};
+const interceptorStageChain=['WAITING','TAKEOFF','TRACK','AIM','FIRE','SETTLE','SPIN'];
+const interceptorStageChainNames={WAITING:'待命',TAKEOFF:'起飞',TRACK:'跟踪',AIM:'瞄准',FIRE:'开火',SETTLE:'稳定',SPIN:'旋转'};
+let interceptorHistory=[];
 function renderInterceptor(interceptorRunning){
- const box=byId('interceptorFacts'),tail=byId('interceptorTail');
- if(!state.connected){box.textContent='连接板子后显示拦截链状态';tail.hidden=true;return;}
- if(state.interceptor_error){box.innerHTML='<span class="bad">拦截链状态读取失败：'+escapeHtml(state.interceptor_error)+'</span>';tail.hidden=true;return;}
+ const checks=byId('interceptorChecks'),stageBox=byId('interceptorStage'),tail=byId('interceptorTail');
+ if(!state.connected){checks.textContent='连接板子后显示拦截链状态';stageBox.hidden=true;tail.hidden=true;interceptorPrev=null;return;}
+ if(state.interceptor_error){checks.innerHTML='<span class="bad">拦截链状态读取失败：'+escapeHtml(state.interceptor_error)+'</span>';stageBox.hidden=true;tail.hidden=true;interceptorPrev=null;return;}
  const it=state.interceptor||{},age=state.interceptor_age_s;
- if(!('running' in it)||typeof age!=='number'||age>8){box.textContent='拦截链状态待更新';tail.hidden=true;return;}
- const est=it.estimator||{},strike=it.strike||{},phase=(it.phases||[]).slice(-1)[0];
- const fcu=strike.fcu===1||(est.obs>30&&est.attmiss===0)?'<b class="good">在线</b>':(strike.fcu===0||(est.obs>30&&est.attmiss>0)?'<b class="bad">无数据</b>':'<b>待判</b>');
- const arm=strike.fcu===undefined?'<b>—</b>':(strike.arm===1?'<b class="good">已解锁</b>':'<b>未解锁</b>');
- const ob=strike.fcu===undefined?'<b>—</b>':(strike.ob===1?'<b class="good">Offboard</b>':'<b>手动</b>');
- const logAge=typeof it.last_line_age_s==='number'?(it.last_line_age_s<6?'日志流动':'日志 '+number(it.last_line_age_s,0)+'s 无更新'):'';
- const lines=[];
- lines.push('拦截链 '+(it.running?'<b class="good">运行中 · pid '+(it.pid??'—')+'</b>':'<b>未运行</b>')+(logAge?' · '+logAge:''));
- lines.push('飞控 '+fcu+' · 解锁 '+arm+' · '+ob);
- lines.push('制导 '+(it.running?(phase||'WAITING'):'—')+' · 估计器 '+(est.init!==undefined?'init '+est.init+' · valid '+est.valid:'待数据'));
- if(strike.range_m!==undefined)lines.push('火控 距离 <b>'+number(strike.range_m,1)+' m</b> · 轴误差 '+(strike.axis_deg!==undefined?number(strike.axis_deg,2)+'°':'—')+' · 开火 <b'+((it.shots||0)>0?' class="good"':'')+'>'+(it.shots||0)+'</b> 发');
- if(it.fire_last)lines.push('最近开火 '+escapeHtml(it.fire_last));
- box.innerHTML=lines.join('<br>');
- const rows=(it.tail||[]).slice(-5);
- tail.hidden=!rows.length;tail.textContent=rows.join('\n');
+ if(!('running' in it)||typeof age!=='number'||age>8){checks.textContent='拦截链状态待更新';stageBox.hidden=true;tail.hidden=true;return;}
+ const est=it.estimator||{},strike=it.strike||{},gd=it.guidance||{};
+ const phase=gd.phase||(it.phases||[]).slice(-1)[0]||'WAITING';
+ // ---- 阶段链条 ----
+ if(it.running){
+  const chainIndex={WAITING:0,TAKEOFF:1,TRACK:2,AIM:3,SETTLE:5,SPIN:6,DONE:6}[phase]??2;
+  const fireDone=(it.shots||0)>0;
+  stageBox.hidden=false;
+  stageBox.replaceChildren(...interceptorStageChain.map((key,index)=>{
+   const chip=document.createElement('span');chip.className='stage-chip';
+   const isFire=key==='FIRE';
+   if(isFire&&fireDone){chip.classList.add('done');chip.textContent='开火 ✓';}
+   else if(isFire){chip.textContent='开火';}
+   else if(index<chainIndex){chip.classList.add('done');chip.textContent=interceptorStageChainNames[key]+' ✓';}
+   else if(index===chainIndex){chip.classList.add('now');chip.textContent=interceptorStageChainNames[key];}
+   else chip.textContent=interceptorStageChainNames[key];
+   return chip;}));
+ }else stageBox.hidden=true;
+ // ---- 增长性判定：板上 alive/diag 日志 5s 一条，必须与 ≥6s 前的样本比，
+ // 否则轮询落在同一日志行上会误报"停滞" ----
+ const nowS=performance.now()/1000;
+ interceptorHistory.push({t:nowS,ob:gd.ob_sent,obs:est.obs});
+ interceptorHistory=interceptorHistory.filter(s=>nowS-s.t<25);
+ const oldSample=interceptorHistory.find(s=>nowS-s.t>=6);
+ const growth={};
+ if(oldSample){
+  if(typeof gd.ob_sent==='number'&&typeof oldSample.ob==='number')growth.ob=gd.ob_sent>oldSample.ob;
+  if(typeof est.obs==='number'&&typeof oldSample.obs==='number')growth.obs=est.obs>oldSample.obs;
+ }
+ // ---- 自检项 ----
+ const line=(name,value)=>'<div class="row-line"><span>'+name+'</span><span>'+value+'</span></div>';
+ const rows=[];
+ rows.push(line('拦截链',it.running?'<b class="good">运行中</b> · pid '+(it.pid??'—'):'<b>未运行</b>'));
+ if(it.running){
+  const heartbeat=growth.ob===undefined?'<b>监测中</b>':(growth.ob?'<b class="good">正常</b>':'<b class="bad">停滞</b>');
+  rows.push(line('心跳（offboard 模式）',heartbeat));
+  const perceptionFlow=growth.obs===undefined?'<b>监测中</b>':(growth.obs?'<b class="good">数据正常</b>':'<b class="bad">无观测</b>');
+  rows.push(line('感知数据流',perceptionFlow));
+  const fcu=strike.fcu===1||(strike.fcu===undefined&&est.obs>30&&est.attmiss===0)?'<b class="good">在线</b>':((strike.fcu===0||(est.obs>30&&est.attmiss>0))?'<b class="bad">无数据（未上电或链路断）</b>':'<b>待判</b>');
+  rows.push(line('飞控',fcu));
+  if(strike.fcu!==undefined)rows.push(line('解锁 / 模式',(strike.arm===1?'<b class="good">已解锁</b>':'未解锁')+' · '+(strike.ob===1?'<b class="good">Offboard 已接管</b>':'手动')));
+  else rows.push(line('解锁 / 模式','—'));
+  const estState=est.init===1?(est.valid===1?'<b class="good">跟踪有效</b>':'已初始化 · 距离未确认'):(est.obs>0?'初始化中':'等待观测');
+  rows.push(line('目标估计',estState));
+  rows.push(line('当前阶段','<b>'+(interceptorStageNames[phase]||phase)+'</b>'));
+  if(strike.range_m!==undefined){
+   const inWindow=strike.range_m>=4.0&&strike.range_m<=9.8;
+   const fireState=strike.auth===1?'<b class="good">已授权</b>':(inWindow?'满足距离窗 · 待其他条件':'<b>距离窗外</b> · '+number(strike.range_m,1)+' m');
+   rows.push(line('火控',fireState));
+  }
+  rows.push(line('开火',(it.shots||0)>0?'<b class="good">'+(it.shots||0)+' 发</b>'+(fireRangeText(it.fire_last)?' · 最近 '+fireRangeText(it.fire_last):''):'0 发'));
+ }
+ checks.innerHTML=rows.join('');
+ const rawRows=(it.tail||[]).slice(-6);
+ tail.hidden=!rawRows.length;tail.textContent=rawRows.join('\n');
+}
+function fireRangeText(fireLast){
+ if(!fireLast)return '';
+ const m=fireLast.match(/range=([\d.]+)m/);
+ return m?number(parseFloat(m[1]),1)+' m':'';
 }
 async function action(actionName,params={},options={}){
  const stopping=stopActions.includes(actionName)&&(!['set_detector'].includes(actionName)||params.enabled===false);
