@@ -1,0 +1,128 @@
+#!/usr/bin/env python3
+"""拦截链状态读取（只读，PC 面板 2s 轮询用，2026-10-15）。
+
+输出单行 JSON 到 stdout：栈进程存活、最新 launch 日志的估计器/火控诊断行、
+制导 phase 序列、开火记录与日志尾部。飞控是否在线从估计器 attmiss 推断
+（attmiss=obs 且持续增长 = 无姿态数据 = 飞控未上电/uxrce 未跑）；解锁与
+offboard 从火控诊断 arm=/ob= 读取。
+
+任何内部错误都降级为 {"error": ...}，绝不向日志目录写东西。
+"""
+
+import glob
+import json
+import os
+import re
+import subprocess
+import time
+
+LOG_ROOT = os.path.expanduser("~/netgun_logs")
+PID_FILE = os.path.join(LOG_ROOT, "interceptor_stack.pid")
+STATUS_CMD_TIMEOUT_S = 5.0
+
+
+def stack_pid():
+    pid = None
+    try:
+        with open(PID_FILE) as f:
+            pid = int(f.read().strip())
+    except (OSError, ValueError):
+        pid = None
+    running = False
+    if pid:
+        try:
+            os.kill(pid, 0)
+            running = True
+        except OSError:
+            running = False
+    if not running:
+        # 兜底：PID 文件丢失/失效时按进程名找（模式含 [] 防自匹配）
+        try:
+            out = subprocess.run(
+                ["pgrep", "-f", "netgun_real[.]launch"],
+                capture_output=True, text=True, timeout=STATUS_CMD_TIMEOUT_S,
+            ).stdout.strip()
+            if out:
+                running = True
+                pid = int(out.split()[0])
+        except (OSError, ValueError, subprocess.SubprocessError):
+            pass
+    return running, pid
+
+
+def parse_estimator(line):
+    fields = {}
+    for key in ("obs", "inv", "attmiss", "acc", "bo", "reset", "init", "valid"):
+        match = re.search(r"\b%s=(-?\d+)" % key, line)
+        if match:
+            fields[key] = int(match.group(1))
+    return fields
+
+
+def parse_strike(line):
+    fields = {}
+    for key in ("est", "auth", "fcu", "arm", "ob", "h", "shots"):
+        match = re.search(r"(?:^|\s)%s=(-?\d+)" % key, line)
+        if match:
+            fields[key] = int(match.group(1))
+    match = re.search(r"range=([\d.]+)", line)
+    if match:
+        fields["range_m"] = float(match.group(1))
+    match = re.search(r"axis=([\d.]+)deg", line)
+    if match:
+        fields["axis_deg"] = float(match.group(1))
+    return fields
+
+
+def main():
+    result = {"utc": time.time()}
+    running, pid = stack_pid()
+    result["running"] = running
+    result["pid"] = pid
+    logs = []
+    try:
+        logs = sorted(
+            glob.glob(os.path.join(LOG_ROOT, "interceptor_stack_*.log")),
+            key=os.path.getmtime)
+    except OSError:
+        pass
+    if not logs:
+        result["log"] = None
+        print(json.dumps(result, ensure_ascii=False))
+        return
+    log_path = logs[-1]
+    result["log"] = os.path.basename(log_path)
+    try:
+        with open(log_path, errors="replace") as f:
+            text = f.read()
+    except OSError:
+        text = ""
+
+    stamps = [float(m) for m in re.findall(r"\[(\d{9,12}\.\d+)\]", text)
+              if 1.6e9 < float(m) < 2.0e9]
+    if stamps:
+        result["last_line_age_s"] = max(0.0, time.time() - stamps[-1])
+
+    estimator_lines = re.findall(r"estimator diag: (.+)", text)
+    strike_lines = re.findall(r"netgun diag: (.+)", text)
+    if estimator_lines:
+        result["estimator"] = parse_estimator(estimator_lines[-1])
+        result["estimator_raw"] = estimator_lines[-1]
+    if strike_lines:
+        result["strike"] = parse_strike(strike_lines[-1])
+        result["strike_raw"] = strike_lines[-1]
+    result["phases"] = re.findall(r"phase → (\w+)", text)
+    fires = re.findall(r"NETGUN FIRE (.+)", text)
+    result["shots"] = len(fires)
+    result["fire_last"] = fires[-1] if fires else None
+
+    lines = [ln for ln in text.splitlines() if ln.strip()]
+    result["tail"] = lines[-8:]
+    print(json.dumps(result, ensure_ascii=False))
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as exc:  # noqa: BLE001 —— 轮询路径必须永不抛栈
+        print(json.dumps({"error": str(exc)}, ensure_ascii=False))
