@@ -1,8 +1,10 @@
 """网枪拦截实机入口（2026-10-15 首版，六件套之四的骨架）。
 
 与仿真入口（netgun_sim_12m.launch.py）的差异：
-  - 无 Gazebo/虚拟目标/真值桥/裁判——感知由 ZED+DeepStream 源提供
-    （输出 /perception/depth/observation，DepthObservation V1 接口）
+  - 无 Gazebo/虚拟目标/真值桥/裁判——感知由板上 ZED 感知（zed_tracking，
+    main 侧部署）经 zed_perception_bridge 桥接提供：订阅其 JSON 观测通道
+    /perception/observations_json（PerceptionFrame 合同 v2），映射发布
+    /perception/depth/observation（DepthObservation V1 接口）
   - PX4 话题用实机命名空间 /fmu/...（无 /px4_1 前缀）
   - engage_mode=rc_gated：待机零 setpoint、永不下发 VehicleCommand
   - 授权延时 12→2s（仿真 12s 是与虚拟目标起跑对齐的口径；实机目标
@@ -10,12 +12,14 @@
   - 开火输出仍走 /tracking/virtual_shot_event——GPIO 触发节点（待做）
     订阅此话题执行硬件发射与联锁
 
-调试：三节点自动发布 /debug/{guidance,strike,estimator}_state（2Hz，
-key=value），用法见 docs/实物调试指南.md。
+调试：四节点自动发布 /debug/{guidance,strike,estimator,bridge}_state
+（2Hz/1Hz，key=value），用法见 docs/实物调试指南.md 与
+src/zed_perception_bridge/README.md。
 """
 
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
+from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
@@ -35,6 +39,25 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "window_axis_error_rad", default_value="0.06981317007977318"
+            ),
+            # 感知桥（板上 main 侧感知 -> 拦截链 V1 接口）
+            DeclareLaunchArgument("use_perception_bridge", default_value="true"),
+            DeclareLaunchArgument("bridge_selection", default_value="confidence"),
+            # ---- 感知桥（PerceptionFrame v2 JSON -> DepthObservation V1） ----
+            Node(
+                package="zed_perception_bridge",
+                executable="bridge_node",
+                name="zed_perception_bridge",
+                output="screen",
+                condition=IfCondition(LaunchConfiguration("use_perception_bridge")),
+                parameters=[
+                    {
+                        "input_json_topic": "/perception/observations_json",
+                        "output_topic": DEPTH_TOPIC,
+                        "debug_topic": "/debug/bridge_state",
+                        "selection": LaunchConfiguration("bridge_selection"),
+                    }
+                ],
             ),
             # ---- IMM 估计器（输入=感知源 DepthObservation） ----
             Node(

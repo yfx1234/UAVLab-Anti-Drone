@@ -15,6 +15,8 @@
   <depend>virtual_interception_interfaces</depend>
   <depend>px4_offboard_tracking</depend>
 
+  <exec_depend>zed_perception_bridge</exec_depend>
+
   <test_depend>ament_cmake_gtest</test_depend>
 
   <export>
