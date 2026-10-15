@@ -102,6 +102,8 @@ class MockPx4Node(Node):
         self.declare_parameter("max_yaw_rate_rad_s", 3.0)
         self.declare_parameter("max_tilt_rad", 0.35)
         self.declare_parameter("start_height_m", 0.0)  # 初始悬停高度（0=地面）
+        # 手动阶段模拟：armed 且未切 offboard 时，模拟飞手爬升到该高度悬停
+        self.declare_parameter("manual_takeoff_height_m", 5.5)
 
         self._pos = [0.0, 0.0, -float(self.get_parameter("start_height_m").value)]
         self._vel = [0.0, 0.0, 0.0]
@@ -128,6 +130,8 @@ class MockPx4Node(Node):
             self._on_command, px4_qos())
         self.create_subscription(
             Bool, "/test/mock_px4/engage", self._on_engage, 10)
+        self.create_subscription(
+            Bool, "/test/mock_px4/arm", self._on_arm, 10)
 
         self._att_pub = self.create_publisher(
             VehicleAttitude, "/fmu/out/vehicle_attitude", px4_qos())
@@ -165,6 +169,13 @@ class MockPx4Node(Node):
         self._offboard = bool(msg.data)
         self.get_logger().info(
             "engage=%s (sp_received=%d)" % (msg.data, self._sp_count))
+
+    def _on_arm(self, msg):
+        """仅解锁（手动模式，模拟飞手解锁起飞前的状态）。"""
+        self._armed = bool(msg.data)
+        self._offboard = False
+        self.get_logger().info(
+            "arm=%s offboard=False (sp_received=%d)" % (msg.data, self._sp_count))
 
     # ---- 运动学与发布 ----
 
@@ -206,6 +217,11 @@ class MockPx4Node(Node):
             elif vel_finite:
                 target_vel = [clamp(sp.velocity[i], max_speed)
                               for i in range(3)]
+        elif self._armed and not self._offboard:
+            # 手动阶段：模拟飞手爬升到手动起飞高度后定点悬停
+            manual_h = float(self.get_parameter("manual_takeoff_height_m").value)
+            target_vel = [0.0, 0.0, clamp((self._pos[2] + manual_h) * -0.8,
+                                           max_speed)]
 
         acc = [0.0, 0.0, 0.0]
         for i in range(3):

@@ -111,6 +111,20 @@ def main():
     if strike_lines:
         result["strike"] = parse_strike(strike_lines[-1])
         result["strike_raw"] = strike_lines[-1]
+    # guidance alive 行（2026-10-15）：当前 phase + 心跳/指令计数
+    alive_lines = re.findall(r"guidance alive: (.+)", text)
+    if alive_lines:
+        alive = {}
+        match = re.search(r"ob=(\d+)", alive_lines[-1])
+        if match:
+            alive["ob_sent"] = int(match.group(1))
+        match = re.search(r"sp=(\d+)", alive_lines[-1])
+        if match:
+            alive["sp_sent"] = int(match.group(1))
+        match = re.search(r"phase=(\w+)", alive_lines[-1])
+        if match:
+            alive["phase"] = match.group(1)
+        result["guidance"] = alive
     result["phases"] = re.findall(r"phase → (\w+)", text)
     fires = re.findall(r"NETGUN FIRE (.+)", text)
     result["shots"] = len(fires)

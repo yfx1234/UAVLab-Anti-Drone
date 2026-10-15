@@ -258,6 +258,19 @@ private:
     ob.velocity = true;
     ob.acceleration = (phase_ == Phase::AIM);  // AIM：加速度前馈通道（B 路线）
     ob_pub_->publish(ob);
+    ++ob_sent_;
+
+    // 心跳/指令计数 5s 节流行（2026-10-15）：PC 面板据此显示当前阶段、
+    // 心跳连续性（ob_sent 增长）与指令流（sp_sent）。必须在早退之前打印
+    // ——无飞控数据时心跳仍在发，面板要能看到。
+    const double alive_t = now().seconds();
+    if (alive_t - last_alive_log_s_ >= 5.0) {
+      last_alive_log_s_ = alive_t;
+      RCLCPP_INFO(
+        get_logger(), "guidance alive: ob=%llu sp=%llu phase=%s",
+        static_cast<unsigned long long>(ob_sent_),
+        static_cast<unsigned long long>(sp_sent_), phase_name(phase_));
+    }
 
     if (!lp_ || !st_) return;
     const bool armed = st_->arming_state == px4_msgs::msg::VehicleStatus::ARMING_STATE_ARMED;
@@ -829,6 +842,7 @@ private:
     sp.jerk = {nan, nan, nan};
     sp.yaw = static_cast<float>(yaw);
     sp_pub_->publish(sp);
+    ++sp_sent_;
   }
 
   void send_aim_sp(
@@ -853,6 +867,7 @@ private:
     sp.jerk = {nan, nan, nan};
     sp.yaw = static_cast<float>(yaw);
     sp_pub_->publish(sp);
+    ++sp_sent_;
   }
 
   void send_pos_sp(
@@ -869,6 +884,7 @@ private:
     sp.jerk = {nan, nan, nan};
     sp.yaw = static_cast<float>(yaw);
     sp_pub_->publish(sp);
+    ++sp_sent_;
   }
 
   void send_cmd(double cmd, float p1, float p2 = 0.0f)
@@ -954,6 +970,9 @@ private:
   }
 
   Phase phase_{Phase::WAITING};
+  std::uint64_t ob_sent_{0};   // offboard 心跳计数（面板显示连续性）
+  std::uint64_t sp_sent_{0};   // 轨迹设定点计数（待机时应停止增长）
+  double last_alive_log_s_{-1e9};
   double start_s_{-1.0};
   double last_engage_s_{-100.0};
   int engage_attempts_{0};
