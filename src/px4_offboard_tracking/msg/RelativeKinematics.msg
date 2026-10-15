@@ -1,0 +1,8 @@
+std_msgs/Header header
+float64 range
+geometry_msgs/Vector3 relative_velocity
+float64 closing_speed
+geometry_msgs/Vector3 los_rate
+float64 time_to_closest_approach
+float64 predicted_miss_distance
+bool valid

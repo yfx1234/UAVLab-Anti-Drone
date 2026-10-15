@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# One-command live range monitor (foolproof field entry).
+#
+# Finds the ACTIVE run directory from the running field_measurement_logger
+# process itself (not ls/timestamps), waits for inputs, then starts
+# live_range_monitor.py with field-tested defaults.
+#
+# Usage:
+#   bash watch_live_monitor.sh                                      # lever 0,0,0
+#   bash watch_live_monitor.sh 0.15,0,-0.05                         # lever-enu shorthand (东,北,上)
+#   bash watch_live_monitor.sh --lever-body 0.133,0,0.0462 --rig-yaw-deg 90
+#       (final CAD lever, see extrinsics.yaml rtk_antenna; yaw = 机头朝向角, deg from north)
+#
+# Exit codes: 1 = recorder not running; 2 = input files missing.
+set -eo pipefail
+
+WORKSPACE_DIR="${WORKSPACE_DIR:-/home/uavlab/Jetson_ROS2_V0/ros2_ws}"
+TOOLS_DIR="${WORKSPACE_DIR}/src/falcon_intercept/tools/rtk_field_test"
+
+LEVER_ARGS=()
+if [[ $# -gt 0 && "${1:0:1}" != "-" ]]; then
+  LEVER_ARGS=(--lever-enu "$1")
+  shift
+fi
+
+OUT_LINE="$(pgrep -af 'field_measurement_logger.py' | grep -v 'bash -c' | head -1 || true)"
+if [[ -z "${OUT_LINE}" ]]; then
+  echo "[watch] 录制没在跑（找不到 field_measurement_logger 进程）。先启动终端 2 的录制脚本，再开我。" >&2
+  exit 1
+fi
+MEAS="$(echo "${OUT_LINE}" | sed -n 's/.*--output \([^ ]*measurements.jsonl\).*/\1/p')"
+if [[ -z "${MEAS}" ]]; then
+  echo "[watch] 找到 logger 进程但解析不出输出路径：${OUT_LINE}" >&2
+  exit 2
+fi
+DIR="$(dirname "${MEAS}")"
+ENEMY="${DIR}/enemy_rtk.jsonl"
+
+echo "[watch] run dir: ${DIR}"
+echo "[watch] lever args: ${LEVER_ARGS[*]:-（无，默认0,0,0）} $*"
+
+# enemy_rtk.jsonl only exists in the ground variant (enemy logger on Jetson).
+if [[ ! -f "${ENEMY}" ]]; then
+  echo "[watch] 等敌机真值流 ${ENEMY} ...（MAVProxy 的 --out 是否指向本机？ufw 是否放行 14560/udp？）"
+  for _ in $(seq 1 30); do
+    [[ -f "${ENEMY}" ]] && break
+    sleep 1
+  done
+fi
+if [[ ! -f "${ENEMY}" ]]; then
+  echo "[watch] 30 秒仍无敌机数据：查笔记本 A MAVProxy --out 的 IP 是不是本机当天地址，以及 sudo ufw status numbered | grep 1456。" >&2
+  exit 2
+fi
+
+echo "[watch] 判读：own_fixes/enemy_fixes 在涨=数据活着；compared 在涨=出误差；出现 !!STALE!!=数据断了查录制。"
+exec python3 "${TOOLS_DIR}/live_range_monitor.py" \
+  --enemy "${ENEMY}" \
+  --measurements "${MEAS}" \
+  "${LEVER_ARGS[@]}" \
+  --max-gap-s 0.6 \
+  --out-csv "${DIR}/live_comparison.csv" \
+  --out-jsonl "${DIR}/live_comparison.jsonl" \
+  "$@"

@@ -1,0 +1,136 @@
+uint8 INIT=0
+uint8 TAKEOFF_SAFE=1
+uint8 SEARCH=2
+uint8 BEARING_TRACK=3
+uint8 BEARING_HANDOVER=3
+uint8 DEPTH_HANDOVER=4
+uint8 DEPTH_ACQUIRE=5
+uint8 INTERCEPT=6
+uint8 SHOT_READY=7
+uint8 CAPTURE_CONFIRM=7
+uint8 EGRESS_REATTACK=8
+uint8 FOV_RECOVERY=9
+uint8 IMM_COAST=10
+uint8 COMPLETE=11
+uint8 SAFETY_ABORT=12
+
+std_msgs/Header header
+uint8 state
+string state_name
+string transition_reason
+bool control_enabled
+bool auto_engage
+bool takeoff_enabled
+bool setpoint_streaming
+bool offboard_session_seen
+bool stopped_after_offboard_exit
+bool offboard_active
+bool armed
+bool local_state_valid
+bool attitude_valid
+bool search_visible
+bool depth_visible
+bool estimate_valid
+bool guidance_valid
+bool capture_gate_passed
+bool tracking_ready
+float64 continuous_tracking_duration_s
+bool terminal_alignment_active
+float64 terminal_alignment_strength
+bool fire_authorized
+bool attack_height_gate_passed
+float64 attack_enable_delay_remaining_s
+float64 first_attack_tracking_hold_remaining_s
+bool recoil_active
+bool reattack_cooldown_active
+float64 reattack_cooldown_remaining_s
+bool search_pattern_active
+float64 search_commanded_yaw_rad
+float64 search_pattern_progress
+uint32 capture_count
+uint32 required_capture_count
+bool attack_complete
+bool completion_velocity_braking_active
+bool completion_position_hold_active
+bool safe_to_exit_offboard
+float64 range_m
+float64 closing_speed_mps
+float64 attack_axis_error_rad
+float64 search_observation_age_s
+float64 depth_observation_age_s
+float64 estimate_age_s
+
+# attack_axis_error_rad保留为实际机体-Z/LOS误差。
+float64 commanded_attack_axis_error_rad
+float64 actual_attack_axis_error_rad
+float64 attack_axis_tracking_error_rad
+bool estimate_coasting
+
+# 预测射击诊断。capture_* 字段是历史兼容名称。
+bool shot_solution_valid
+float64 predicted_shot_time_of_flight_s
+float64 predicted_shot_lead_angle_rad
+float64 actual_shot_axis_error_rad
+float64 predicted_shot_lateral_sigma_m
+bool shot_hard_gate_passed
+bool shot_timing_gate_passed
+float64 shot_timing_predicted_axis_error_rad
+float64 shot_timing_axis_error_rate_rad_s
+float64 shot_timing_score
+
+# 飞机预测发射位置规划器。它选择未来发射时刻和位于目标下方的发射位置，
+# 不把末端共速作为硬约束；最终指令仍经过统一FOV/倾角/速度/jerk限制。
+bool launch_planner_enabled
+bool launch_planner_active
+float64 launch_planner_blend
+float64 planned_launch_horizon_s
+float64 planned_launch_range_m
+float64 planned_launch_cost
+geometry_msgs/Vector3 planned_acceleration_ned
+geometry_msgs/Vector3 planned_relative_velocity_at_launch_ned
+
+# 本周期唯一径向控制来源。规划器只替换径向通道，不能与17 m接近同时叠加。
+uint8 RADIAL_FOV_HOLD=0
+uint8 RADIAL_SHOT_HOLD=1
+uint8 RADIAL_LAUNCH_PLANNER=2
+uint8 RADIAL_APPROACH_17M=3
+uint8 RADIAL_RECOIL=4
+uint8 radial_control_source
+string radial_control_source_name
+
+# 仅使用拦截机自身PX4本地位置的最低高度控制屏障诊断。
+float64 height_m
+float64 minimum_flight_height_m
+bool minimum_height_constraint_active
+bool height_recovery_active
+float64 minimum_height_acceleration_limit_down_mps2
+
+# 实际解析后的推力与最终控制指令，供实机rosbag直接复盘。
+float64 hover_thrust
+float64 maximum_thrust
+float64 commanded_thrust
+float64 requested_thrust_before_saturation
+bool thrust_saturated
+geometry_msgs/Vector3 commanded_acceleration_ned
+geometry_msgs/Vector3 local_velocity_ned
+
+# 预测视场屏障。角误差分别在深度相机光学横/纵轴上判断，
+# predicted_* 是未来0.5 s的实际Body -Z/LOS图像误差外推。
+uint8 FOV_NORMAL=0
+uint8 FOV_CENTERING=1
+uint8 FOV_RECOVERY_ZONE=2
+uint8 FOV_IMM_COAST=3
+uint8 FOV_LOST=4
+uint8 fov_barrier_zone
+float64 fov_horizontal_error_rad
+float64 fov_vertical_error_rad
+float64 fov_predicted_horizontal_error_rad
+float64 fov_predicted_vertical_error_rad
+float64 fov_predicted_maximum_error_rad
+bool fov_approach_paused
+float64 fov_approach_scale
+
+# 分阶段距离区间。reference在阶段进入时由当前距离初始化。
+float64 active_range_reference_m
+float64 active_range_lower_bound_m
+float64 active_range_upper_bound_m

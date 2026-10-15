@@ -1,0 +1,20 @@
+[Unit]
+Description=ROS 2 CLI discovery daemon for the local PX4 graph
+Documentation=file:/home/uavlab/Jetson_ROS2_V0/deploy/MICRO_XRCE_AGENT_SERVICE.md
+After=network.target micro-xrce-agent.service
+Wants=micro-xrce-agent.service
+
+[Service]
+Type=oneshot
+User=uavlab
+WorkingDirectory=/home/uavlab/Jetson_ROS2_V0
+Environment=ROS_DOMAIN_ID=0
+Environment=ROS_LOCALHOST_ONLY=1
+ExecStart=/bin/bash /home/uavlab/Jetson_ROS2_V0/deploy/start_ros2_px4_daemon.sh
+ExecStop=/bin/bash /home/uavlab/Jetson_ROS2_V0/deploy/stop_ros2_px4_daemon.sh
+RemainAfterExit=yes
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

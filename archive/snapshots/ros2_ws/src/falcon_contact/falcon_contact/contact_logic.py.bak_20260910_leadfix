@@ -1,0 +1,392 @@
+"""不依赖 ROS 的单目接触引导数学函数，便于离线测试。"""
+
+from __future__ import annotations
+
+import math
+from dataclasses import dataclass
+
+
+def clamp(value: float, minimum: float, maximum: float) -> float:
+    return max(float(minimum), min(float(maximum), float(value)))
+
+
+def wrap_pi(angle: float) -> float:
+    if not math.isfinite(float(angle)):
+        return 0.0
+    return (float(angle) + math.pi) % (2.0 * math.pi) - math.pi
+
+
+def normalize3(vector: tuple[float, float, float]) -> tuple[float, float, float]:
+    values = tuple(float(value) for value in vector)
+    norm = math.sqrt(sum(value * value for value in values))
+    if norm < 1.0e-9 or not math.isfinite(norm):
+        raise ValueError("vector must have a finite non-zero norm")
+    return tuple(value / norm for value in values)  # type: ignore[return-value]
+
+
+def quaternion_to_rotation_matrix(
+    quaternion_wxyz: tuple[float, float, float, float],
+) -> tuple[tuple[float, float, float], ...]:
+    w, x, y, z = (float(value) for value in quaternion_wxyz)
+    norm = math.sqrt(w * w + x * x + y * y + z * z)
+    if norm < 1.0e-9 or not math.isfinite(norm):
+        raise ValueError("quaternion must be finite and non-zero")
+    w, x, y, z = w / norm, x / norm, y / norm, z / norm
+    return (
+        (1.0 - 2.0 * (y * y + z * z), 2.0 * (x * y - z * w), 2.0 * (x * z + y * w)),
+        (2.0 * (x * y + z * w), 1.0 - 2.0 * (x * x + z * z), 2.0 * (y * z - x * w)),
+        (2.0 * (x * z - y * w), 2.0 * (y * z + x * w), 1.0 - 2.0 * (x * x + y * y)),
+    )
+
+
+def rotate_vector(
+    rotation: tuple[tuple[float, float, float], ...],
+    vector: tuple[float, float, float],
+) -> tuple[float, float, float]:
+    x, y, z = (float(value) for value in vector)
+    return tuple(
+        rotation[row][0] * x + rotation[row][1] * y + rotation[row][2] * z
+        for row in range(3)
+    )  # type: ignore[return-value]
+
+
+def unit_fru_from_angles(horizontal_rad: float, vertical_rad: float) -> tuple[float, float, float]:
+    right = math.tan(float(horizontal_rad))
+    forward = math.tan(float(vertical_rad))
+    return normalize3((right, forward, 1.0))
+
+
+def apply_lens_tilt(
+    unit_fru: tuple[float, float, float], tilt_rad: float
+) -> tuple[float, float, float]:
+    right, forward, up = (float(value) for value in unit_fru)
+    sine, cosine = math.sin(float(tilt_rad)), math.cos(float(tilt_rad))
+    return normalize3(
+        (right, forward * cosine + up * sine, -forward * sine + up * cosine)
+    )
+
+
+def los_body_frd(unit_fru: tuple[float, float, float]) -> tuple[float, float, float]:
+    right, forward, up = (float(value) for value in unit_fru)
+    return forward, right, -up
+
+
+def vector_to_azimuth_elevation(
+    vector_ned: tuple[float, float, float]
+) -> tuple[float, float]:
+    north, east, down = normalize3(vector_ned)
+    return math.atan2(east, north), math.atan2(-down, math.hypot(north, east))
+
+
+def unit_ned_from_azimuth_elevation(
+    azimuth_rad: float, elevation_rad: float
+) -> tuple[float, float, float]:
+    cosine = math.cos(float(elevation_rad))
+    return (
+        cosine * math.cos(float(azimuth_rad)),
+        cosine * math.sin(float(azimuth_rad)),
+        -math.sin(float(elevation_rad)),
+    )
+
+
+def slerp_quaternion(
+    first: tuple[float, float, float, float],
+    second: tuple[float, float, float, float],
+    fraction: float,
+) -> tuple[float, float, float, float]:
+    a = normalize_quaternion(first)
+    b = normalize_quaternion(second)
+    dot = sum(a[index] * b[index] for index in range(4))
+    if dot < 0.0:
+        b = tuple(-value for value in b)  # type: ignore[assignment]
+        dot = -dot
+    dot = clamp(dot, -1.0, 1.0)
+    amount = clamp(fraction, 0.0, 1.0)
+    if dot > 0.9995:
+        return normalize_quaternion(
+            tuple(a[index] + amount * (b[index] - a[index]) for index in range(4))
+        )
+    angle = math.acos(dot)
+    sine = math.sin(angle)
+    first_weight = math.sin((1.0 - amount) * angle) / sine
+    second_weight = math.sin(amount * angle) / sine
+    return tuple(
+        first_weight * a[index] + second_weight * b[index] for index in range(4)
+    )  # type: ignore[return-value]
+
+
+def normalize_quaternion(
+    quaternion: tuple[float, float, float, float]
+) -> tuple[float, float, float, float]:
+    values = tuple(float(value) for value in quaternion)
+    norm = math.sqrt(sum(value * value for value in values))
+    if norm < 1.0e-9 or not math.isfinite(norm):
+        raise ValueError("quaternion must be finite and non-zero")
+    return tuple(value / norm for value in values)  # type: ignore[return-value]
+
+
+def low_pass(previous: float | None, value: float, tau_s: float, dt_s: float) -> float:
+    if previous is None:
+        return float(value)
+    if float(dt_s) <= 0.0:
+        return float(previous)
+    alpha = float(dt_s) / (max(0.0, float(tau_s)) + float(dt_s))
+    return float(previous) + alpha * (float(value) - float(previous))
+
+
+def range_from_bbox_fraction(
+    bbox_fraction: float,
+    reference_range_m: float,
+    reference_bbox_px: float,
+    reference_image_width: float,
+) -> float | None:
+    fraction = float(bbox_fraction)
+    if not math.isfinite(fraction) or fraction <= 0.0:
+        return None
+    reference_fraction = float(reference_bbox_px) / float(reference_image_width)
+    if reference_fraction <= 0.0 or float(reference_range_m) <= 0.0:
+        return None
+    return float(reference_range_m) * reference_fraction / fraction
+
+
+def time_to_contact_s(expansion_rate_s: float, minimum_rate_s: float = 0.08) -> float | None:
+    """由检测框对数尺度增长率估算剩余接近时间。"""
+    rate = float(expansion_rate_s)
+    if not math.isfinite(rate) or rate < float(minimum_rate_s):
+        return None
+    return 1.0 / rate
+
+
+def validate_speed_profile(approach_mps: float, terminal_mps: float, contact_mps: float) -> None:
+    """冲刺型速度轮廓校验：接近段 <= 末段 <= 接触段，且都为正。
+
+    递增冲刺版与旧版递减轮廓相反：撞击瞬间速度最高。三段若不满足递增
+    关系则拒绝启动，避免把保守递减轮廓误配进冲刺链路。
+    """
+    values = (float(approach_mps), float(terminal_mps), float(contact_mps))
+    if not all(math.isfinite(value) for value in values):
+        raise ValueError("speed profile values must be finite")
+    if not (values[2] >= values[1] >= values[0] > 0.0):
+        raise ValueError(
+            "sprint speed order must be approach <= terminal <= contact, got "
+            f"{values[0]:.2f}/{values[1]:.2f}/{values[2]:.2f}"
+        )
+
+
+def _vector_norm(vector: tuple[float, float, float]) -> float:
+    return math.sqrt(sum(value * value for value in vector))
+
+
+def lead_pursuit_direction(
+    *,
+    los_unit_ned: tuple[float, float, float],
+    azimuth_rate_rad_s: float,
+    elevation_rate_rad_s: float,
+    range_m: float,
+    expansion_rate_s: float,
+    closing_speed_mps: float,
+    interceptor_velocity_ned: tuple[float, float, float] = (0.0, 0.0, 0.0),
+    maximum_target_speed_mps: float = 2.5,
+    maximum_lead_distance_m: float = 1.0,
+    maximum_lead_time_s: float = 1.0,
+    deadband_mps: float = 0.25,
+) -> tuple[tuple[float, float, float], dict]:
+    """有界线性提前量瞄准：瞄准预测拦截点而不是当前视线。
+
+    视线角速率给出的是"目标相对本机"的运动，因此先扣除本机运动得到目标
+    自身速度估计：横向按"相对角速度×距离 + 本机横向速度"合成，径向按
+    "膨胀率×距离 + 本机径向速度"单独估计。2.5 米每秒限幅只作用于目标自身
+    速度——本机关闭速度不允许挤占横向提前量的额度。瞄准点沿目标横向速度
+    前移"接触时间"，接触时间 = 距离 ÷ 沿视线相对闭合速度（本机闭合速度
+    − 目标径向远离速度，分母下限 0.5 米每秒），以米为单位限幅（近场角假
+    提前量会失效，米限幅正为此设计）。静止或极慢目标（低于死区）自动退化
+    为原视线。
+    """
+    los_norm = _vector_norm(los_unit_ned)
+    if not math.isfinite(los_norm) or los_norm < 1.0e-9:
+        raise ValueError("los_unit_ned must be a finite non-zero vector")
+    north, east, down = (float(value) / los_norm for value in los_unit_ned)
+    range_m = float(range_m)
+    info = {
+        "target_speed_mps": 0.0,
+        "target_radial_mps": 0.0,
+        "closing_radial_mps": 0.0,
+        "lateral_speed_mps": 0.0,
+        "lead_distance_m": 0.0,
+        "lead_time_s": 0.0,
+        "limited": False,
+    }
+    if not math.isfinite(range_m) or range_m <= 0.0:
+        return (north, east, down), dict(info, reason="range_invalid")
+
+    az_rate = float(azimuth_rate_rad_s) if math.isfinite(float(azimuth_rate_rad_s)) else 0.0
+    el_rate = float(elevation_rate_rad_s) if math.isfinite(float(elevation_rate_rad_s)) else 0.0
+    expansion = float(expansion_rate_s) if math.isfinite(float(expansion_rate_s)) else 0.0
+
+    azimuth = math.atan2(east, north)
+    elevation = math.atan2(-down, math.hypot(north, east))
+    tangent_azimuth = (-math.sin(azimuth), math.cos(azimuth), 0.0)
+    sin_e, cos_e = math.sin(elevation), math.cos(elevation)
+    tangent_elevation = (
+        -sin_e * math.cos(azimuth),
+        -sin_e * math.sin(azimuth),
+        -cos_e,
+    )
+    los = (north, east, down)
+
+    own = tuple(
+        float(value) if math.isfinite(float(value)) else 0.0
+        for value in interceptor_velocity_ned
+    )
+    own_radial = own[0] * north + own[1] * east + own[2] * down  # 朝目标为正
+    own_tangential = tuple(own[axis] - own_radial * los[axis] for axis in range(3))
+
+    # 视尺寸标定下 bbox 占幅比与距离成反比：膨胀率给出的是相对径向速度，
+    # 其中主要是本机自身的接近运动，扣除后才是目标径向速度。
+    relative_radial = -expansion * range_m
+    target_radial = relative_radial + own_radial
+    speed_limit = max(0.0, float(maximum_target_speed_mps))
+    target_radial = max(-speed_limit, min(speed_limit, target_radial))
+    tangential = tuple(
+        range_m * az_rate * tangent_azimuth[axis]
+        + range_m * el_rate * tangent_elevation[axis]
+        + own_tangential[axis]
+        for axis in range(3)
+    )
+    velocity = tuple(tangential[axis] + target_radial * los[axis] for axis in range(3))
+    target_speed = _vector_norm(velocity)
+    if target_speed > speed_limit > 0.0:
+        scale = speed_limit / target_speed
+        velocity = tuple(value * scale for value in velocity)
+        target_speed = speed_limit
+        info["limited"] = True
+
+    lateral = tuple(
+        velocity[axis] - (velocity[0] * north + velocity[1] * east + velocity[2] * down) * los[axis]
+        for axis in range(3)
+    )
+    lateral_speed = _vector_norm(lateral)
+    info["target_speed_mps"] = target_speed
+    info["target_radial_mps"] = target_radial
+    info["lateral_speed_mps"] = lateral_speed
+    if lateral_speed < max(0.0, float(deadband_mps)):
+        return (north, east, down), info
+
+    # 接触时间由沿视线方向的相对闭合速度决定：本机沿视线飞 closing_speed，
+    # 目标以 target_radial（正=远离）沿视线运动。分母下限 0.5 防止目标
+    # 远离速度接近闭合速度时除法爆炸——此时提前时间自然被上限截断。
+    closing_radial = max(0.5, float(closing_speed_mps) - target_radial)
+    info["closing_radial_mps"] = closing_radial
+    lead_time = min(max(0.0, range_m / closing_radial), max(0.0, float(maximum_lead_time_s)))
+    displacement = tuple(value * lead_time for value in lateral)
+    lead_distance = _vector_norm(displacement)
+    max_lead = max(0.0, float(maximum_lead_distance_m))
+    if lead_distance > max_lead > 0.0:
+        scale = max_lead / lead_distance
+        displacement = tuple(value * scale for value in displacement)
+        lead_distance = max_lead
+        info["limited"] = True
+    info["lead_distance_m"] = lead_distance
+    info["lead_time_s"] = lead_time
+
+    aim = tuple(los[axis] + displacement[axis] / range_m for axis in range(3))
+    aim_norm = _vector_norm(aim)
+    if aim_norm < 1.0e-9 or not math.isfinite(aim_norm):
+        return (north, east, down), info
+    return tuple(value / aim_norm for value in aim), info
+
+
+@dataclass(frozen=True)
+class PredictedLineOfSight:
+    unit_ned: tuple[float, float, float]
+    horizon_s: float
+    requested_horizon_s: float
+    angular_offset_rad: float
+    limited: bool
+
+
+def predict_world_line_of_sight(
+    *,
+    azimuth_rad: float,
+    elevation_rad: float,
+    azimuth_rate_rad_s: float,
+    elevation_rate_rad_s: float,
+    measurement_age_s: float,
+    response_delay_s: float,
+    guidance_lead_s: float,
+    maximum_horizon_s: float,
+    maximum_rate_rad_s: float,
+    maximum_offset_rad: float,
+) -> PredictedLineOfSight:
+    requested = max(0.0, float(measurement_age_s)) + max(
+        0.0, float(response_delay_s)
+    ) + max(0.0, float(guidance_lead_s))
+    horizon = min(requested, max(0.0, float(maximum_horizon_s)))
+    az_rate = float(azimuth_rate_rad_s) if math.isfinite(float(azimuth_rate_rad_s)) else 0.0
+    el_rate = float(elevation_rate_rad_s) if math.isfinite(float(elevation_rate_rad_s)) else 0.0
+    rate_norm = math.hypot(az_rate, el_rate)
+    rate_limited = rate_norm > float(maximum_rate_rad_s) and rate_norm > 1.0e-12
+    if rate_limited:
+        scale = max(0.0, float(maximum_rate_rad_s)) / rate_norm
+        az_rate *= scale
+        el_rate *= scale
+    delta_az, delta_el = az_rate * horizon, el_rate * horizon
+    offset = math.hypot(delta_az, delta_el)
+    offset_limited = offset > float(maximum_offset_rad) and offset > 1.0e-12
+    if offset_limited:
+        scale = max(0.0, float(maximum_offset_rad)) / offset
+        delta_az *= scale
+        delta_el *= scale
+        offset = max(0.0, float(maximum_offset_rad))
+    elevation_limit = math.pi / 2.0 - 0.02
+    predicted_elevation = clamp(
+        float(elevation_rad) + delta_el, -elevation_limit, elevation_limit
+    )
+    return PredictedLineOfSight(
+        unit_ned=unit_ned_from_azimuth_elevation(
+            wrap_pi(float(azimuth_rad) + delta_az), predicted_elevation
+        ),
+        horizon_s=horizon,
+        requested_horizon_s=requested,
+        angular_offset_rad=offset,
+        limited=(requested > horizon + 1.0e-9) or rate_limited or offset_limited,
+    )
+
+
+def guidance_phase(
+    *,
+    range_m: float,
+    ttc_s: float | None,
+    bbox_fraction: float,
+    terminal_range_m: float,
+    terminal_ttc_s: float,
+    contact_range_m: float,
+    contact_ttc_s: float,
+    contact_bbox_fraction: float,
+) -> str:
+    if (
+        float(range_m) <= float(contact_range_m)
+        or (ttc_s is not None and float(ttc_s) <= float(contact_ttc_s))
+        or float(bbox_fraction) >= float(contact_bbox_fraction)
+    ):
+        return "CONTACT_WINDOW"
+    if float(range_m) <= float(terminal_range_m) or (
+        ttc_s is not None and float(ttc_s) <= float(terminal_ttc_s)
+    ):
+        return "TERMINAL"
+    return "APPROACH"
+
+
+def limit_velocity_ned(
+    vector: tuple[float, float, float],
+    maximum_horizontal_mps: float,
+    maximum_vertical_mps: float,
+) -> tuple[float, float, float]:
+    north, east, down = (float(value) for value in vector)
+    horizontal = math.hypot(north, east)
+    if horizontal > float(maximum_horizontal_mps) and horizontal > 1.0e-9:
+        scale = float(maximum_horizontal_mps) / horizontal
+        north *= scale
+        east *= scale
+    down = clamp(down, -float(maximum_vertical_mps), float(maximum_vertical_mps))
+    return north, east, down

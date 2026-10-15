@@ -1,0 +1,13 @@
+event_id,camera,timestamp_s
+1,search,10.000000
+1,stereo_front,10.004000
+1,stereo_back,9.998000
+2,search,10.040000
+2,stereo_front,10.044000
+2,stereo_back,10.038000
+3,search,10.080000
+3,stereo_front,10.084500
+3,stereo_back,10.078500
+4,search,10.120000
+4,stereo_front,10.124000
+4,stereo_back,10.118000

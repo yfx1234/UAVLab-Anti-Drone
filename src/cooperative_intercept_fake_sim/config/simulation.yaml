@@ -1,0 +1,165 @@
+# =============================================================================
+# cooperative_intercept_fake_sim 参数配置
+# Synthetic 3-vs-1 cooperative interception simulation（纯虚拟仿真）
+# 坐标系约定：NED（frame_id = map_ned），x 前 / y 右 / z 下，重力 +g 沿 z 向下
+# =============================================================================
+
+simulation:
+  rate_hz: 50.0            # 仿真步进频率（虚拟时钟，与真实时间无关）
+  dt: 0.02                 # 积分步长 = 1 / rate_hz
+  time_scale: 1.0          # 墙钟加速比：1.0 实时；0.0 不等待（尽可能快）
+  frame_id: "map_ned"
+  stop_on_success: false   # 拦截成功后是否提前停止（默认跑完整时长便于展示）
+
+target:
+  max_speed: 8.0           # 目标机最大速度（所有场景不得超过）
+  ramp_time_s: 5.0         # 0 -> 8 m/s 平滑加速时间（raised-cosine 加速曲线）
+  decel_time_s: 4.0        # 轨迹末端平滑减速时间
+  altitude_m: -5.0         # 目标飞行高度（NED，负值表示在地面之上 5 m）
+
+pursuer:
+  max_speed: 16.0          # 三架拦截机共用同一最大速度（不允许单机提速）
+  # 推力方向最大加速度约 2g（20 m/s^2）：保证水平急加速时垂直分量仍有
+  # 余量抵消重力，不会因推力饱和而掉高（虚拟仿真中的中等机动能力）。
+  max_thrust_accel_mps2: 20.0
+  max_command_accel_mps2: 12.0  # SE(3) 指令加速度幅值上限（平滑性限制）
+  max_tilt_rad: 0.7        # 最大倾斜角（约 40 deg），限制水平机动加速度
+  max_body_rate_rad_s: 3.0 # 机体角速率上限（沿用原项目 max_body_rate_rad_s）
+  attitude_tau_s: 0.35     # 姿态一阶跟踪时间常数（沿用原项目 0.35 s）
+  se3_position_gain: 2.0   # SE(3) 位置环增益 Kp
+  se3_velocity_gain: 1.5   # SE(3) 速度环增益 Kv（阻尼）
+  se3_attitude_gain: 2.5   # SE(3) 姿态环增益 KR（角速率指令 = -KR * e_R）
+
+# -----------------------------------------------------------------------------
+# 三机职责与参考点偏移（相对目标位置/速度方向）
+#   坐标系说明：u = 目标速度单位方向；n = 垂直于 u 的左侧单位向量（水平面内）
+#   lateral_offset_m 为正表示位于 u 右侧，负表示左侧
+#   包围圈设计：等边三角形，半径 20 m（对应原项目 15~35 m 理想打击窗口，
+#   首选 25 m 附近）；P1 正后方、P2 左前（-60°）、P3 右前（+60°），
+#   两两间距 = 20*sqrt(3) ≈ 34.6 m，三机互不干扰。
+# -----------------------------------------------------------------------------
+roles:
+  p1:
+    # P1 主追踪机（尾追位）：占据目标正后方 20 m，持续施压并保持打击窗口。
+    # 参考点 = 目标位置 - u * behind_offset + n * lateral_offset
+    pred_horizon_s: 0.0       # 不做预测，直接追当前位置
+    behind_offset_m: 20.0     # 目标正后方 20 m（打击窗口内尾追位）
+    lateral_offset_m: 0.0     # 正后方（等边包围圈顶点）
+    z_m: -4.0                 # 高度比目标高 1 m（NED 中更小的 z）
+  p2:
+    # P2 预测截击机：先飞向目标短时预测位置（提前切入目标未来轨迹），
+    # 收拢后占据包围圈左前位（前 10 m + 左 17.32 m，与目标距离 20 m）。
+    # 参考点 = 混合(完整预测点, 包围圈左前位)，按与目标距离切换：
+    #   距离远：参考 = p_target + u*(v*pred_horizon)  （提前 2 s 截击）
+    #   距离近：参考 = 包围圈左前位（20 m 打击窗口）
+    pred_horizon_s: 2.0       # 最大预测时域（8 m/s 时 = 前方 16 m）
+    near_dist_m: 34.0         # 距目标小于该距离开始向包围圈位收拢
+    horizon_blend_dist_m: 48.0  # 距目标大于该距离时全部使用完整预测点
+    forward_offset_m: 10.0    # 包围圈位：目标前方 10 m
+    lateral_offset_m: 17.3205  # 左侧 17.32 m（方位 -60°，n 为左法向 → 正号即左侧）
+    z_m: -6.5                 # 高度比目标低 1.5 m
+  p3:
+    # P3 封堵/包夹机：对称占据包围圈右前位（前 10 m + 右 17.32 m），
+    # 与 P2 形成左右夹击、封堵目标两侧逃逸方向。
+    # 参考点 = p_target + u * forward_offset + n * lateral_offset
+    pred_horizon_s: 0.0
+    forward_offset_m: 10.0    # 包围圈位：目标前方 10 m
+    lateral_offset_m: -17.3205  # 右侧 17.32 m（方位 +60°）
+    z_m: -6.5                 # 高度比目标低 1.5 m
+
+# -----------------------------------------------------------------------------
+# 虚拟预测射击（体现原项目"枪打击方案"效果）
+#   15~35 m 打击窗口内以 400 m/s 虚拟弹丸预测射击（先导角瞄准），
+#   命中半径 0.4 m；每机完成 2 次命中（两次打击），命中后 3 s 冷却。
+# -----------------------------------------------------------------------------
+shooting:
+  projectile_speed_mps: 400.0
+  minimum_range_m: 15.0      # 打击窗口下界
+  maximum_range_m: 35.0      # 打击窗口上界
+  hit_radius_m: 0.4
+  fire_interval_s: 0.5       # 射速 2 Hz
+  cooldown_after_hit_s: 3.0  # 命中后冷却（对应原项目 reattack_cooldown_s）
+  required_hits: 2           # 每机需 2 次命中（对应两次打击方案）
+
+# -----------------------------------------------------------------------------
+# 协同指标定义
+#   escape_coverage：前向逃逸半球（目标速度 ±90 deg）内，三机角度覆盖度
+#     = 1 - (前向半球内最大角度空隙 / 180 deg)
+#   range_factor：距离收敛因子 = clamp(1 - |d_mean - range_ref| / range_ref, 0, 1)
+#     （以 20 m 包围圈为参考：太远或太近都会降低因子）
+#   cooperative_score = coverage_weight * escape_coverage
+#                      + range_weight  * range_factor
+# -----------------------------------------------------------------------------
+score:
+  escape_half_cone_rad: 1.5707963267948966   # 前向半球 = ±90 deg
+  range_ref_m: 20.0         # 包围圈参考半径（距离因子=1 的参考距离）
+  range_tolerance_m: 8.0    # 距离因子容差（偏离参考半径超过该值 → 因子为 0）
+  coverage_weight: 0.6
+  range_weight: 0.4
+  formation_threshold: 0.50   # 判定"包围形成"的 score 阈值
+  formation_hold_s: 2.0       # 需持续达到阈值的时间
+
+# 拦截成功判据（协同式 + 枪打击方案）：
+#   至少 2 架 Pursuer 在打击窗口内各完成 2 次命中（双命中），
+#   且三机与目标距离均在包围圈范围（10~30 m）内，并持续 hold_s 秒。
+success:
+  minimum_strikers: 2        # 至少 2 架完成双命中的拦截机
+  encircle_min_range_m: 10.0 # 包围圈保持：三机距离下限
+  encircle_max_range_m: 30.0 # 包围圈保持：三机距离上限
+  hold_s: 1.0
+
+metrics:
+  entry_range_m: 25.0       # "首次进入有效拦截范围"的统计距离（打击窗口内）
+
+# -----------------------------------------------------------------------------
+# 四种场景：路径参数 + 时长 + 初始位置
+# -----------------------------------------------------------------------------
+scenarios:
+  straight:
+    description: "高速直线逃逸：体现三机追赶与提前包夹"
+    duration_s: 38.0
+    engage_delay_s: 14.0     # 目标先高速直线飞行，拦截机 14 s 后起飞（增强演示节奏）
+    path:
+      type: straight
+      length_m: 240.0
+      heading_deg: 0.0
+  s_curve:
+    description: "高速 S 形机动：体现预测截击与三机重新分配位置"
+    duration_s: 46.0
+    engage_delay_s: 14.0
+    path:
+      type: s_curve
+      n_bumps: 5              # 交替正负的平滑凸包数（切向连续）
+      amplitude_m: 6.0
+      wavelength_m: 64.0
+      heading_deg: 0.0
+  turn:
+    description: "高速大角度转弯逃逸：体现三机根据目标运动方向重新包夹"
+    duration_s: 42.0
+    engage_delay_s: 14.0
+    path:
+      type: turn
+      leg1_m: 90.0
+      turn_deg: 120.0
+      turn_radius_m: 45.0
+      leg2_m: 90.0
+  encirclement:
+    description: "典型协同包围展示：直线 + S 形 + 90 度转弯 + 长直线收尾"
+    duration_s: 54.0
+    engage_delay_s: 16.0
+    path:
+      type: encirclement
+      leg1_m: 70.0
+      n_bumps: 2
+      amplitude_m: 6.0
+      wavelength_m: 60.0
+      turn_deg: 90.0
+      turn_radius_m: 50.0
+      leg2_m: 120.0
+
+# 初始位置（NED；目标起点即轨迹起点；拦截机初始静止，机头朝向目标）
+initial:
+  target: {x: 0.0, y: 0.0, z: -5.0}
+  p1: {x: -26.0, y: 5.0, z: -4.0}
+  p2: {x: -10.0, y: -20.0, z: -5.5}
+  p3: {x: 2.0, y: 22.0, z: -6.5}

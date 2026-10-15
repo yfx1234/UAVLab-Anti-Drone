@@ -1,0 +1,869 @@
+"""单搜索相机软靶直接接触节点。
+
+节点只发布速度轨迹设定值，不发布解锁、上锁或模式切换命令。控制输出仍需经过
+原有 upstream_gate_node 与 px4_upstream_adapter_node 的安全门。
+"""
+
+from __future__ import annotations
+
+import json
+import math
+from collections import deque
+from dataclasses import dataclass
+
+from .contact_logic import (
+    apply_lens_tilt,
+    guidance_phase,
+    lead_pursuit_direction,
+    limit_velocity_ned,
+    los_body_frd,
+    low_pass,
+    predict_world_line_of_sight,
+    quaternion_to_rotation_matrix,
+    range_from_bbox_fraction,
+    rotate_vector,
+    slerp_quaternion,
+    time_to_contact_s,
+    unit_fru_from_angles,
+    validate_speed_profile,
+    vector_to_azimuth_elevation,
+    wrap_pi,
+)
+
+
+@dataclass(frozen=True)
+class DetectionFrame:
+    key: tuple[str, int]
+    stamp_s: float
+    sequence: int
+    confidence: float
+    bbox_fraction: float
+
+
+@dataclass(frozen=True)
+class BearingFrame:
+    key: tuple[str, int]
+    stamp_s: float
+    sequence: int
+    confidence: float
+    horizontal_rad: float
+    vertical_rad: float
+
+
+def frame_key(sequence: int, stamp_s: float) -> tuple[str, int]:
+    if int(sequence) != 0:
+        return "sequence", int(sequence)
+    return "millisecond", int(round(float(stamp_s) * 1000.0))
+
+
+def parse_detection_frame(text: str, minimum_confidence: float) -> DetectionFrame | None:
+    try:
+        payload = json.loads(str(text))
+        stamp_data = payload.get("header", {}).get("stamp", {})
+        stamp_s = float(stamp_data["sec"]) + float(stamp_data.get("nanosec", 0)) / 1.0e9
+        sequence = int(payload.get("sequence", 0))
+        width = float(payload.get("image_width", 2560.0))
+        height = float(payload.get("image_height", 1440.0))
+    except (KeyError, TypeError, ValueError):
+        return None
+    if not math.isfinite(stamp_s) or stamp_s <= 0.0 or width <= 0.0 or height <= 0.0:
+        return None
+    best = None
+    for item in payload.get("detections", []):
+        try:
+            confidence = float(item.get("confidence", 0.0))
+            bbox = tuple(float(value) for value in item["bbox_xyxy"][:4])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if len(bbox) != 4 or confidence < float(minimum_confidence):
+            continue
+        if best is None or confidence > best[0]:
+            best = confidence, bbox
+    if best is None:
+        return None
+    confidence, (x1, y1, x2, y2) = best
+    # Keep the existing field calibration contract: the larger bbox side is
+    # expressed as a fraction of image width, regardless of box orientation.
+    bbox_fraction = max(abs(x2 - x1), abs(y2 - y1)) / width
+    if not math.isfinite(bbox_fraction) or bbox_fraction <= 0.0 or bbox_fraction > 1.5:
+        return None
+    return DetectionFrame(
+        key=frame_key(sequence, stamp_s),
+        stamp_s=stamp_s,
+        sequence=sequence,
+        confidence=confidence,
+        bbox_fraction=bbox_fraction,
+    )
+
+
+def main(args=None) -> int:
+    import rclpy
+    from anti_drone_interfaces.msg import SearchObservation
+    from px4_msgs.msg import OffboardControlMode, TrajectorySetpoint, VehicleAttitude, VehicleLocalPosition
+    from rclpy.executors import ExternalShutdownException
+    from rclpy.node import Node
+    from rclpy.qos import (
+        DurabilityPolicy,
+        HistoryPolicy,
+        QoSProfile,
+        ReliabilityPolicy,
+        qos_profile_sensor_data,
+    )
+    from std_msgs.msg import Bool, String
+
+    class SearchContactNode(Node):
+        def __init__(self) -> None:
+            super().__init__("search_contact_node")
+            defaults = {
+                "rate_hz": 30.0,
+                "contact_enabled": False,
+                "minimum_confidence": 0.55,
+                "required_lock_samples": 8,
+                "lock_max_gap_s": 0.25,
+                "lock_max_bearing_jump_rad": 0.20,
+                "lock_max_scale_ratio": 1.8,
+                "pair_stamp_tolerance_s": 0.02,
+                "capture_timeout_s": 0.45,
+                "attitude_timeout_s": 0.25,
+                "local_position_timeout_s": 0.50,
+                "history_duration_s": 2.0,
+                "history_edge_tolerance_s": 0.08,
+                "lens_tilt_rad": 0.1745,
+                "reference_range_m": 10.0,
+                # 2026-09 靶标改为 13x16 cm 气球（长边 16 cm）。按 2026-09-06
+                # 两点标定的等效焦距（105px@5m / 55px@10m，约 2337px）换算：
+                # 0.16m @ 10m -> 约 38px。旧值 55.0 对应 23x23cm 靶，直接沿用
+                # 会让单目距离整体虚高 23/16 ≈ 1.44 倍，接触窗口推迟开门。
+                "reference_bbox_px": 38.0,
+                "reference_image_width": 2560.0,
+                "range_filter_tau_s": 0.30,
+                "rate_filter_tau_s": 0.20,
+                "expansion_filter_tau_s": 0.25,
+                "prediction_control_delay_s": 0.08,
+                "prediction_guidance_lead_s": 0.12,
+                "prediction_maximum_horizon_s": 0.45,
+                "prediction_maximum_rate_rad_s": 0.70,
+                "prediction_maximum_offset_rad": 0.12,
+                # 有界线性提前量（打 0-2 m/s 慢速移动软靶）：按目标线速度
+                # 把瞄准点前移，弥补图像延迟 x 目标速度的位移；静止靶在
+                # 死区内自动退化为原视线。
+                "lead_pursuit_enabled": True,
+                "lead_maximum_target_speed_mps": 2.5,
+                "lead_maximum_distance_m": 1.0,
+                "lead_maximum_time_s": 1.0,
+                "lead_deadband_mps": 0.25,
+                # 接触窗口内的"目标丢失"判定：同帧配对超过该时长未更新即算
+                # 开始丢失（独立于 0.45s 的全局陈旧阈值，收窄盲冲距离）。
+                "contact_loss_stale_s": 0.20,
+                # 低阶段条件需持续保持该时长才允许降级（滞回，防抖动）。
+                "phase_downgrade_hold_s": 0.5,
+                # 制动/退避的停稳判据与兜底上限（2026-09-10 审查问题 7）。
+                "settle_speed_mps": 0.4,
+                "brake_max_hold_s": 3.0,
+                "retreat_max_duration_s": 5.0,
+                "approach_speed_mps": 1.5,
+                "terminal_speed_mps": 2.2,
+                "contact_speed_mps": 3.5,
+                # 总限幅不得低于接触段速度（原 3.2/3.0 会把 3.5 的冲刺钳回，
+                # 见 2026-09-10 审查问题 1）；launch 已暴露同名参数。
+                "maximum_horizontal_mps": 4.5,
+                "maximum_vertical_mps": 3.5,
+                "terminal_range_m": 3.0,
+                "terminal_ttc_s": 1.5,
+                "contact_range_m": 1.0,
+                "contact_ttc_s": 0.45,
+                "contact_bbox_fraction": 0.30,
+                "minimum_expansion_rate_s": 0.08,
+                "contact_acceleration_mps2": 3.5,
+                "contact_speed_drop_mps": 0.25,
+                "contact_loss_confirm_delay_s": 0.08,
+                "contact_impact_ignore_s": 0.25,
+                # 冲刺轮廓下窗口内理论穿越时间约 0.4-0.9s（按 3m/s 与进入
+                # 距离标定），超时上限收紧到 1.5s，把擦过目标后继续盲冲的
+                # 距离限制在约 4m 内（旧递减版为 4.0s）。
+                "contact_window_timeout_s": 1.5,
+                "brake_hold_s": 0.6,
+                "retreat_speed_mps": 0.35,
+                "retreat_duration_s": 0.8,
+                "minimum_height_m": 3.0,
+                "maximum_height_m": 30.0,
+                "maximum_origin_radius_m": 20.0,
+                "search_observation_topic": "/perception/search/observation",
+                "search_detections_topic": "/search/detections_json",
+                "px4_attitude_topic": "/fmu/out/vehicle_attitude",
+                "px4_local_position_topic": "/fmu/out/vehicle_local_position",
+                "upstream_prefix": "/upstream/fmu/in",
+                "status_topic": "/tracking/servo/status",
+                "mission_complete_topic": "/tracking/mission/complete",
+            }
+            for name, value in defaults.items():
+                self.declare_parameter(name, value)
+
+            def number(name: str) -> float:
+                return float(self.get_parameter(name).value)
+
+            self._rate_hz = max(10.0, number("rate_hz"))
+            self._contact_enabled = bool(self.get_parameter("contact_enabled").value)
+            self._minimum_confidence = number("minimum_confidence")
+            self._required_lock_samples = max(3, int(self.get_parameter("required_lock_samples").value))
+            self._lock_max_gap_s = number("lock_max_gap_s")
+            self._lock_max_bearing_jump_rad = number("lock_max_bearing_jump_rad")
+            self._lock_max_scale_ratio = number("lock_max_scale_ratio")
+            self._pair_stamp_tolerance_s = number("pair_stamp_tolerance_s")
+            self._capture_timeout_s = min(0.60, max(0.15, number("capture_timeout_s")))
+            self._attitude_timeout_s = number("attitude_timeout_s")
+            self._local_timeout_s = number("local_position_timeout_s")
+            self._history_duration_s = number("history_duration_s")
+            self._history_edge_tolerance_s = number("history_edge_tolerance_s")
+            self._lens_tilt_rad = number("lens_tilt_rad")
+            self._reference_range_m = number("reference_range_m")
+            self._reference_bbox_px = number("reference_bbox_px")
+            self._reference_image_width = number("reference_image_width")
+            self._range_filter_tau_s = number("range_filter_tau_s")
+            self._rate_filter_tau_s = number("rate_filter_tau_s")
+            self._expansion_filter_tau_s = number("expansion_filter_tau_s")
+            self._prediction_control_delay_s = min(0.20, max(0.0, number("prediction_control_delay_s")))
+            self._prediction_guidance_lead_s = min(0.20, max(0.0, number("prediction_guidance_lead_s")))
+            self._prediction_maximum_horizon_s = min(0.60, max(0.0, number("prediction_maximum_horizon_s")))
+            self._prediction_maximum_rate_rad_s = min(1.0, max(0.0, number("prediction_maximum_rate_rad_s")))
+            self._prediction_maximum_offset_rad = min(0.20, max(0.0, number("prediction_maximum_offset_rad")))
+            self._lead_pursuit_enabled = bool(self.get_parameter("lead_pursuit_enabled").value)
+            self._lead_maximum_target_speed_mps = max(0.0, number("lead_maximum_target_speed_mps"))
+            self._lead_maximum_distance_m = max(0.0, number("lead_maximum_distance_m"))
+            self._lead_maximum_time_s = max(0.0, number("lead_maximum_time_s"))
+            self._lead_deadband_mps = max(0.0, number("lead_deadband_mps"))
+            self._last_lead: dict = {}
+            self._contact_loss_stale_s = min(
+                0.45, max(0.05, number("contact_loss_stale_s"))
+            )
+            self._phase_downgrade_hold_s = max(0.0, number("phase_downgrade_hold_s"))
+            self._settle_speed_mps = max(0.0, number("settle_speed_mps"))
+            self._brake_max_hold_s = max(0.1, number("brake_max_hold_s"))
+            self._retreat_max_duration_s = max(0.1, number("retreat_max_duration_s"))
+            self._contact_lost_since_s: float | None = None
+            self._downgrade_since_s: float | None = None
+            # 冲刺版硬上限：参数无论配多少都不会突破。默认值与接触段速度
+            # 保持一致关系（总限幅 >= 接触速度），launch 可覆盖。
+            self._approach_speed_mps = min(2.0, max(0.0, number("approach_speed_mps")))
+            self._terminal_speed_mps = min(3.0, max(0.0, number("terminal_speed_mps")))
+            self._contact_speed_mps = min(4.5, max(0.0, number("contact_speed_mps")))
+            self._maximum_horizontal_mps = min(4.5, max(0.1, number("maximum_horizontal_mps")))
+            self._maximum_vertical_mps = min(3.5, max(0.1, number("maximum_vertical_mps")))
+            self._terminal_range_m = number("terminal_range_m")
+            self._terminal_ttc_s = number("terminal_ttc_s")
+            self._contact_range_m = number("contact_range_m")
+            self._contact_ttc_s = number("contact_ttc_s")
+            self._contact_bbox_fraction = number("contact_bbox_fraction")
+            self._minimum_expansion_rate_s = number("minimum_expansion_rate_s")
+            self._contact_acceleration_mps2 = number("contact_acceleration_mps2")
+            self._contact_speed_drop_mps = number("contact_speed_drop_mps")
+            self._contact_loss_confirm_delay_s = number("contact_loss_confirm_delay_s")
+            self._contact_impact_ignore_s = number("contact_impact_ignore_s")
+            self._contact_window_timeout_s = number("contact_window_timeout_s")
+            self._brake_hold_s = number("brake_hold_s")
+            self._retreat_speed_mps = number("retreat_speed_mps")
+            self._retreat_duration_s = number("retreat_duration_s")
+            self._minimum_height_m = number("minimum_height_m")
+            self._maximum_height_m = number("maximum_height_m")
+            self._maximum_origin_radius_m = number("maximum_origin_radius_m")
+            self._upstream = str(self.get_parameter("upstream_prefix").value).rstrip("/")
+            try:
+                validate_speed_profile(
+                    self._approach_speed_mps,
+                    self._terminal_speed_mps,
+                    self._contact_speed_mps,
+                )
+            except ValueError as error:
+                raise RuntimeError(str(error)) from error
+            if not (0.0 < self._contact_range_m < self._terminal_range_m):
+                raise RuntimeError("range gates must satisfy 0 < contact < terminal")
+            if not (self._minimum_height_m < self._maximum_height_m):
+                raise RuntimeError("minimum_height_m must be below maximum_height_m")
+
+            qos = QoSProfile(
+                history=HistoryPolicy.KEEP_LAST,
+                depth=1,
+                reliability=ReliabilityPolicy.BEST_EFFORT,
+                durability=DurabilityPolicy.VOLATILE,
+            )
+            self.create_subscription(SearchObservation, str(self.get_parameter("search_observation_topic").value), self._on_observation, qos_profile_sensor_data)
+            self.create_subscription(String, str(self.get_parameter("search_detections_topic").value), self._on_detections, qos_profile_sensor_data)
+            self.create_subscription(VehicleAttitude, str(self.get_parameter("px4_attitude_topic").value), self._on_attitude, qos)
+            self.create_subscription(VehicleLocalPosition, str(self.get_parameter("px4_local_position_topic").value), self._on_local_position, qos)
+            self._mode_pub = self.create_publisher(OffboardControlMode, f"{self._upstream}/offboard_control_mode", qos)
+            self._setpoint_pub = self.create_publisher(TrajectorySetpoint, f"{self._upstream}/trajectory_setpoint", qos)
+            self._status_pub = self.create_publisher(String, str(self.get_parameter("status_topic").value), 10)
+            self._mission_pub = self.create_publisher(Bool, str(self.get_parameter("mission_complete_topic").value), 10)
+
+            self._pending_bearings: dict[tuple[str, int], BearingFrame] = {}
+            self._pending_detections: dict[tuple[str, int], DetectionFrame] = {}
+            self._attitude_history: deque[tuple[float, tuple[float, float, float, float]]] = deque()
+            self._attitude_received_s: float | None = None
+            self._local_received_s: float | None = None
+            self._local_position = (0.0, 0.0, 0.0)
+            self._local_velocity = (0.0, 0.0, 0.0)
+            self._local_acceleration = (0.0, 0.0, 0.0)
+            self._origin_position: tuple[float, float, float] | None = None
+            self._last_pair_received_s: float | None = None
+            self._last_capture_s: float | None = None
+            self._last_sequence: int | None = None
+            self._last_raw_angles: tuple[float, float] | None = None
+            self._last_bbox_fraction: float | None = None
+            self._range_filtered: float | None = None
+            self._expansion_rate = 0.0
+            self._azimuth_rate = 0.0
+            self._elevation_rate = 0.0
+            self._world_azimuth: float | None = None
+            self._world_elevation: float | None = None
+            self._lock_samples = 0
+            self._state = "OBSERVE" if not self._contact_enabled else "LOCKING"
+            self._state_started_s = self._now_s()
+            self._contact_window_started_s: float | None = None
+            self._contact_entry_speed = 0.0
+            self._contact_peak_speed = 0.0
+            self._last_approach_direction = (0.0, 0.0, 0.0)
+            self._last_prediction = None
+            self._last_ttc_s: float | None = None
+            self._last_command_velocity = (0.0, 0.0, 0.0)
+            self._last_abort_reason = ""
+            self._mission_sent = False
+            self.create_timer(1.0 / self._rate_hz, self._on_timer)
+            self.create_timer(0.10, self._publish_status)
+            self.get_logger().warning(
+                "soft-target contact node ready: enabled=%s, prediction horizon<=%.2fs, speed=%.2f/%.2f/%.2fm/s"
+                % (
+                    str(self._contact_enabled).lower(),
+                    self._prediction_maximum_horizon_s,
+                    self._approach_speed_mps,
+                    self._terminal_speed_mps,
+                    self._contact_speed_mps,
+                )
+            )
+
+        def _now_s(self) -> float:
+            return self.get_clock().now().nanoseconds / 1.0e9
+
+        def _stamp_s(self, stamp) -> float:
+            return float(stamp.sec) + float(stamp.nanosec) / 1.0e9
+
+        def _trim_pending(self, mapping: dict) -> None:
+            while len(mapping) > 64:
+                mapping.pop(next(iter(mapping)))
+
+        def _on_observation(self, message: SearchObservation) -> None:
+            if not bool(message.visible) or not bool(message.angles_valid):
+                return
+            if float(message.confidence) < self._minimum_confidence:
+                return
+            stamp_s = self._stamp_s(message.header.stamp)
+            if not math.isfinite(stamp_s) or stamp_s <= 0.0:
+                return
+            sequence = int(message.sequence)
+            bearing = BearingFrame(
+                key=frame_key(sequence, stamp_s),
+                stamp_s=stamp_s,
+                sequence=sequence,
+                confidence=float(message.confidence),
+                horizontal_rad=float(message.horizontal_angle_rad),
+                vertical_rad=float(message.vertical_angle_rad),
+            )
+            self._pending_bearings[bearing.key] = bearing
+            self._trim_pending(self._pending_bearings)
+            self._try_pair(bearing.key)
+
+        def _on_detections(self, message: String) -> None:
+            detection = parse_detection_frame(str(message.data), self._minimum_confidence)
+            if detection is None:
+                return
+            self._pending_detections[detection.key] = detection
+            self._trim_pending(self._pending_detections)
+            self._try_pair(detection.key)
+
+        def _try_pair(self, key: tuple[str, int]) -> None:
+            bearing = self._pending_bearings.get(key)
+            detection = self._pending_detections.get(key)
+            if bearing is None or detection is None:
+                return
+            self._pending_bearings.pop(key, None)
+            self._pending_detections.pop(key, None)
+            if abs(bearing.stamp_s - detection.stamp_s) > self._pair_stamp_tolerance_s:
+                self._reset_lock("paired timestamps disagree")
+                return
+            self._accept_pair(bearing, detection)
+
+        def _attitude_at(self, stamp_s: float) -> tuple[float, float, float, float] | None:
+            if not self._attitude_history:
+                return None
+            first_time, first_q = self._attitude_history[0]
+            last_time, last_q = self._attitude_history[-1]
+            if stamp_s < first_time:
+                return first_q if first_time - stamp_s <= self._history_edge_tolerance_s else None
+            if stamp_s > last_time:
+                return last_q if stamp_s - last_time <= self._history_edge_tolerance_s else None
+            previous_time, previous_q = self._attitude_history[0]
+            for next_time, next_q in tuple(self._attitude_history)[1:]:
+                if stamp_s <= next_time:
+                    span = next_time - previous_time
+                    amount = 0.0 if span <= 1.0e-9 else (stamp_s - previous_time) / span
+                    return slerp_quaternion(previous_q, next_q, amount)
+                previous_time, previous_q = next_time, next_q
+            return last_q
+
+        def _accept_pair(self, bearing: BearingFrame, detection: DetectionFrame) -> None:
+            now_s = self._now_s()
+            capture_age = now_s - bearing.stamp_s
+            if capture_age < -0.02 or capture_age > self._capture_timeout_s:
+                self._reset_lock("capture timestamp stale")
+                return
+            attitude = self._attitude_at(bearing.stamp_s)
+            if attitude is None:
+                self._reset_lock("no attitude at capture time")
+                return
+            try:
+                unit_fru = unit_fru_from_angles(bearing.horizontal_rad, bearing.vertical_rad)
+                body_los = los_body_frd(apply_lens_tilt(unit_fru, self._lens_tilt_rad))
+                world_los = rotate_vector(quaternion_to_rotation_matrix(attitude), body_los)
+                azimuth, elevation = vector_to_azimuth_elevation(world_los)
+            except ValueError:
+                self._reset_lock("invalid bearing geometry")
+                return
+            raw_range = range_from_bbox_fraction(
+                detection.bbox_fraction,
+                self._reference_range_m,
+                self._reference_bbox_px,
+                self._reference_image_width,
+            )
+            if raw_range is None or not (0.15 <= raw_range <= 100.0):
+                self._reset_lock("bbox range invalid")
+                return
+            continuous = False
+            dt = 0.0
+            if self._last_capture_s is not None and bearing.stamp_s > self._last_capture_s:
+                dt = bearing.stamp_s - self._last_capture_s
+                if self._last_raw_angles is not None and self._last_bbox_fraction is not None:
+                    jump = math.hypot(
+                        wrap_pi(bearing.horizontal_rad - self._last_raw_angles[0]),
+                        bearing.vertical_rad - self._last_raw_angles[1],
+                    )
+                    ratio = max(
+                        detection.bbox_fraction / self._last_bbox_fraction,
+                        self._last_bbox_fraction / detection.bbox_fraction,
+                    )
+                    continuous = (
+                        dt <= self._lock_max_gap_s
+                        and jump <= self._lock_max_bearing_jump_rad
+                        and ratio <= self._lock_max_scale_ratio
+                    )
+            if not continuous:
+                self._lock_samples = 1
+                self._azimuth_rate = 0.0
+                self._elevation_rate = 0.0
+                self._expansion_rate = 0.0
+                self._range_filtered = raw_range
+            else:
+                self._lock_samples += 1
+                measured_azimuth_rate = wrap_pi(azimuth - float(self._world_azimuth)) / max(dt, 1.0e-3)
+                measured_elevation_rate = (elevation - float(self._world_elevation)) / max(dt, 1.0e-3)
+                measured_expansion = (
+                    math.log(detection.bbox_fraction) - math.log(float(self._last_bbox_fraction))
+                ) / max(dt, 1.0e-3)
+                self._azimuth_rate = low_pass(self._azimuth_rate, measured_azimuth_rate, self._rate_filter_tau_s, dt)
+                self._elevation_rate = low_pass(self._elevation_rate, measured_elevation_rate, self._rate_filter_tau_s, dt)
+                self._expansion_rate = low_pass(self._expansion_rate, measured_expansion, self._expansion_filter_tau_s, dt)
+                self._range_filtered = low_pass(self._range_filtered, raw_range, self._range_filter_tau_s, dt)
+            self._last_capture_s = bearing.stamp_s
+            self._last_pair_received_s = now_s
+            self._last_sequence = bearing.sequence
+            self._last_raw_angles = (bearing.horizontal_rad, bearing.vertical_rad)
+            self._last_bbox_fraction = detection.bbox_fraction
+            self._world_azimuth = azimuth
+            self._world_elevation = elevation
+
+        def _reset_lock(self, reason: str) -> None:
+            self._lock_samples = 0
+            self._last_capture_s = None
+            self._last_raw_angles = None
+            self._last_bbox_fraction = None
+            self._world_azimuth = None
+            self._world_elevation = None
+            self._range_filtered = None
+            self._expansion_rate = 0.0
+            self._azimuth_rate = 0.0
+            self._elevation_rate = 0.0
+            if self._state in {"LOCKING", "OBSERVE"}:
+                self._last_abort_reason = reason
+
+        def _on_attitude(self, message: VehicleAttitude) -> None:
+            q = tuple(float(value) for value in message.q[:4])
+            if len(q) != 4 or not all(math.isfinite(value) for value in q):
+                return
+            now_s = self._now_s()
+            self._attitude_received_s = now_s
+            self._attitude_history.append((now_s, q))
+            while self._attitude_history and now_s - self._attitude_history[0][0] > self._history_duration_s:
+                self._attitude_history.popleft()
+
+        def _on_local_position(self, message: VehicleLocalPosition) -> None:
+            if not bool(message.xy_valid) or not bool(message.z_valid):
+                return
+            values = (float(message.x), float(message.y), float(message.z), float(message.vx), float(message.vy), float(message.vz))
+            if not all(math.isfinite(value) for value in values):
+                return
+            self._local_position = values[:3]
+            self._local_velocity = values[3:]
+            acceleration = (float(message.ax), float(message.ay), float(message.az))
+            self._local_acceleration = (
+                acceleration if all(math.isfinite(value) for value in acceleration) else (0.0, 0.0, 0.0)
+            )
+            self._local_received_s = self._now_s()
+            if self._origin_position is None:
+                self._origin_position = self._local_position
+
+        def _transition(self, state: str, reason: str = "") -> None:
+            if state == self._state:
+                return
+            self._state = state
+            self._state_started_s = self._now_s()
+            if state == "CONTACT_WINDOW":
+                self._contact_window_started_s = self._state_started_s
+                self._contact_entry_speed = math.sqrt(sum(value * value for value in self._local_velocity))
+                self._contact_peak_speed = self._contact_entry_speed
+                self._contact_lost_since_s = None
+            if state == "ABORT":
+                self._last_abort_reason = reason
+                self.get_logger().error("contact sequence aborted: %s" % reason)
+            else:
+                self.get_logger().warning("contact state -> %s (%s)" % (state, reason))
+
+        def _vehicle_state_valid(self, now_s: float) -> tuple[bool, str]:
+            if self._attitude_received_s is None or now_s - self._attitude_received_s > self._attitude_timeout_s:
+                return False, "attitude stale"
+            if self._local_received_s is None or now_s - self._local_received_s > self._local_timeout_s:
+                return False, "local position stale"
+            if self._origin_position is None:
+                return False, "origin unavailable"
+            height = -self._local_position[2]
+            if height < self._minimum_height_m or height > self._maximum_height_m:
+                return False, "height boundary"
+            north = self._local_position[0] - self._origin_position[0]
+            east = self._local_position[1] - self._origin_position[1]
+            if math.hypot(north, east) > self._maximum_origin_radius_m:
+                return False, "origin radius boundary"
+            return True, "ok"
+
+        def _measurement_valid(self, now_s: float) -> tuple[bool, str]:
+            if self._last_pair_received_s is None or self._last_capture_s is None:
+                return False, "no paired target frame"
+            if now_s - self._last_pair_received_s > self._capture_timeout_s:
+                return False, "paired target lost"
+            capture_age = now_s - self._last_capture_s
+            if capture_age < -0.02 or capture_age > self._capture_timeout_s:
+                return False, "capture data stale"
+            if self._world_azimuth is None or self._world_elevation is None or self._range_filtered is None:
+                return False, "target geometry incomplete"
+            return True, "ok"
+
+        def _publish_mode(self) -> None:
+            message = OffboardControlMode()
+            message.timestamp = self.get_clock().now().nanoseconds // 1000
+            message.velocity = True
+            self._mode_pub.publish(message)
+
+        def _publish_velocity(self, velocity_ned: tuple[float, float, float], yaw: float | None) -> None:
+            self._last_command_velocity = tuple(float(value) for value in velocity_ned)
+            self._publish_mode()
+            message = TrajectorySetpoint()
+            message.timestamp = self.get_clock().now().nanoseconds // 1000
+            message.position = [float("nan")] * 3
+            message.velocity = [float(value) for value in velocity_ned]
+            message.acceleration = [float("nan")] * 3
+            message.jerk = [float("nan")] * 3
+            message.yaw = float("nan") if yaw is None else float(yaw)
+            message.yawspeed = float("nan")
+            self._setpoint_pub.publish(message)
+
+        def _publish_zero(self) -> None:
+            self._publish_velocity((0.0, 0.0, 0.0), None)
+
+        def _confirm_contact(self, measurement_fresh: bool) -> bool:
+            if self._state != "CONTACT_WINDOW":
+                return False
+            if self._contact_window_started_s is None:
+                return False
+            now_s = self._now_s()
+            elapsed = now_s - self._contact_window_started_s
+            acceleration = math.sqrt(sum(value * value for value in self._local_acceleration))
+            speed = math.sqrt(sum(value * value for value in self._local_velocity))
+            # 冲刺轮廓下窗口内仍在加速（末段->接触段），骤降判据对窗口内
+            # 峰值速度比较，而不是进入时刻速度：擦碰减速到高于进入速度时
+            # 也能被识别，防止顶着冲刺速度继续盲冲。
+            if speed > self._contact_peak_speed:
+                self._contact_peak_speed = speed
+            impact_cue = acceleration >= self._contact_acceleration_mps2
+            speed_drop_cue = self._contact_peak_speed - speed >= self._contact_speed_drop_mps
+            # 丢失判据：同帧配对超过 contact_loss_stale_s 未更新才算"开始
+            # 丢失"，再持续 contact_loss_confirm_delay_s 才确认——计时不以
+            # 进入接触窗口的时刻为基准（2026-09-10 审查问题 5）。
+            stale_recent = (
+                self._last_pair_received_s is not None
+                and now_s - self._last_pair_received_s > self._contact_loss_stale_s
+            )
+            if stale_recent:
+                if self._contact_lost_since_s is None:
+                    self._contact_lost_since_s = now_s
+            else:
+                self._contact_lost_since_s = None
+            loss_cue = (
+                stale_recent
+                and self._contact_lost_since_s is not None
+                and now_s - self._contact_lost_since_s >= self._contact_loss_confirm_delay_s
+            )
+            return (
+                loss_cue
+                or (
+                    impact_cue
+                    and speed_drop_cue
+                    and elapsed >= self._contact_impact_ignore_s
+                )
+            )
+
+        def _on_timer(self) -> None:
+            now_s = self._now_s()
+            if not self._contact_enabled:
+                self._publish_zero()
+                return
+            vehicle_valid, vehicle_reason = self._vehicle_state_valid(now_s)
+            if not vehicle_valid:
+                if self._state not in {"LOCKING", "OBSERVE", "HOVER", "ABORT"}:
+                    self._transition("ABORT", vehicle_reason)
+                self._publish_zero()
+                return
+            measurement_fresh, measurement_reason = self._measurement_valid(now_s)
+            if self._state == "CONTACT_WINDOW" and self._confirm_contact(measurement_fresh):
+                self._transition("BRAKE", "contact cues confirmed")
+            elif not measurement_fresh and self._state in {"APPROACH", "TERMINAL"}:
+                self._transition("ABORT", measurement_reason)
+            elif not measurement_fresh and self._state == "LOCKING":
+                self._publish_zero()
+                return
+
+            if self._state in {"ABORT", "HOVER"}:
+                self._publish_zero()
+                if self._state == "HOVER" and not self._mission_sent:
+                    result = Bool()
+                    result.data = True
+                    self._mission_pub.publish(result)
+                    self._mission_sent = True
+                return
+            if self._state == "BRAKE":
+                self._publish_zero()
+                held = now_s - self._state_started_s
+                speed_now = math.sqrt(sum(value * value for value in self._local_velocity))
+                # 审查问题 7：除最短保持时间外，还要求实际速度降到停稳阈值
+                # 以下才转退避；带兜底上限防止速度永不收敛时卡死在制动段。
+                if (
+                    held >= self._brake_hold_s and speed_now <= self._settle_speed_mps
+                ) or held >= self._brake_max_hold_s:
+                    self._transition(
+                        "RETREAT",
+                        "brake done (held=%.2fs speed=%.2fm/s)" % (held, speed_now),
+                    )
+                return
+            if self._state == "RETREAT":
+                held = now_s - self._state_started_s
+                speed_now = math.sqrt(sum(value * value for value in self._local_velocity))
+                if held >= self._retreat_max_duration_s:
+                    self._transition("HOVER", "retreat max duration reached")
+                    self._publish_zero()
+                    return
+                if held >= self._retreat_duration_s and speed_now <= self._settle_speed_mps:
+                    self._transition(
+                        "HOVER", "retreat complete (speed=%.2fm/s)" % speed_now
+                    )
+                    self._publish_zero()
+                    return
+                retreat = tuple(-self._retreat_speed_mps * value for value in self._last_approach_direction)
+                retreat = limit_velocity_ned(retreat, self._maximum_horizontal_mps, self._maximum_vertical_mps)
+                if -self._local_position[2] <= self._minimum_height_m and retreat[2] > 0.0:
+                    retreat = (retreat[0], retreat[1], 0.0)
+                self._publish_velocity(retreat, None)
+                return
+            if not measurement_fresh:
+                self._publish_zero()
+                return
+            if self._lock_samples < self._required_lock_samples:
+                self._transition("LOCKING", "waiting for stable target")
+                self._publish_zero()
+                return
+            capture_age = max(0.0, now_s - float(self._last_capture_s))
+            ttc_s = time_to_contact_s(self._expansion_rate, self._minimum_expansion_rate_s)
+            self._last_ttc_s = ttc_s
+            phase = guidance_phase(
+                range_m=float(self._range_filtered),
+                ttc_s=ttc_s,
+                bbox_fraction=float(self._last_bbox_fraction),
+                terminal_range_m=self._terminal_range_m,
+                terminal_ttc_s=self._terminal_ttc_s,
+                contact_range_m=self._contact_range_m,
+                contact_ttc_s=self._contact_ttc_s,
+                contact_bbox_fraction=self._contact_bbox_fraction,
+            )
+            phase_order = {"APPROACH": 0, "TERMINAL": 1, "CONTACT_WINDOW": 2}
+            current_order = phase_order.get(self._state, -1)
+            if phase_order[phase] > current_order:
+                self._transition(phase, "stable paired target")
+                self._downgrade_since_s = None
+            elif 0 <= phase_order[phase] < current_order:
+                # 审查问题 6：允许降级，但需低阶段条件持续 phase_downgrade_hold_s
+                # （滞回），防止单次距离/尺度抖动引发速度来回切换。
+                if self._downgrade_since_s is None:
+                    self._downgrade_since_s = now_s
+                elif now_s - self._downgrade_since_s >= self._phase_downgrade_hold_s:
+                    self._transition(phase, "geometry recovered (downgrade)")
+                    self._downgrade_since_s = None
+            else:
+                self._downgrade_since_s = None
+            if self._state == "CONTACT_WINDOW" and self._contact_window_started_s is not None:
+                if now_s - self._contact_window_started_s > self._contact_window_timeout_s:
+                    self._transition("ABORT", "contact window timeout")
+                    self._publish_zero()
+                    return
+            lead = self._prediction_guidance_lead_s if self._state != "APPROACH" else 0.0
+            prediction = predict_world_line_of_sight(
+                azimuth_rad=float(self._world_azimuth),
+                elevation_rad=float(self._world_elevation),
+                azimuth_rate_rad_s=self._azimuth_rate,
+                elevation_rate_rad_s=self._elevation_rate,
+                measurement_age_s=capture_age,
+                response_delay_s=self._prediction_control_delay_s,
+                guidance_lead_s=lead,
+                maximum_horizon_s=self._prediction_maximum_horizon_s,
+                maximum_rate_rad_s=self._prediction_maximum_rate_rad_s,
+                maximum_offset_rad=self._prediction_maximum_offset_rad,
+            )
+            self._last_prediction = prediction
+            speed = {
+                "APPROACH": self._approach_speed_mps,
+                "TERMINAL": self._terminal_speed_mps,
+                "CONTACT_WINDOW": self._contact_speed_mps,
+            }.get(self._state, 0.0)
+
+            def _lead(closing_speed: float) -> tuple[tuple[float, float, float], dict]:
+                return lead_pursuit_direction(
+                    los_unit_ned=prediction.unit_ned,
+                    azimuth_rate_rad_s=self._azimuth_rate,
+                    elevation_rate_rad_s=self._elevation_rate,
+                    range_m=float(self._range_filtered),
+                    expansion_rate_s=self._expansion_rate,
+                    closing_speed_mps=closing_speed,
+                    interceptor_velocity_ned=self._local_velocity,
+                    maximum_target_speed_mps=self._lead_maximum_target_speed_mps,
+                    maximum_lead_distance_m=self._lead_maximum_distance_m,
+                    maximum_lead_time_s=self._lead_maximum_time_s,
+                    deadband_mps=self._lead_deadband_mps,
+                )
+
+            aim_unit = prediction.unit_ned
+            lead_info = {
+                "target_speed_mps": 0.0,
+                "target_radial_mps": 0.0,
+                "lateral_speed_mps": 0.0,
+                "lead_distance_m": 0.0,
+                "lead_time_s": 0.0,
+                "limited": False,
+                "enabled": self._lead_pursuit_enabled,
+            }
+            velocity = limit_velocity_ned(
+                tuple(speed * value for value in aim_unit),
+                self._maximum_horizontal_mps,
+                self._maximum_vertical_mps,
+            )
+            if self._lead_pursuit_enabled and speed > 0.0:
+                try:
+                    aim_unit, lead_info = _lead(speed)
+                    lead_info = dict(lead_info, enabled=True)
+                    velocity = limit_velocity_ned(
+                        tuple(speed * value for value in aim_unit),
+                        self._maximum_horizontal_mps,
+                        self._maximum_vertical_mps,
+                    )
+                    # 审查问题 4/B：若总限幅把指令速度压到低于标称值，用
+                    # 节点限幅后的指令速度重算提前时间（两遍迭代收敛足够）。
+                    # 注意这是"限幅后指令速度"，不是飞控反馈的实测速度——
+                    # 加速瞬态、飞控侧限幅（MPC_Z_VEL_MAX_UP 等）与风扰不在
+                    # 本节点可见范围内。
+                    achieved = math.sqrt(sum(value * value for value in velocity))
+                    if 0.1 < achieved < speed * 0.98:
+                        aim_unit, lead_info = _lead(achieved)
+                        lead_info = dict(lead_info, enabled=True)
+                        velocity = limit_velocity_ned(
+                            tuple(speed * value for value in aim_unit),
+                            self._maximum_horizontal_mps,
+                            self._maximum_vertical_mps,
+                        )
+                except ValueError:
+                    aim_unit = prediction.unit_ned
+            self._last_lead = lead_info
+            if -self._local_position[2] <= self._minimum_height_m and velocity[2] > 0.0:
+                velocity = (velocity[0], velocity[1], 0.0)
+            self._last_approach_direction = aim_unit
+            horizontal = math.hypot(aim_unit[0], aim_unit[1])
+            yaw = None if horizontal < 1.0e-6 else math.atan2(aim_unit[1], aim_unit[0])
+            self._publish_velocity(velocity, yaw)
+
+        def _publish_status(self) -> None:
+            now_s = self._now_s()
+            prediction = self._last_prediction
+            measurement_valid, measurement_reason = self._measurement_valid(now_s)
+            vehicle_valid, vehicle_reason = self._vehicle_state_valid(now_s)
+            payload = {
+                "mode": "search_contact",
+                "state": self._state,
+                "contact_enabled": self._contact_enabled,
+                "sequence": self._last_sequence,
+                "lock_samples": self._lock_samples,
+                "required_lock_samples": self._required_lock_samples,
+                "measurement_valid": measurement_valid,
+                "measurement_reason": measurement_reason,
+                "vehicle_state_valid": vehicle_valid,
+                "vehicle_state_reason": vehicle_reason,
+                "capture_age_s": None if self._last_capture_s is None else now_s - self._last_capture_s,
+                "range_m": self._range_filtered,
+                "bbox_fraction": self._last_bbox_fraction,
+                "expansion_rate_s": self._expansion_rate,
+                "time_to_contact_s": self._last_ttc_s,
+                "azimuth_rate_rad_s": self._azimuth_rate,
+                "elevation_rate_rad_s": self._elevation_rate,
+                "prediction_horizon_s": None if prediction is None else prediction.horizon_s,
+                "prediction_requested_horizon_s": None if prediction is None else prediction.requested_horizon_s,
+                "prediction_angular_offset_rad": None if prediction is None else prediction.angular_offset_rad,
+                "prediction_limited": None if prediction is None else prediction.limited,
+                "lead": self._last_lead,
+                "command_velocity_ned_mps": self._last_command_velocity,
+                "vehicle_speed_mps": math.sqrt(sum(value * value for value in self._local_velocity)),
+                "vehicle_acceleration_mps2": math.sqrt(sum(value * value for value in self._local_acceleration)),
+                "contact_entry_speed_mps": self._contact_entry_speed,
+                "contact_peak_speed_mps": self._contact_peak_speed,
+                "abort_reason": self._last_abort_reason,
+            }
+            message = String()
+            message.data = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+            self._status_pub.publish(message)
+
+    rclpy.init(args=args)
+    node = None
+    try:
+        node = SearchContactNode()
+        rclpy.spin(node)
+    except (KeyboardInterrupt, ExternalShutdownException):
+        pass
+    finally:
+        if node is not None:
+            node.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

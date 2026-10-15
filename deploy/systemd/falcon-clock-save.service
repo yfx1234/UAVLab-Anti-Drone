@@ -1,0 +1,6 @@
+[Unit]
+Description=Persist the current Jetson wall clock
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/falcon-clock-guard save

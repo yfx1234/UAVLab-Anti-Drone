@@ -1,0 +1,40 @@
+px4_interceptor_bridge:
+  ros__parameters:
+    input_topic: /perception/target/camera_position
+    output_topic: /px4_1/fmu/in/target_relative_measurement
+    attitude_topic: /px4_1/fmu/out/vehicle_attitude
+    timesync_topic: /px4_1/fmu/out/timesync_status
+    expected_frame_id: pursuer_camera_optical
+    minimum_confidence: 0.5
+    minimum_depth_m: 0.05
+    maximum_measurement_age_s: 0.25
+    maximum_future_s: 0.02
+    measurement_queue_timeout_s: 0.10
+    attitude_sync_tolerance_s: 0.06
+    attitude_buffer_s: 3.0
+    timestamp_offset_jump_threshold_s: 0.10
+    timestamp_offset_filter_alpha: 0.05
+    timestamp_offset_window_size: 100
+    timestamp_jump_confirmation_samples: 5
+    diagnostics_period_s: 10.0
+    sequence_reset_timeout_s: 1.0
+    covariance_symmetry_tolerance: 1.0e-6
+    maximum_position_variance: 100.0
+    # PX4 uXRCE client already waits for timestamp synchronization before it
+    # creates the operational bridge. Keep this false unless an integration
+    # specifically requires a second ROS-side hard gate.
+    require_timesync: false
+    maximum_timesync_age_s: 5.0
+    maximum_timesync_rtt_us: 30000
+
+    # Camera origin relative to the body origin, expressed in body FRD [m].
+    camera_translation_body_x_m: 0.0
+    camera_translation_body_y_m: 0.0
+    camera_translation_body_z_m: 0.0
+
+    # Hamilton quaternion rotating body FRD vectors into camera optical vectors.
+    # Default: optical +Z=body -Z, optical +X=body +Y, optical +Y=body +X.
+    camera_q_body_to_optical_w: 0.0
+    camera_q_body_to_optical_x: 0.7071067811865476
+    camera_q_body_to_optical_y: 0.7071067811865476
+    camera_q_body_to_optical_z: 0.0

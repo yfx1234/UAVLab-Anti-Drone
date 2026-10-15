@@ -1,0 +1,42 @@
+perception:
+  image_width: 640
+  image_height: 480
+  detection_conf_threshold: 0.5
+  detection_timeout_sec: 0.5
+
+target_state:
+  target_timeout_sec: 0.5
+  lost_timeout_sec: 1.0
+
+fsm:
+  # 0 means keep searching until target acquisition, abort, or task timeout.
+  max_search_rounds: 0
+  search_round_period_sec: 1.0
+  fire_hold_frames: 3
+  track_confirm_frames: 1
+  land_hold_sec: 1.0
+  require_center_for_fire: true
+  require_land_confirmation: true
+  start_enabled: false
+
+guidance:
+  max_speed_xy: 0.8
+  max_speed_z: 0.5
+  kp_xy: 0.4
+  kp_z: 0.3
+  search_yaw_kp: 0.004
+  max_search_yaw_rate_rps: 0.35
+  scan_yaw_rate_rps: 0.20
+
+fire_window:
+  fire_distance_m: 2.0
+  center_threshold_px: 80
+
+landing:
+  land_complete_z_m: 0.3
+  landing_speed_mps: 0.3
+
+safety:
+  max_task_time_sec: 120.0
+  enable_manual_abort: true
+  abort_topic: /intercept/abort

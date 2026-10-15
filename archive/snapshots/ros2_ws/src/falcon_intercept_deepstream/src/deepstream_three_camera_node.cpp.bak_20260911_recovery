@@ -1,0 +1,1921 @@
+#include <gst/gst.h>
+
+#include <algorithm>
+#include <cctype>
+#include <array>
+#include <cerrno>
+#include <chrono>
+#include <cmath>
+#include <cstdint>
+#include <cstdlib>
+#include <cstdio>
+#include <filesystem>
+#include <fstream>
+#include <functional>
+#include <iomanip>
+#include <memory>
+#include <mutex>
+#include <optional>
+#include <regex>
+#include <sstream>
+#include <stdexcept>
+#include <string>
+#include <unordered_set>
+#include <utility>
+#include <vector>
+
+#include <sys/wait.h>
+#include <unistd.h>
+
+#include "gstnvdsmeta.h"
+#include "nvdsmeta.h"
+#include "nvbufsurface.h"
+#include "rclcpp/rclcpp.hpp"
+#include "std_msgs/msg/string.hpp"
+
+#include "falcon_intercept_deepstream/falcon_nv12_color_matrix.hpp"
+
+#ifndef FALCON_DEFAULT_PARSER_PATH
+#define FALCON_DEFAULT_PARSER_PATH "libnvdsinfer_custom_yolo26.so"
+#endif
+
+namespace {
+
+constexpr std::size_t kSourceCount = 3;
+// Verified by a physical lens-occlusion test on 2026-08-01, re-confirmed by the
+// 2026-09-03 hardware survey: the stereo pair is mounted fore-aft on the
+// upward-facing rig.  Argus sensor-id 1 (CAM1) is the FRONT camera (toward the
+// nose) and sensor-id 0 (CAM0) is the BACK camera (toward the tail).  Keep
+// logical front/back names independent of connector or Argus enumeration so
+// detections, ROI projection and stereo geometry agree.
+constexpr int kDefaultFrontSensorId = 1;
+constexpr int kDefaultBackSensorId = 0;
+
+class SearchExposureGuard
+{
+public:
+  ~SearchExposureGuard() {restore();}
+
+  void configure(
+    const std::string & device_path, int exposure, int gain, int brightness,
+    int backlight_compensation)
+  {
+    device_path_ = device_path;
+    active_ = true;
+    try {
+      run_control("auto_exposure=1");
+      run_control("exposure_dynamic_framerate=0");
+      run_control("exposure_time_absolute=" + std::to_string(exposure));
+      run_control("gain=" + std::to_string(gain));
+      run_control("brightness=" + std::to_string(brightness));
+      run_control("backlight_compensation=" + std::to_string(backlight_compensation));
+    } catch (...) {
+      restore();
+      throw;
+    }
+  }
+
+  bool restore() noexcept
+  {
+    if (!active_) {
+      return true;
+    }
+    active_ = false;
+    const bool auto_ok = run_control_noexcept("auto_exposure=3");
+    const bool priority_ok = run_control_noexcept("exposure_dynamic_framerate=1");
+    return auto_ok && priority_ok;
+  }
+
+private:
+  void run_control(const std::string & assignment) const
+  {
+    if (!run_control_noexcept(assignment)) {
+      throw std::runtime_error(
+              "v4l2-ctl failed for search camera control " + assignment);
+    }
+  }
+
+  bool run_control_noexcept(const std::string & assignment) const noexcept
+  {
+    const std::string option = "--set-ctrl=" + assignment;
+    const pid_t child = ::fork();
+    if (child < 0) {
+      return false;
+    }
+    if (child == 0) {
+      ::execl(
+        "/usr/bin/v4l2-ctl", "v4l2-ctl", "-d", device_path_.c_str(), option.c_str(),
+        static_cast<char *>(nullptr));
+      ::_exit(127);
+    }
+    int status = 0;
+    return ::waitpid(child, &status, 0) == child && WIFEXITED(status) &&
+           WEXITSTATUS(status) == 0;
+  }
+
+  std::string device_path_;
+  bool active_{false};
+};
+
+const std::array<const char *, 80> kCocoNames = {
+  "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck",
+  "boat", "traffic light", "fire hydrant", "stop sign", "parking meter", "bench",
+  "bird", "cat", "dog", "horse", "sheep", "cow", "elephant", "bear", "zebra",
+  "giraffe", "backpack", "umbrella", "handbag", "tie", "suitcase", "frisbee",
+  "skis", "snowboard", "sports ball", "kite", "baseball bat", "baseball glove",
+  "skateboard", "surfboard", "tennis racket", "bottle", "wine glass", "cup", "fork",
+  "knife", "spoon", "bowl", "banana", "apple", "sandwich", "orange", "broccoli",
+  "carrot", "hot dog", "pizza", "donut", "cake", "chair", "couch", "potted plant",
+  "bed", "dining table", "toilet", "tv", "laptop", "mouse", "remote", "keyboard",
+  "cell phone", "microwave", "oven", "toaster", "sink", "refrigerator", "book",
+  "clock", "vase", "scissors", "teddy bear", "hair drier", "toothbrush"
+};
+
+std::string quote_gstreamer(const std::string & value)
+{
+  std::string escaped;
+  escaped.reserve(value.size() + 2);
+  escaped.push_back('"');
+  for (const char character : value) {
+    if (character == '\\' || character == '"') {
+      escaped.push_back('\\');
+    }
+    escaped.push_back(character);
+  }
+  escaped.push_back('"');
+  return escaped;
+}
+
+double clamp_value(double value, double lower, double upper)
+{
+  return std::max(lower, std::min(value, upper));
+}
+
+FalconColorMatrix parse_color_matrix(
+  const std::vector<double> & values, const std::string & parameter_name)
+{
+  if (values.size() != 9U) {
+    throw std::runtime_error(parameter_name + " must contain exactly 9 row-major values");
+  }
+  FalconColorMatrix matrix;
+  for (std::size_t index = 0; index < 9U; ++index) {
+    matrix.values[index] = static_cast<float>(values[index]);
+  }
+  return matrix;
+}
+
+struct SourceSpec
+{
+  std::string name;
+  std::string frame_id;
+  std::string topic;
+  unsigned int width;
+  unsigned int height;
+};
+
+struct RoiRect
+{
+  unsigned int x1{0U};
+  unsigned int y1{0U};
+  unsigned int x2{0U};
+  unsigned int y2{0U};
+
+  unsigned int width() const {return x2 - x1;}
+  unsigned int height() const {return y2 - y1;}
+};
+
+struct CropState
+{
+  RoiRect rect{};
+  bool active{false};
+  std::uint64_t generation{0U};
+  std::chrono::steady_clock::time_point received_at{};
+};
+
+std::optional<std::string> json_object_for_key(
+  const std::string & json, const std::string & key)
+{
+  const std::string marker = "\"" + key + "\"";
+  const std::size_t key_pos = json.find(marker);
+  if (key_pos == std::string::npos) {
+    return std::nullopt;
+  }
+  const std::size_t object_start = json.find('{', key_pos + marker.size());
+  if (object_start == std::string::npos) {
+    return std::nullopt;
+  }
+  int depth = 0;
+  bool in_string = false;
+  bool escaped = false;
+  for (std::size_t index = object_start; index < json.size(); ++index) {
+    const char character = json[index];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (character == '\\' && in_string) {
+      escaped = true;
+      continue;
+    }
+    if (character == '"') {
+      in_string = !in_string;
+      continue;
+    }
+    if (in_string) {
+      continue;
+    }
+    if (character == '{') {
+      ++depth;
+    } else if (character == '}') {
+      --depth;
+      if (depth == 0) {
+        return json.substr(object_start, index - object_start + 1U);
+      }
+    }
+  }
+  return std::nullopt;
+}
+
+std::optional<long long> json_integer_for_key(
+  const std::string & json, const std::string & key)
+{
+  const std::regex pattern(
+    "\\\"" + key + "\\\"\\s*:\\s*(-?[0-9]+)", std::regex::ECMAScript);
+  std::smatch match;
+  if (!std::regex_search(json, match, pattern)) {
+    return std::nullopt;
+  }
+  try {
+    return std::stoll(match[1].str());
+  } catch (const std::exception &) {
+    return std::nullopt;
+  }
+}
+
+std::optional<bool> json_bool_for_key(const std::string & json, const std::string & key)
+{
+  const std::regex pattern(
+    "\\\"" + key + "\\\"\\s*:\\s*(true|false)", std::regex::ECMAScript);
+  std::smatch match;
+  if (!std::regex_search(json, match, pattern)) {
+    return std::nullopt;
+  }
+  return match[1].str() == "true";
+}
+
+std::optional<std::string> json_string_for_key(
+  const std::string & json, const std::string & key)
+{
+  const std::regex pattern(
+    "\\\"" + key + "\\\"\\s*:\\s*\\\"([^\\\"]*)\\\"", std::regex::ECMAScript);
+  std::smatch match;
+  if (!std::regex_search(json, match, pattern)) {
+    return std::nullopt;
+  }
+  return match[1].str();
+}
+
+std::optional<RoiRect> parse_roi_rect(
+  const std::string & roi_json, unsigned int image_width, unsigned int image_height,
+  unsigned int minimum_size)
+{
+  const auto raw_x1 = json_integer_for_key(roi_json, "x1");
+  const auto raw_y1 = json_integer_for_key(roi_json, "y1");
+  const auto raw_x2 = json_integer_for_key(roi_json, "x2");
+  const auto raw_y2 = json_integer_for_key(roi_json, "y2");
+  if (!raw_x1 || !raw_y1 || !raw_x2 || !raw_y2) {
+    return std::nullopt;
+  }
+
+  auto clamp_int = [](long long value, unsigned int limit) {
+      return static_cast<unsigned int>(std::max<long long>(0, std::min<long long>(value, limit)));
+    };
+  unsigned int x1 = clamp_int(*raw_x1, image_width);
+  unsigned int y1 = clamp_int(*raw_y1, image_height);
+  unsigned int x2 = clamp_int(*raw_x2, image_width);
+  unsigned int y2 = clamp_int(*raw_y2, image_height);
+
+  // NV12 crop coordinates and extents must be even. Expand outward while staying in bounds.
+  x1 &= ~1U;
+  y1 &= ~1U;
+  x2 = std::min(image_width, (x2 + 1U) & ~1U);
+  y2 = std::min(image_height, (y2 + 1U) & ~1U);
+  if (x2 <= x1 || y2 <= y1 || x2 - x1 < minimum_size || y2 - y1 < minimum_size) {
+    return std::nullopt;
+  }
+  return RoiRect{x1, y1, x2, y2};
+}
+
+}  // namespace
+
+class DeepStreamThreeCameraNode;
+
+struct RecordOverlayContext
+{
+  DeepStreamThreeCameraNode * node{nullptr};
+  std::size_t source_index{0U};
+};
+
+class DeepStreamThreeCameraNode : public rclcpp::Node
+{
+public:
+  DeepStreamThreeCameraNode()
+  : Node("deepstream_three_camera_node"),
+    stats_start_(std::chrono::steady_clock::now())
+  {
+    const std::string search_device = declare_parameter<std::string>(
+      "search_device_path",
+      "/dev/v4l/by-id/usb-Sonix_Technology_Co.__Ltd._HJ_4K_Camera_SN0001-video-index0");
+    const std::string engine_path = declare_parameter<std::string>(
+      "model_engine_path",
+      "/home/uavlab/Jetson_ROS2_V0/weights/candidates/0728/"
+      "uav_0728_1280x736_fp16_opt3.engine");
+    const std::string onnx_path = declare_parameter<std::string>(
+      "model_onnx_path",
+      "/home/uavlab/Jetson_ROS2_V0/weights/candidates/0728/"
+      "uav_0728_1280x736_fp16.onnx");
+    const std::string parser_path = declare_parameter<std::string>(
+      "custom_parser_path", FALCON_DEFAULT_PARSER_PATH);
+    const std::string input_mode = declare_parameter<std::string>("input_mode", "camera");
+    if (input_mode != "camera" && input_mode != "files") {
+      throw std::runtime_error("input_mode must be camera or files; got: " + input_mode);
+    }
+    const std::string front_file_path = declare_parameter<std::string>("front_file_path", "");
+    const std::string back_file_path = declare_parameter<std::string>("back_file_path", "");
+    const std::string search_file_path = declare_parameter<std::string>("search_file_path", "");
+    const std::string source_mode = declare_parameter<std::string>("source_mode", "all");
+    const int front_sensor_id = static_cast<int>(declare_parameter<int64_t>(
+        "front_sensor_id", kDefaultFrontSensorId));
+    const int back_sensor_id = static_cast<int>(declare_parameter<int64_t>(
+        "back_sensor_id", kDefaultBackSensorId));
+    if (front_sensor_id < 0 || back_sensor_id < 0 || front_sensor_id == back_sensor_id) {
+      throw std::runtime_error(
+              "front_sensor_id and back_sensor_id must be distinct non-negative values");
+    }
+    timestamp_sigma_s_ = std::max(
+      1e-6, declare_parameter<double>("timestamp_sigma_s", 0.0015));
+    search_sun_filter_ = declare_parameter<bool>("search_sun_filter", true);
+    search_exposure_time_ = static_cast<int>(declare_parameter<int64_t>(
+        "search_exposure_time", 5));
+    search_gain_ = static_cast<int>(declare_parameter<int64_t>("search_gain", 0));
+    search_brightness_ = static_cast<int>(declare_parameter<int64_t>(
+        "search_brightness", -8));
+    search_backlight_compensation_ = static_cast<int>(declare_parameter<int64_t>(
+        "search_backlight_compensation", 0));
+    // Search MJPEG frames are thinned to search_fps before the decoder. 15 fps
+    // is the validated production cadence; 10 fps is the documented field
+    // lever when flight load or USB bandwidth starves the decode chain
+    // (JETSON_V0_MIGRATION_PLAN 2026-08-14).
+    const int search_fps = static_cast<int>(std::clamp<int64_t>(
+        declare_parameter<int64_t>("search_fps", 15), 5, 25));
+    const int batch_size = static_cast<int>(std::max<int64_t>(
+        1, declare_parameter<int64_t>("batch_size", 1)));
+    const int mux_width = static_cast<int>(std::max<int64_t>(
+        1, declare_parameter<int64_t>("mux_width", 1280)));
+    const int mux_height = static_cast<int>(std::max<int64_t>(
+        1, declare_parameter<int64_t>("mux_height", 720)));
+    const int inference_interval = static_cast<int>(std::max<int64_t>(
+        0, declare_parameter<int64_t>("inference_interval", 0)));
+    const int csi_fps = static_cast<int>(std::clamp<int64_t>(
+        declare_parameter<int64_t>("csi_fps", 25), 1, 30));
+    const double csi_exposure_compensation = clamp_value(
+      declare_parameter<double>("stereo_exposure_compensation", 0.0), -2.0, 2.0);
+    const int workspace_size_mb = static_cast<int>(std::max<int64_t>(
+        0, declare_parameter<int64_t>("workspace_size_mb", 0)));
+    const int network_mode = static_cast<int>(declare_parameter<int64_t>("network_mode", 2));
+    if (network_mode < 0 || network_mode > 3) {
+      throw std::runtime_error("network_mode must be 0=FP32, 1=INT8, 2=FP16 or 3=BEST");
+    }
+    const std::string model_output_format = declare_parameter<std::string>(
+      "model_output_format", "end_to_end");
+    if (model_output_format != "end_to_end" && model_output_format != "raw") {
+      throw std::runtime_error("model_output_format must be end_to_end or raw");
+    }
+    const double confidence = clamp_value(
+      declare_parameter<double>("confidence", 0.50), 0.0, 1.0);
+    roi_enabled_ = declare_parameter<bool>("stereo_roi_enabled", true);
+    const std::string roi_topic = declare_parameter<std::string>(
+      "stereo_roi_topic", "/stereo/rois_json");
+    const std::string roi_status_topic = declare_parameter<std::string>(
+      "stereo_roi_status_topic", "/stereo/roi_runtime_status");
+    roi_timeout_ = std::chrono::milliseconds(std::max<int64_t>(
+        50, declare_parameter<int64_t>("stereo_roi_timeout_ms", 500)));
+    roi_minimum_size_ = static_cast<unsigned int>(std::max<int64_t>(
+        16, declare_parameter<int64_t>("stereo_roi_minimum_size_px", 32)));
+    display_enabled_ = declare_parameter<bool>("display", false);
+    const int display_width = static_cast<int>(std::max<int64_t>(
+        1, declare_parameter<int64_t>("display_width", 1280)));
+    const int display_height = static_cast<int>(std::max<int64_t>(
+        1, declare_parameter<int64_t>("display_height", 720)));
+    const bool display_sync = declare_parameter<bool>("display_sync", false);
+    record_enabled_ = declare_parameter<bool>("record", false);
+    record_annotate_ = declare_parameter<bool>("record_annotate", true);
+    const std::string record_output_dir = declare_parameter<std::string>(
+      "record_output_dir", "");
+    const int record_bitrate = static_cast<int>(std::clamp<int64_t>(
+        declare_parameter<int64_t>("record_bitrate", 4000000), 1000000, 20000000));
+    const int record_width = static_cast<int>(std::max<int64_t>(
+        320, declare_parameter<int64_t>("record_width", 960)));
+    const int record_height = static_cast<int>(std::max<int64_t>(
+        180, declare_parameter<int64_t>("record_height", 540)));
+    const int record_segment_seconds = static_cast<int>(std::clamp<int64_t>(
+        declare_parameter<int64_t>("record_segment_seconds", 5), 1, 60));
+    if (record_enabled_) {
+      if (record_output_dir.empty()) {
+        throw std::runtime_error("record=true requires a non-empty record_output_dir");
+      }
+      if (display_enabled_) {
+        throw std::runtime_error(
+                "record=true is intentionally headless; use the separate preview script");
+      }
+      std::filesystem::create_directories(record_output_dir);
+    }
+    decorate_enabled_ = display_enabled_;
+    mux_width_ = mux_width;
+    mux_height_ = mux_height;
+    record_width_ = record_width;
+    record_height_ = record_height;
+    color_correction_enabled_ = declare_parameter<bool>("stereo_color_correction", true);
+    const std::vector<double> shared_color_matrix = declare_parameter<std::vector<double>>(
+      "stereo_color_matrix",
+      {0.92, 0.0, 0.0, 0.0, 2.08, 0.0, 0.0, 0.0, 0.91});
+    // Per-camera matrices (2026-08-05): the default back matrix is refit for
+    // the replacement back IMX477, whose green response runs ~12% below the
+    // front unit.  gains = shared_recipe * (raw_front / raw_back), measured on
+    // checkerboard white squares, 3-capture stable (B 1.026 / G 1.120 / R 1.056).
+    // The remaining recipe fields (contrast/gamma/magenta/color_mix) stay
+    // shared.  Passing only "stereo_color_matrix" keeps legacy behavior for
+    // both cameras.
+    stereo_color_correction_front_ = parse_color_matrix(
+      declare_parameter<std::vector<double>>("stereo_color_matrix_front", shared_color_matrix),
+      "stereo_color_matrix_front");
+    stereo_color_correction_back_ = parse_color_matrix(
+      declare_parameter<std::vector<double>>(
+        "stereo_color_matrix_back",
+        {0.9715, 0.0, 0.0, 0.0, 2.3296, 0.0, 0.0, 0.0, 0.9337}),
+      "stereo_color_matrix_back");
+    const float shared_contrast_pivot = static_cast<float>(
+      clamp_value(
+        declare_parameter<double>("stereo_color_contrast_pivot", 116.0), 0.0, 255.0));
+    const float shared_contrast = static_cast<float>(
+      clamp_value(declare_parameter<double>("stereo_color_contrast", 1.10), 0.0, 4.0));
+    const float shared_magenta_suppression = static_cast<float>(
+      clamp_value(declare_parameter<double>("stereo_magenta_suppression", 1.0), 0.0, 2.0));
+    const float shared_tone_gamma = static_cast<float>(
+      clamp_value(declare_parameter<double>("stereo_color_gamma", 0.55), 0.1, 4.0));
+    const float shared_color_mix = static_cast<float>(
+      clamp_value(declare_parameter<double>("stereo_color_mix", 0.85), 0.0, 1.0));
+    const auto shared_recipe_fields = [&](FalconColorMatrix & matrix) {
+      matrix.contrast_pivot = shared_contrast_pivot;
+      matrix.contrast = shared_contrast;
+      matrix.magenta_suppression = shared_magenta_suppression;
+      matrix.tone_gamma = shared_tone_gamma;
+      matrix.color_mix = shared_color_mix;
+    };
+    shared_recipe_fields(stereo_color_correction_front_);
+    shared_recipe_fields(stereo_color_correction_back_);
+    class_filter_ = parse_class_filter(declare_parameter<std::string>("classes", ""));
+    class_names_ = parse_class_names(declare_parameter<std::string>("class_names", "drone"));
+    if (class_names_.empty()) {
+      class_names_.assign(kCocoNames.begin(), kCocoNames.end());
+    }
+    const int configured_class_count = static_cast<int>(declare_parameter<int64_t>(
+        "num_detected_classes", 1));
+    num_detected_classes_ = configured_class_count > 0 ?
+      configured_class_count : static_cast<int>(class_names_.size());
+    if (num_detected_classes_ <= 0) {
+      throw std::runtime_error("num_detected_classes must be positive");
+    }
+    if (static_cast<int>(class_names_.size()) != num_detected_classes_) {
+      throw std::runtime_error(
+              "class_names count must match num_detected_classes: names=" +
+              std::to_string(class_names_.size()) + " classes=" +
+              std::to_string(num_detected_classes_));
+    }
+
+    if (color_correction_enabled_ && !falcon_initialize_color_cuda()) {
+      throw std::runtime_error("failed to initialize CUDA for stereo color correction");
+    }
+
+    if (display_enabled_) {
+      const char * display_value = std::getenv("DISPLAY");
+      if (display_value == nullptr || std::string(display_value).empty()) {
+        throw std::runtime_error(
+                "display=true requires an X11 DISPLAY; run from the Jetson desktop terminal "
+                "or set DISPLAY=:0 and the matching XAUTHORITY");
+      }
+    }
+
+    const SourceSpec front_spec{
+      "front", "stereo_front_camera", "/stereo/front/detections_json", 3840U, 2160U};
+    const SourceSpec back_spec{
+      "back", "stereo_back_camera", "/stereo/back/detections_json", 3840U, 2160U};
+    const SourceSpec search_spec{
+      "search", "search_camera", "/search/detections_json", 2560U, 1440U};
+
+    if (source_mode == "all") {
+      source_specs_[0] = front_spec;
+      source_specs_[1] = back_spec;
+      source_specs_[2] = search_spec;
+      active_source_count_ = 3U;
+    } else if (source_mode == "front") {
+      source_specs_[0] = front_spec;
+      active_source_count_ = 1U;
+    } else if (source_mode == "back") {
+      source_specs_[0] = back_spec;
+      active_source_count_ = 1U;
+    } else if (source_mode == "search") {
+      source_specs_[0] = search_spec;
+      active_source_count_ = 1U;
+    } else {
+      throw std::runtime_error(
+              "source_mode must be one of all,front,back,search; got: " + source_mode);
+    }
+
+    for (std::size_t index = 0; index < active_source_count_; ++index) {
+      publishers_[index] = create_publisher<std_msgs::msg::String>(
+        source_specs_[index].topic, rclcpp::SensorDataQoS());
+      crop_states_[index].rect = full_frame_rect(source_specs_[index]);
+    }
+    roi_status_publisher_ = create_publisher<std_msgs::msg::String>(roi_status_topic, 10);
+
+    if (!std::filesystem::exists(engine_path) && !std::filesystem::exists(onnx_path)) {
+      throw std::runtime_error(
+              "neither DeepStream TensorRT engine nor ONNX model exists: " + engine_path +
+              " / " + onnx_path);
+    }
+    if (!std::filesystem::exists(parser_path)) {
+      throw std::runtime_error("DeepStream YOLO parser does not exist: " + parser_path);
+    }
+    if (input_mode == "camera" && (source_mode == "all" || source_mode == "search") &&
+      !std::filesystem::exists(search_device))
+    {
+      throw std::runtime_error("USB search camera does not exist: " + search_device);
+    }
+    if (input_mode == "files") {
+      const auto require_file = [](const std::string & path, const std::string & label) {
+          if (path.empty() || !std::filesystem::is_regular_file(path)) {
+            throw std::runtime_error(label + " input file does not exist: " + path);
+          }
+        };
+      if (source_mode == "all" || source_mode == "front") {
+        require_file(front_file_path, "front");
+      }
+      if (source_mode == "all" || source_mode == "back") {
+        require_file(back_file_path, "back");
+      }
+      if (source_mode == "all" || source_mode == "search") {
+        require_file(search_file_path, "search");
+      }
+    }
+
+    const bool search_camera_active = input_mode == "camera" &&
+      (source_mode == "all" || source_mode == "search");
+    if (search_camera_active && search_sun_filter_) {
+      exposure_guard_.configure(
+        search_device, search_exposure_time_, search_gain_, search_brightness_,
+        search_backlight_compensation_);
+      RCLCPP_INFO(
+        get_logger(),
+        "search electronic ND enabled exposure=%d gain=%d brightness=%d backlight=%d",
+        search_exposure_time_, search_gain_, search_brightness_, search_backlight_compensation_);
+    }
+
+    infer_config_path_ = create_infer_config(
+      engine_path, onnx_path, parser_path, batch_size, inference_interval, workspace_size_mb,
+      confidence, num_detected_classes_, network_mode, model_output_format);
+    pipeline_description_ = create_pipeline_description(
+      search_device, front_file_path, back_file_path, search_file_path, input_mode,
+      infer_config_path_, source_mode, batch_size, mux_width, mux_height, active_source_count_,
+      display_enabled_, display_width, display_height, display_sync, csi_fps,
+      search_fps, csi_exposure_compensation, front_sensor_id, back_sensor_id,
+      record_enabled_, record_output_dir, record_bitrate,
+      record_width, record_height, record_segment_seconds);
+
+    GError * error = nullptr;
+    pipeline_ = gst_parse_launch(pipeline_description_.c_str(), &error);
+    if (pipeline_ == nullptr) {
+      const std::string detail = error != nullptr ? error->message : "unknown parse error";
+      if (error != nullptr) {
+        g_error_free(error);
+      }
+      throw std::runtime_error("failed to create DeepStream pipeline: " + detail);
+    }
+
+    if (roi_enabled_) {
+      for (std::size_t index = 0; index < active_source_count_; ++index) {
+        const SourceSpec & spec = source_specs_[index];
+        if (spec.name != "front" && spec.name != "back") {
+          continue;
+        }
+        const std::string element_name = spec.name + "_roi_convert";
+        roi_converters_[index] = gst_bin_get_by_name(GST_BIN(pipeline_), element_name.c_str());
+        if (roi_converters_[index] == nullptr) {
+          throw std::runtime_error("ROI converter is missing: " + element_name);
+        }
+        apply_crop_to_converter(index, crop_states_[index].rect);
+      }
+      roi_subscription_ = create_subscription<std_msgs::msg::String>(
+        roi_topic, rclcpp::SensorDataQoS(),
+        std::bind(&DeepStreamThreeCameraNode::handle_roi_message, this, std::placeholders::_1));
+      roi_watchdog_timer_ = create_wall_timer(
+        std::chrono::milliseconds(50),
+        std::bind(&DeepStreamThreeCameraNode::check_roi_timeout, this));
+    }
+
+    if (color_correction_enabled_) {
+      GstElement * mux = gst_bin_get_by_name(GST_BIN(pipeline_), "mux");
+      if (mux == nullptr) {
+        throw std::runtime_error("nvstreammux element is missing for color correction");
+      }
+      color_src_pad_ = gst_element_get_static_pad(mux, "src");
+      gst_object_unref(mux);
+      if (color_src_pad_ == nullptr) {
+        throw std::runtime_error("nvstreammux src pad is missing for color correction");
+      }
+      color_probe_id_ = gst_pad_add_probe(
+        color_src_pad_, GST_PAD_PROBE_TYPE_BUFFER,
+        &DeepStreamThreeCameraNode::color_probe_callback, this, nullptr);
+    }
+
+    GstElement * primary_infer = gst_bin_get_by_name(GST_BIN(pipeline_), "primary_infer");
+    if (primary_infer == nullptr) {
+      throw std::runtime_error("primary_infer element is missing");
+    }
+    infer_src_pad_ = gst_element_get_static_pad(primary_infer, "src");
+    gst_object_unref(primary_infer);
+    if (infer_src_pad_ == nullptr) {
+      throw std::runtime_error("primary_infer src pad is missing");
+    }
+    probe_id_ = gst_pad_add_probe(
+      infer_src_pad_, GST_PAD_PROBE_TYPE_BUFFER, &DeepStreamThreeCameraNode::probe_callback,
+      this, nullptr);
+
+    if (record_enabled_) {
+      // The overlay probe draws detection boxes on every recorded frame by
+      // mapping each NVMM buffer to the CPU (~1.5-2 cores at 65 fps total).
+      // record_annotate=false keeps raw unannotated recordings and skips it.
+      for (std::size_t index = 0; index < active_source_count_; ++index) {
+        const std::string element_name = "record_" + source_specs_[index].name + "_overlay";
+        GstElement * overlay = gst_bin_get_by_name(GST_BIN(pipeline_), element_name.c_str());
+        if (overlay == nullptr) {
+          throw std::runtime_error("CPU recording overlay is missing: " + element_name);
+        }
+        if (record_annotate_) {
+          record_overlay_pads_[index] = gst_element_get_static_pad(overlay, "src");
+          gst_object_unref(overlay);
+          if (record_overlay_pads_[index] == nullptr) {
+            throw std::runtime_error("CPU recording overlay src pad is missing: " + element_name);
+          }
+          record_overlay_contexts_[index] = RecordOverlayContext{this, index};
+          record_overlay_probe_ids_[index] = gst_pad_add_probe(
+            record_overlay_pads_[index], GST_PAD_PROBE_TYPE_BUFFER,
+            &DeepStreamThreeCameraNode::record_overlay_probe_callback,
+            &record_overlay_contexts_[index], nullptr);
+        } else {
+          gst_object_unref(overlay);
+        }
+      }
+    }
+
+    bus_ = gst_element_get_bus(pipeline_);
+    const GstStateChangeReturn state_result = gst_element_set_state(pipeline_, GST_STATE_PLAYING);
+    if (state_result == GST_STATE_CHANGE_FAILURE) {
+      throw std::runtime_error("failed to start DeepStream pipeline");
+    }
+
+    bus_timer_ = create_wall_timer(
+      std::chrono::milliseconds(100),
+      std::bind(&DeepStreamThreeCameraNode::poll_bus, this));
+
+    std::ostringstream source_description;
+    for (std::size_t index = 0; index < active_source_count_; ++index) {
+      if (index > 0U) {
+        source_description << ',';
+      }
+      const SourceSpec & spec = source_specs_[index];
+      source_description << spec.name << ':' << spec.width << 'x' << spec.height;
+    }
+    RCLCPP_INFO(
+      get_logger(),
+      "DeepStream native pipeline started engine=%s onnx=%s source_mode=%s batch=%d "
+      "csi_fps=%d search_fps=%d mux=%dx%d workspace_mb=%d display=%s preview=%dx%d color_correction=%s "
+      "stereo_roi=%s roi_timeout_ms=%ld network_mode=%d output_format=%s classes=%d "
+      "class_names=%s record=%s record_annotate=%s record_dir=%s record_video=%dx%d@%d "
+      "record_segment_seconds=%d front_sensor_id=%d back_sensor_id=%d sources=%s",
+      engine_path.c_str(), onnx_path.c_str(), source_mode.c_str(), batch_size, csi_fps, search_fps, mux_width,
+      mux_height, workspace_size_mb, display_enabled_ ? "true" : "false", display_width,
+      display_height, color_correction_enabled_ ? "true" : "false",
+      roi_enabled_ ? "true" : "false", static_cast<long>(roi_timeout_.count()),
+      network_mode, model_output_format.c_str(), num_detected_classes_,
+      join_class_names(class_names_).c_str(),
+      record_enabled_ ? "true" : "false",
+      record_enabled_ && record_annotate_ ? "true" : "false",
+      record_enabled_ ? record_output_dir.c_str() : "",
+      record_width, record_height, record_bitrate,
+      record_segment_seconds,
+      front_sensor_id, back_sensor_id,
+      source_description.str().c_str());
+    if (color_correction_enabled_) {
+      const auto print_recipe = [this](const char * name, const FalconColorMatrix & matrix) {
+        RCLCPP_INFO(
+          get_logger(),
+          "stereo color recipe %s matrix=[%.3f,%.3f,%.3f;%.3f,%.3f,%.3f;%.3f,%.3f,%.3f] "
+          "pivot=%.2f contrast=%.2f magenta=%.2f gamma=%.2f "
+          "color_mix=%.2f gray_mix=%.2f",
+          name,
+          matrix.values[0], matrix.values[1], matrix.values[2],
+          matrix.values[3], matrix.values[4], matrix.values[5],
+          matrix.values[6], matrix.values[7], matrix.values[8],
+          matrix.contrast_pivot, matrix.contrast,
+          matrix.magenta_suppression, matrix.tone_gamma,
+          matrix.color_mix, 1.0F - matrix.color_mix);
+      };
+      print_recipe("front", stereo_color_correction_front_);
+      print_recipe("back", stereo_color_correction_back_);
+    }
+    if (display_enabled_ && active_source_count_ == 3U) {
+      RCLCPP_INFO(
+        get_logger(),
+        "preview layout: top-left=front, top-right=back, bottom-left=search");
+    }
+    RCLCPP_INFO(get_logger(), "pipeline: %s", pipeline_description_.c_str());
+  }
+
+  ~DeepStreamThreeCameraNode() override
+  {
+    for (GstElement *& converter : roi_converters_) {
+      if (converter != nullptr) {
+        gst_object_unref(converter);
+        converter = nullptr;
+      }
+    }
+    if (color_src_pad_ != nullptr) {
+      if (color_probe_id_ != 0U) {
+        gst_pad_remove_probe(color_src_pad_, color_probe_id_);
+      }
+      gst_object_unref(color_src_pad_);
+      color_src_pad_ = nullptr;
+    }
+    if (pipeline_ != nullptr) {
+      gst_element_send_event(pipeline_, gst_event_new_eos());
+      if (record_enabled_ && bus_ != nullptr) {
+        GstMessage * final_message = gst_bus_timed_pop_filtered(
+          bus_, 5 * GST_SECOND,
+          static_cast<GstMessageType>(GST_MESSAGE_EOS | GST_MESSAGE_ERROR));
+        if (final_message != nullptr) {
+          gst_message_unref(final_message);
+        } else {
+          RCLCPP_WARN(get_logger(), "timed out waiting for recording muxers to finalize");
+        }
+      }
+      gst_element_set_state(pipeline_, GST_STATE_NULL);
+    }
+    for (std::size_t index = 0; index < active_source_count_; ++index) {
+      if (record_overlay_pads_[index] != nullptr) {
+        if (record_overlay_probe_ids_[index] != 0U) {
+          gst_pad_remove_probe(
+            record_overlay_pads_[index], record_overlay_probe_ids_[index]);
+        }
+        gst_object_unref(record_overlay_pads_[index]);
+        record_overlay_pads_[index] = nullptr;
+      }
+    }
+    if (infer_src_pad_ != nullptr) {
+      if (probe_id_ != 0U) {
+        gst_pad_remove_probe(infer_src_pad_, probe_id_);
+      }
+      gst_object_unref(infer_src_pad_);
+      infer_src_pad_ = nullptr;
+    }
+    if (bus_ != nullptr) {
+      gst_object_unref(bus_);
+      bus_ = nullptr;
+    }
+    if (pipeline_ != nullptr) {
+      gst_object_unref(pipeline_);
+      pipeline_ = nullptr;
+    }
+    if (search_sun_filter_) {
+      const bool restored = exposure_guard_.restore();
+      RCLCPP_INFO(
+        get_logger(), "search camera automatic exposure restore=%s",
+        restored ? "success" : "failed");
+    }
+    if (!infer_config_path_.empty()) {
+      std::remove(infer_config_path_.c_str());
+    }
+  }
+
+private:
+  static RoiRect full_frame_rect(const SourceSpec & spec)
+  {
+    return RoiRect{0U, 0U, spec.width, spec.height};
+  }
+
+  void apply_crop_to_converter(std::size_t source_id, const RoiRect & rect)
+  {
+    GstElement * converter = roi_converters_[source_id];
+    if (converter == nullptr) {
+      return;
+    }
+    // VIC supports scale factors up to 16x per dimension.  The ROI converter
+    // outputs mux_width_ x mux_height_, so the crop must be at least
+    // (mux/16) in each dimension, otherwise nvvideoconvert fails with
+    // "image scale factor exceeds 16" and kills the whole pipeline
+    // (2026-08-05 field crash).  Expand undersized crops around their
+    // centre instead of passing them through or discarding the ROI.
+    RoiRect safe = rect;
+    const unsigned int min_w = static_cast<unsigned int>((mux_width_ + 15) / 16);
+    const unsigned int min_h = static_cast<unsigned int>((mux_height_ + 15) / 16);
+    const SourceSpec & spec = source_specs_[source_id];
+    const auto expand_axis = [](unsigned int & a1, unsigned int & a2, unsigned int min_size,
+                                unsigned int limit) {
+      if (a2 - a1 >= min_size) {
+        return;
+      }
+      const unsigned int center = (a1 + a2) / 2;
+      a1 = center > min_size / 2 ? center - min_size / 2 : 0;
+      a2 = a1 + min_size;
+      if (a2 > limit) {
+        a2 = limit;
+        a1 = a2 - min_size;
+      }
+    };
+    expand_axis(safe.x1, safe.x2, min_w, spec.width);
+    expand_axis(safe.y1, safe.y2, min_h, spec.height);
+    // Keep NV12 crop coordinates/extents even after expansion.
+    safe.x1 &= ~1U;
+    safe.y1 &= ~1U;
+    safe.x2 = std::min(spec.width, (safe.x2 + 1U) & ~1U);
+    safe.y2 = std::min(spec.height, (safe.y2 + 1U) & ~1U);
+    const std::string crop = std::to_string(safe.x1) + ":" + std::to_string(safe.y1) + ":" +
+      std::to_string(safe.width()) + ":" + std::to_string(safe.height());
+    g_object_set(G_OBJECT(converter), "src-crop", crop.c_str(), nullptr);
+  }
+
+  void publish_roi_status_locked(const std::string & reason)
+  {
+    if (roi_status_publisher_ == nullptr) {
+      return;
+    }
+    std::ostringstream json;
+    json << "{\"enabled\":" << (roi_enabled_ ? "true" : "false")
+         << ",\"reason\":\"" << reason << "\",\"generation\":" << roi_generation_
+         << ",\"streams\":{";
+    bool first = true;
+    for (std::size_t index = 0; index < active_source_count_; ++index) {
+      const SourceSpec & spec = source_specs_[index];
+      if (spec.name != "front" && spec.name != "back") {
+        continue;
+      }
+      if (!first) {
+        json << ',';
+      }
+      first = false;
+      const CropState & state = crop_states_[index];
+      json << "\"" << spec.name << "\":{\"active\":"
+           << (state.active ? "true" : "false") << ",\"roi\":{\"x1\":"
+           << state.rect.x1 << ",\"y1\":" << state.rect.y1 << ",\"x2\":"
+           << state.rect.x2 << ",\"y2\":" << state.rect.y2 << "}}";
+    }
+    json << "}}";
+    std_msgs::msg::String message;
+    message.data = json.str();
+    roi_status_publisher_->publish(message);
+  }
+
+  void fallback_to_full_frame(const std::string & reason)
+  {
+    std::lock_guard<std::mutex> lock(roi_mutex_);
+    bool changed = roi_status_reason_ != reason;
+    for (std::size_t index = 0; index < active_source_count_; ++index) {
+      const SourceSpec & spec = source_specs_[index];
+      if (spec.name != "front" && spec.name != "back") {
+        continue;
+      }
+      CropState & state = crop_states_[index];
+      const RoiRect full = full_frame_rect(spec);
+      const bool stream_changed = state.active || state.rect.x1 != full.x1 ||
+        state.rect.y1 != full.y1 || state.rect.x2 != full.x2 || state.rect.y2 != full.y2;
+      if (stream_changed) {
+        changed = true;
+        state.active = false;
+        state.rect = full;
+        state.generation = ++roi_generation_;
+        apply_crop_to_converter(index, state.rect);
+      }
+    }
+    roi_status_reason_ = reason;
+    if (changed) {
+      publish_roi_status_locked(reason);
+      RCLCPP_INFO(get_logger(), "stereo ROI fallback to full frame: %s", reason.c_str());
+    }
+  }
+
+  void handle_roi_message(const std_msgs::msg::String::SharedPtr message)
+  {
+    if (!roi_enabled_ || message == nullptr) {
+      return;
+    }
+    const auto valid = json_bool_for_key(message->data, "valid");
+    if (!valid.has_value()) {
+      fallback_to_full_frame("malformed_roi_json");
+      return;
+    }
+    if (!*valid) {
+      fallback_to_full_frame(json_string_for_key(message->data, "reason").value_or("roi_invalid"));
+      return;
+    }
+    const auto rois_json = json_object_for_key(message->data, "rois");
+    if (!rois_json) {
+      fallback_to_full_frame("missing_rois_object");
+      return;
+    }
+
+    std::array<std::optional<RoiRect>, kSourceCount> parsed{};
+    for (std::size_t index = 0; index < active_source_count_; ++index) {
+      const SourceSpec & spec = source_specs_[index];
+      if (spec.name != "front" && spec.name != "back") {
+        continue;
+      }
+      const auto stream_json = json_object_for_key(*rois_json, spec.name);
+      if (!stream_json) {
+        fallback_to_full_frame("missing_" + spec.name + "_roi");
+        return;
+      }
+      parsed[index] = parse_roi_rect(
+        *stream_json, spec.width, spec.height, roi_minimum_size_);
+      if (!parsed[index]) {
+        fallback_to_full_frame("invalid_" + spec.name + "_roi");
+        return;
+      }
+    }
+
+    const auto received_at = std::chrono::steady_clock::now();
+    std::lock_guard<std::mutex> lock(roi_mutex_);
+    bool changed = roi_status_reason_ != "active";
+    for (std::size_t index = 0; index < active_source_count_; ++index) {
+      if (!parsed[index]) {
+        continue;
+      }
+      CropState & state = crop_states_[index];
+      const RoiRect & rect = *parsed[index];
+      const bool rect_changed = !state.active || state.rect.x1 != rect.x1 ||
+        state.rect.y1 != rect.y1 || state.rect.x2 != rect.x2 || state.rect.y2 != rect.y2;
+      state.received_at = received_at;
+      if (rect_changed) {
+        state.rect = rect;
+        state.active = true;
+        state.generation = ++roi_generation_;
+        apply_crop_to_converter(index, rect);
+        changed = true;
+      }
+    }
+    roi_status_reason_ = "active";
+    if (changed) {
+      publish_roi_status_locked("active");
+      RCLCPP_INFO(
+        get_logger(), "stereo ROI activated generation=%lu",
+        static_cast<unsigned long>(roi_generation_));
+    }
+  }
+
+  void check_roi_timeout()
+  {
+    if (!roi_enabled_) {
+      return;
+    }
+    const auto current = std::chrono::steady_clock::now();
+    bool timed_out = false;
+    {
+      std::lock_guard<std::mutex> lock(roi_mutex_);
+      for (std::size_t index = 0; index < active_source_count_; ++index) {
+        const CropState & state = crop_states_[index];
+        if (state.active && current - state.received_at > roi_timeout_) {
+          timed_out = true;
+          break;
+        }
+      }
+    }
+    if (timed_out) {
+      fallback_to_full_frame("roi_timeout");
+    }
+  }
+
+  static std::unordered_set<int> parse_class_filter(const std::string & text)
+  {
+    std::unordered_set<int> values;
+    std::istringstream stream(text);
+    std::string token;
+    while (std::getline(stream, token, ',')) {
+      if (!token.empty()) {
+        values.insert(std::stoi(token));
+      }
+    }
+    return values;
+  }
+
+  static std::vector<std::string> parse_class_names(const std::string & text)
+  {
+    std::vector<std::string> values;
+    std::istringstream stream(text);
+    std::string token;
+    while (std::getline(stream, token, ',')) {
+      const auto first = token.find_first_not_of(" \t");
+      if (first == std::string::npos) {
+        continue;
+      }
+      const auto last = token.find_last_not_of(" \t");
+      values.push_back(token.substr(first, last - first + 1U));
+    }
+    return values;
+  }
+
+  static std::string join_class_names(const std::vector<std::string> & names)
+  {
+    std::ostringstream stream;
+    for (std::size_t index = 0; index < names.size(); ++index) {
+      if (index > 0U) {
+        stream << ',';
+      }
+      stream << names[index];
+    }
+    return stream.str();
+  }
+
+  std::string create_infer_config(
+    const std::string & engine_path,
+    const std::string & onnx_path,
+    const std::string & parser_path,
+    int batch_size,
+    int inference_interval,
+    int workspace_size_mb,
+    double confidence,
+    int num_detected_classes,
+    int network_mode,
+    const std::string & model_output_format) const
+  {
+    const std::string path = "/tmp/falcon_yolo26_nvinfer_" +
+      std::to_string(static_cast<long long>(getpid())) + ".txt";
+    std::ofstream config(path, std::ios::out | std::ios::trunc);
+    if (!config) {
+      throw std::runtime_error("cannot write nvinfer config: " + path);
+    }
+    config << "[property]\n";
+    config << "gpu-id=0\n";
+    config << "net-scale-factor=0.00392156862745098\n";
+    config << "model-color-format=0\n";
+    if (std::filesystem::exists(onnx_path)) {
+      config << "onnx-file=" << onnx_path << "\n";
+    }
+    config << "model-engine-file=" << engine_path << "\n";
+    config << "batch-size=" << batch_size << "\n";
+    config << "process-mode=1\n";
+    config << "network-mode=" << network_mode << "\n";
+    config << "network-type=0\n";
+    config << "num-detected-classes=" << num_detected_classes << "\n";
+    config << "interval=" << inference_interval << "\n";
+    if (workspace_size_mb > 0) {
+      config << "workspace-size=" << workspace_size_mb << "\n";
+    }
+    config << "gie-unique-id=1\n";
+    config << "cluster-mode=" << (model_output_format == "raw" ? 2 : 4) << "\n";
+    config << "maintain-aspect-ratio=1\n";
+    config << "symmetric-padding=1\n";
+    config << "scaling-compute-hw=1\n";
+    config << "output-blob-names=output0\n";
+    config << "parse-bbox-func-name="
+           << (model_output_format == "raw" ?
+      "NvDsInferParseYolo26Raw" : "NvDsInferParseYolo26EndToEnd") << "\n";
+    config << "custom-lib-path=" << parser_path << "\n\n";
+    config << "[class-attrs-all]\n";
+    config << "pre-cluster-threshold=" << std::fixed << std::setprecision(6)
+           << confidence << "\n";
+    if (model_output_format == "raw") {
+      config << "nms-iou-threshold=0.450000\n";
+    }
+    config << "topk=300\n";
+    config.close();
+    return path;
+  }
+
+  static std::string create_pipeline_description(
+    const std::string & search_device,
+    const std::string & front_file_path,
+    const std::string & back_file_path,
+    const std::string & search_file_path,
+    const std::string & input_mode,
+    const std::string & infer_config,
+    const std::string & source_mode,
+    int batch_size,
+    int mux_width,
+    int mux_height,
+    std::size_t source_count,
+    bool display_enabled,
+    int display_width,
+    int display_height,
+    bool display_sync,
+    int csi_fps,
+    int search_fps,
+    double csi_exposure_compensation,
+    int front_sensor_id,
+    int back_sensor_id,
+    bool record_enabled,
+    const std::string & record_output_dir,
+    int record_bitrate,
+    int record_width,
+    int record_height,
+    int record_segment_seconds)
+  {
+    const bool file_input = input_mode == "files";
+    std::ostringstream pipeline;
+    pipeline
+      << "nvstreammux name=mux batch-size=" << batch_size
+      << " width=" << mux_width << " height=" << mux_height
+      << " live-source=" << (file_input ? "false" : "true")
+      << " attach-sys-ts=" << (file_input ? "false" : "true")
+      << " batched-push-timeout=40000 "
+      << "sync-inputs=false ! "
+      << "nvinfer name=primary_infer config-file-path=" << quote_gstreamer(infer_config)
+      << " ! ";
+
+    if (!record_enabled) {
+      if (file_input) {
+        pipeline << "queue max-size-buffers=2 max-size-bytes=0 max-size-time=0 ! ";
+      } else {
+        pipeline << "queue leaky=2 max-size-buffers=1 max-size-bytes=0 max-size-time=0 ! ";
+      }
+    }
+
+    if (display_enabled) {
+      const std::size_t columns = source_count > 1U ? 2U : 1U;
+      const std::size_t rows = (source_count + columns - 1U) / columns;
+      pipeline
+        << "nvmultistreamtiler name=preview_tiler rows=" << rows
+        << " columns=" << columns << " width=" << display_width
+        << " height=" << display_height << " ! ";
+      pipeline
+        << "nvvideoconvert ! video/x-raw(memory:NVMM),format=RGBA ! "
+        << "nvdsosd name=preview_osd process-mode=1 display-text=true ! ";
+      pipeline
+        << "nveglglessink name=preview_sink sync="
+        << (display_sync ? "true" : "false") << " async=false qos=false ";
+    } else if (!record_enabled) {
+      pipeline << "fakesink sync=false async=false qos=false ";
+    }
+
+    if (record_enabled) {
+      pipeline
+        << "queue max-size-buffers=8 max-size-bytes=0 max-size-time=0 ! "
+        << "nvstreamdemux name=record_demux ";
+      std::vector<std::string> record_source_names;
+      if (source_mode == "all") {
+        record_source_names = {"front", "back", "search"};
+      } else {
+        record_source_names = {source_mode};
+      }
+      for (std::size_t index = 0; index < record_source_names.size(); ++index) {
+        const std::string & name = record_source_names[index];
+        const std::filesystem::path output_path =
+          std::filesystem::path(record_output_dir) / (name + "_yolo_%05d.mkv");
+        pipeline
+          << "record_demux.src_" << index
+          << " ! queue max-size-buffers=8 max-size-bytes=0 max-size-time=0 ! "
+          << "nvvideoconvert ! video/x-raw,width=" << record_width
+          << ",height=" << record_height << ",format=BGRx ! "
+          << "identity name=record_" << name << "_overlay ! "
+          << "videoconvert ! video/x-raw,format=I420 ! "
+          << "x264enc name=record_" << name << "_encoder bitrate="
+          << std::max(1000, record_bitrate / 1000)
+          << " speed-preset=ultrafast tune=zerolatency key-int-max=30 "
+          << "bframes=0 byte-stream=false ! h264parse ! "
+          << "splitmuxsink name=record_" << name << "_sink location="
+          << quote_gstreamer(output_path.string())
+          << " max-size-time=" << (static_cast<std::uint64_t>(record_segment_seconds) *
+          GST_SECOND)
+          << " max-size-bytes=0 async-finalize=true "
+          << "muxer-factory=matroskamux "
+          << "muxer-properties=\"properties,streamable=true\" ";
+      }
+    }
+
+    unsigned int sink_index = 0U;
+    const auto append_file =
+      [&pipeline, &sink_index, mux_width, mux_height, search_fps](
+      const std::string & path, const std::string & name) {
+        pipeline
+          << "filesrc location=" << quote_gstreamer(path) << " ! matroskademux ! "
+          << "jpegparse name=" << name << "_jpeg_parser ! "
+          << "nvv4l2decoder mjpeg=true ! videorate drop-only=true ! "
+          << "video/x-raw(memory:NVMM),framerate=" << search_fps << "/1 ! identity sync=true ! "
+          << "nvvideoconvert name=" << name << "_roi_convert interpolation-method=2 ! "
+          << "video/x-raw(memory:NVMM),width=" << mux_width << ",height=" << mux_height
+          << ",format=NV12 ! queue max-size-buffers=4 max-size-bytes=0 max-size-time=0 ! "
+          << "mux.sink_" << sink_index++ << ' ';
+      };
+    const auto append_argus =
+      [&pipeline, &sink_index, mux_width, mux_height, csi_fps,
+        csi_exposure_compensation](int sensor_id, const std::string & name) {
+        pipeline
+          << "nvarguscamerasrc sensor-id=" << sensor_id
+          << " wbmode=1 awblock=false exposurecompensation="
+          << std::fixed << std::setprecision(2) << csi_exposure_compensation << " ! "
+          << "video/x-raw(memory:NVMM),width=3840,height=2160,framerate=" << csi_fps << "/1,format=NV12 ! "
+          << "queue leaky=2 max-size-buffers=2 max-size-bytes=0 max-size-time=0 ! "
+          << "nvvideoconvert name=" << name << "_roi_convert interpolation-method=2 ! "
+          << "video/x-raw(memory:NVMM),width=" << mux_width << ",height=" << mux_height
+          << ",format=NV12 ! queue leaky=2 max-size-buffers=2 max-size-bytes=0 "
+          << "max-size-time=0 ! mux.sink_"
+          << sink_index++ << ' ';
+      };
+    const auto append_search =
+      [&pipeline, &sink_index, &search_device, mux_width, mux_height, search_fps]() {
+        pipeline
+          << "v4l2src device=" << quote_gstreamer(search_device) << " io-mode=2 ! "
+          << "image/jpeg,width=2560,height=1440,framerate=25/1 ! "
+          // Leaky queue directly at the source: when the MJPEG decode chain is
+          // momentarily slower than 25 fps, stale frames are dropped here
+          // instead of accumulating in the v4l2 driver ring (observed 2026-08-13:
+          // search PTS lag grew ~6.4 ms/s unbounded, starving the controller's
+          // 0.25 s observation freshness gate).
+          << "queue name=search_source_queue leaky=2 max-size-buffers=2 "
+          << "max-size-bytes=0 max-size-time=0 ! jpegparse ! "
+          // Thin the MJPEG stream to 15 fps BEFORE the decoder (2026-08-13):
+          // at 25 fps the 1440p decode chain cannot quite keep up under flight
+          // load, so buffers pile up inside the decoder's V4L2 ring and the
+          // search PTS lag drifted past the controller's 0.25 s freshness gate
+          // (median 290 ms, still growing). MJPEG frames are independent, so
+          // dropping them pre-decode is safe; 15 fps keeps the observation
+          // stream fresh (one frame every 66 ms) with healthy margin.
+          << "videorate drop-only=true ! image/jpeg,framerate=" << search_fps << "/1 ! "
+          << "nvv4l2decoder mjpeg=true ! nvvideoconvert name=search_convert ! "
+          << "video/x-raw(memory:NVMM),width=" << mux_width << ",height=" << mux_height
+          << ",format=NV12 ! "
+          << "queue leaky=2 max-size-buffers=2 max-size-bytes=0 max-size-time=0 ! mux.sink_"
+          << sink_index++;
+      };
+
+    if (file_input) {
+      if (source_mode == "all") {
+        append_file(front_file_path, "front");
+        append_file(back_file_path, "back");
+        append_file(search_file_path, "search");
+      } else if (source_mode == "front") {
+        append_file(front_file_path, "front");
+      } else if (source_mode == "back") {
+        append_file(back_file_path, "back");
+      } else {
+        append_file(search_file_path, "search");
+      }
+    } else {
+      if (source_mode == "all") {
+        append_argus(front_sensor_id, "front");
+        append_argus(back_sensor_id, "back");
+        append_search();
+      } else if (source_mode == "front") {
+        append_argus(front_sensor_id, "front");
+      } else if (source_mode == "back") {
+        append_argus(back_sensor_id, "back");
+      } else {
+        append_search();
+      }
+    }
+    return pipeline.str();
+  }
+
+  static GstPadProbeReturn probe_callback(
+    GstPad *, GstPadProbeInfo * info, gpointer user_data)
+  {
+    auto * self = static_cast<DeepStreamThreeCameraNode *>(user_data);
+    GstBuffer * buffer = GST_PAD_PROBE_INFO_BUFFER(info);
+    if (self == nullptr || buffer == nullptr) {
+      return GST_PAD_PROBE_OK;
+    }
+    return self->handle_buffer(buffer);
+  }
+
+  static GstPadProbeReturn color_probe_callback(
+    GstPad *, GstPadProbeInfo * info, gpointer user_data)
+  {
+    auto * self = static_cast<DeepStreamThreeCameraNode *>(user_data);
+    GstBuffer * buffer = GST_PAD_PROBE_INFO_BUFFER(info);
+    if (self == nullptr || buffer == nullptr) {
+      return GST_PAD_PROBE_OK;
+    }
+    return self->handle_color_buffer(buffer);
+  }
+
+  static GstPadProbeReturn record_overlay_probe_callback(
+    GstPad *, GstPadProbeInfo * info, gpointer user_data)
+  {
+    auto * context = static_cast<RecordOverlayContext *>(user_data);
+    GstBuffer * buffer = GST_PAD_PROBE_INFO_BUFFER(info);
+    if (context == nullptr || context->node == nullptr || buffer == nullptr) {
+      return GST_PAD_PROBE_OK;
+    }
+    return context->node->draw_recording_boxes(buffer, context->source_index);
+  }
+
+  static void set_bgrx_pixel(
+    guint8 * pixels, std::size_t stride, int x, int y,
+    guint8 blue, guint8 green, guint8 red)
+  {
+    guint8 * pixel = pixels + static_cast<std::size_t>(y) * stride +
+      static_cast<std::size_t>(x) * 4U;
+    pixel[0] = blue;
+    pixel[1] = green;
+    pixel[2] = red;
+    pixel[3] = 255U;
+  }
+
+  GstPadProbeReturn draw_recording_boxes(GstBuffer * buffer, std::size_t source_index)
+  {
+    if (source_index >= active_source_count_) {
+      return GST_PAD_PROBE_OK;
+    }
+    NvDsBatchMeta * batch_meta = gst_buffer_get_nvds_batch_meta(buffer);
+    if (batch_meta == nullptr) {
+      return GST_PAD_PROBE_OK;
+    }
+
+    GstMapInfo map_info = GST_MAP_INFO_INIT;
+    if (!gst_buffer_map(buffer, &map_info, GST_MAP_READWRITE)) {
+      if (record_overlay_errors_++ < 5U) {
+        RCLCPP_ERROR(get_logger(), "failed to map CPU recording frame for annotation");
+      }
+      return GST_PAD_PROBE_OK;
+    }
+
+    const std::size_t minimum_stride = static_cast<std::size_t>(record_width_) * 4U;
+    const std::size_t stride = record_height_ > 0 ?
+      map_info.size / static_cast<std::size_t>(record_height_) : 0U;
+    if (stride < minimum_stride ||
+      map_info.size < stride * static_cast<std::size_t>(record_height_))
+    {
+      const std::size_t mapped_size = map_info.size;
+      gst_buffer_unmap(buffer, &map_info);
+      if (record_overlay_errors_++ < 5U) {
+        RCLCPP_ERROR(
+          get_logger(), "unexpected CPU recording frame layout size=%zu stride=%zu",
+          mapped_size, stride);
+      }
+      return GST_PAD_PROBE_OK;
+    }
+
+    guint8 blue = 50U;
+    guint8 green = 255U;
+    guint8 red = 50U;
+    const std::string & source_name = source_specs_[source_index].name;
+    if (source_name == "back") {
+      blue = 255U;
+      green = 210U;
+      red = 30U;
+    } else if (source_name == "search") {
+      blue = 20U;
+      green = 210U;
+      red = 255U;
+    }
+
+    for (NvDsMetaList * frame_item = batch_meta->frame_meta_list;
+      frame_item != nullptr; frame_item = frame_item->next)
+    {
+      auto * frame_meta = static_cast<NvDsFrameMeta *>(frame_item->data);
+      if (frame_meta == nullptr) {
+        continue;
+      }
+      const double pipeline_width = static_cast<double>(
+        frame_meta->pipeline_width > 0U ? frame_meta->pipeline_width :
+        static_cast<guint>(mux_width_));
+      const double pipeline_height = static_cast<double>(
+        frame_meta->pipeline_height > 0U ? frame_meta->pipeline_height :
+        static_cast<guint>(mux_height_));
+      const double scale_x = static_cast<double>(record_width_) / pipeline_width;
+      const double scale_y = static_cast<double>(record_height_) / pipeline_height;
+
+      for (NvDsMetaList * object_item = frame_meta->obj_meta_list;
+        object_item != nullptr; object_item = object_item->next)
+      {
+        auto * object_meta = static_cast<NvDsObjectMeta *>(object_item->data);
+        if (object_meta == nullptr || object_meta->class_id < 0 ||
+          (!class_filter_.empty() &&
+          class_filter_.count(object_meta->class_id) == 0U))
+        {
+          continue;
+        }
+
+        const int x1 = std::clamp(
+          static_cast<int>(std::lround(object_meta->rect_params.left * scale_x)),
+          0, record_width_ - 1);
+        const int y1 = std::clamp(
+          static_cast<int>(std::lround(object_meta->rect_params.top * scale_y)),
+          0, record_height_ - 1);
+        const int x2 = std::clamp(
+          static_cast<int>(std::lround(
+            (object_meta->rect_params.left + object_meta->rect_params.width) * scale_x)),
+          0, record_width_ - 1);
+        const int y2 = std::clamp(
+          static_cast<int>(std::lround(
+            (object_meta->rect_params.top + object_meta->rect_params.height) * scale_y)),
+          0, record_height_ - 1);
+        if (x2 <= x1 || y2 <= y1) {
+          continue;
+        }
+
+        constexpr int border = 4;
+        for (int thickness = 0; thickness < border; ++thickness) {
+          const int top = std::min(y2, y1 + thickness);
+          const int bottom = std::max(y1, y2 - thickness);
+          for (int x = x1; x <= x2; ++x) {
+            set_bgrx_pixel(map_info.data, stride, x, top, blue, green, red);
+            set_bgrx_pixel(map_info.data, stride, x, bottom, blue, green, red);
+          }
+          const int left = std::min(x2, x1 + thickness);
+          const int right = std::max(x1, x2 - thickness);
+          for (int y = y1; y <= y2; ++y) {
+            set_bgrx_pixel(map_info.data, stride, left, y, blue, green, red);
+            set_bgrx_pixel(map_info.data, stride, right, y, blue, green, red);
+          }
+        }
+
+        const int confidence_width = std::clamp(
+          static_cast<int>(std::lround(
+            object_meta->confidence * static_cast<double>(x2 - x1 + 1))),
+          1, x2 - x1 + 1);
+        const int bar_top = std::max(0, y1 - 6);
+        for (int y = bar_top; y < y1; ++y) {
+          for (int x = x1; x < x1 + confidence_width; ++x) {
+            set_bgrx_pixel(map_info.data, stride, x, y, blue, green, red);
+          }
+        }
+      }
+    }
+
+    gst_buffer_unmap(buffer, &map_info);
+    ++record_overlay_frames_[source_index];
+    return GST_PAD_PROBE_OK;
+  }
+
+  GstPadProbeReturn handle_color_buffer(GstBuffer * buffer)
+  {
+    NvDsBatchMeta * batch_meta = gst_buffer_get_nvds_batch_meta(buffer);
+    if (batch_meta == nullptr) {
+      report_color_error("nvstreammux output has no NvDsBatchMeta");
+      return GST_PAD_PROBE_OK;
+    }
+
+    GstMapInfo map_info = GST_MAP_INFO_INIT;
+    if (!gst_buffer_map(buffer, &map_info, GST_MAP_READWRITE)) {
+      report_color_error("failed to map GstBuffer to NvBufSurface");
+      return GST_PAD_PROBE_OK;
+    }
+    auto * surface = reinterpret_cast<NvBufSurface *>(map_info.data);
+
+    for (NvDsMetaList * frame_item = batch_meta->frame_meta_list;
+      frame_item != nullptr; frame_item = frame_item->next)
+    {
+      auto * frame_meta = static_cast<NvDsFrameMeta *>(frame_item->data);
+      if (frame_meta == nullptr || frame_meta->source_id >= active_source_count_) {
+        continue;
+      }
+
+      const std::string & source_name = source_specs_[frame_meta->source_id].name;
+      if (source_name != "front" && source_name != "back") {
+        continue;
+      }
+      const FalconColorMatrix & correction =
+        (source_name == "back")
+          ? stereo_color_correction_back_
+          : stereo_color_correction_front_;
+
+      const guint batch_index = frame_meta->batch_id;
+      if (batch_index >= surface->numFilled) {
+        report_color_error("frame batch_id exceeds NvBufSurface numFilled");
+        continue;
+      }
+      if (NvBufSurfaceMapEglImage(surface, static_cast<int>(batch_index)) != 0) {
+        report_color_error("NvBufSurfaceMapEglImage failed");
+        continue;
+      }
+
+      EGLImageKHR image = reinterpret_cast<EGLImageKHR>(
+        surface->surfaceList[batch_index].mappedAddr.eglImage);
+      const bool applied = image != nullptr &&
+        falcon_apply_nv12_color_matrix(image, correction);
+      if (!applied) {
+        report_color_error("CUDA color matrix failed");
+      } else {
+        ++color_corrected_frames_;
+      }
+
+      if (NvBufSurfaceUnMapEglImage(surface, static_cast<int>(batch_index)) != 0) {
+        report_color_error("NvBufSurfaceUnMapEglImage failed");
+      }
+    }
+
+    gst_buffer_unmap(buffer, &map_info);
+    if (color_corrected_frames_ > 0U && color_corrected_frames_ % 300U == 0U) {
+      RCLCPP_INFO(
+        get_logger(), "color correction stats applied=%lu errors=%lu",
+        static_cast<unsigned long>(color_corrected_frames_),
+        static_cast<unsigned long>(color_errors_));
+    }
+    return GST_PAD_PROBE_OK;
+  }
+
+  void report_color_error(const char * message)
+  {
+    ++color_errors_;
+    if (color_errors_ <= 5U) {
+      RCLCPP_ERROR(
+        get_logger(), "stereo color correction error #%lu: %s",
+        static_cast<unsigned long>(color_errors_), message);
+    }
+  }
+
+  GstPadProbeReturn handle_buffer(GstBuffer * buffer)
+  {
+    NvDsBatchMeta * batch_meta = gst_buffer_get_nvds_batch_meta(buffer);
+    if (batch_meta == nullptr) {
+      RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 5000, "DeepStream buffer has no NvDsBatchMeta");
+      return GST_PAD_PROBE_OK;
+    }
+
+    for (NvDsMetaList * frame_item = batch_meta->frame_meta_list;
+      frame_item != nullptr; frame_item = frame_item->next)
+    {
+      auto * frame_meta = static_cast<NvDsFrameMeta *>(frame_item->data);
+      if (frame_meta == nullptr || frame_meta->source_id >= active_source_count_) {
+        continue;
+      }
+      publish_frame(*frame_meta, *batch_meta);
+    }
+    report_stats_if_due();
+    return GST_PAD_PROBE_OK;
+  }
+
+  void publish_frame(const NvDsFrameMeta & frame_meta, NvDsBatchMeta & batch_meta)
+  {
+    const std::size_t source_id = frame_meta.source_id;
+    const SourceSpec & spec = source_specs_[source_id];
+    const double pipeline_width = static_cast<double>(
+      frame_meta.pipeline_width > 0U ? frame_meta.pipeline_width : 1280U);
+    const double pipeline_height = static_cast<double>(
+      frame_meta.pipeline_height > 0U ? frame_meta.pipeline_height : 720U);
+    const double source_width = static_cast<double>(spec.width);
+    const double source_height = static_cast<double>(spec.height);
+    CropState crop_state;
+    {
+      std::lock_guard<std::mutex> lock(roi_mutex_);
+      crop_state = crop_states_[source_id];
+    }
+    const RoiRect & crop = crop_state.rect;
+    const double scale_x = static_cast<double>(crop.width()) / pipeline_width;
+    const double scale_y = static_cast<double>(crop.height()) / pipeline_height;
+    const double roi_age_ms = crop_state.active ? std::chrono::duration<double, std::milli>(
+      std::chrono::steady_clock::now() - crop_state.received_at).count() : -1.0;
+
+    const uint64_t host_receive_ns = static_cast<uint64_t>(now().nanoseconds());
+    uint64_t stamp_ns = host_receive_ns;
+    const char * timestamp_source = "ros_receive_time";
+    if (pipeline_ != nullptr && frame_meta.buf_pts != GST_CLOCK_TIME_NONE) {
+      GstClock * pipeline_clock = gst_element_get_clock(pipeline_);
+      if (pipeline_clock != nullptr) {
+        const GstClockTime clock_now = gst_clock_get_time(pipeline_clock);
+        const GstClockTime base_time = gst_element_get_base_time(pipeline_);
+        if (clock_now >= base_time) {
+          const GstClockTime running_time = clock_now - base_time;
+          if (running_time >= frame_meta.buf_pts) {
+            const uint64_t age_ns = static_cast<uint64_t>(running_time - frame_meta.buf_pts);
+            if (stamp_ns > age_ns) {
+              stamp_ns -= age_ns;
+              timestamp_source = "gstreamer_source_pts";
+            }
+          }
+        }
+        gst_object_unref(pipeline_clock);
+      }
+    }
+    const uint64_t stamp_sec = stamp_ns / 1000000000ULL;
+    const uint64_t stamp_nanosec = stamp_ns % 1000000000ULL;
+    const uint64_t host_receive_sec = host_receive_ns / 1000000000ULL;
+    const uint64_t host_receive_nanosec = host_receive_ns % 1000000000ULL;
+    uint32_t sequence = static_cast<uint32_t>(frame_meta.frame_num);
+    if (sequence_initialized_[source_id] && sequence <= source_sequences_[source_id]) {
+      sequence = source_sequences_[source_id] + 1U;
+    }
+    source_sequences_[source_id] = sequence;
+    sequence_initialized_[source_id] = true;
+
+    std::ostringstream json;
+    json << std::fixed << std::setprecision(3);
+    json << "{\"header\":{\"stamp\":{\"sec\":" << stamp_sec
+         << ",\"nanosec\":" << stamp_nanosec << "},\"frame_id\":\""
+         << spec.frame_id << "\"},\"image_width\":"
+         << static_cast<unsigned int>(source_width) << ",\"image_height\":"
+         << static_cast<unsigned int>(source_height) << ",\"sequence\":" << sequence
+         << ",\"timestamp_source\":\"" << timestamp_source
+         << "\",\"host_receive_time\":{\"sec\":" << host_receive_sec
+         << ",\"nanosec\":" << host_receive_nanosec
+         << "},\"timestamp_sigma_s\":" << timestamp_sigma_s_
+         << ",\"exposure_time_s\":-1.0,\"frame_readout_time_s\":-1.0"
+         << ",\"source\":\"deepstream_"
+         << (crop_state.active ? "roi" : "full_frame") << "\",\"roi_runtime\":{\"active\":"
+         << (crop_state.active ? "true" : "false") << ",\"generation\":"
+         << crop_state.generation << ",\"age_ms\":" << roi_age_ms
+         << ",\"roi\":{\"x1\":" << crop.x1 << ",\"y1\":" << crop.y1
+         << ",\"x2\":" << crop.x2 << ",\"y2\":" << crop.y2
+         << "}},\"detections\":[";
+
+    bool first = true;
+    uint64_t detection_count = 0;
+    for (NvDsMetaList * object_item = frame_meta.obj_meta_list;
+      object_item != nullptr; object_item = object_item->next)
+    {
+      auto * object_meta = static_cast<NvDsObjectMeta *>(object_item->data);
+      if (object_meta == nullptr || object_meta->class_id < 0) {
+        continue;
+      }
+      const int class_id = object_meta->class_id;
+      const char * class_name = class_id >= 0 &&
+        static_cast<std::size_t>(class_id) < class_names_.size() ?
+        class_names_[static_cast<std::size_t>(class_id)].c_str() : "unknown";
+      if (!class_filter_.empty() && class_filter_.count(object_meta->class_id) == 0U) {
+        if (decorate_enabled_) {
+          object_meta->rect_params.border_width = 0U;
+          if (object_meta->text_params.display_text != nullptr) {
+            g_free(object_meta->text_params.display_text);
+            object_meta->text_params.display_text = nullptr;
+          }
+        }
+        continue;
+      }
+
+      if (decorate_enabled_) {
+        decorate_object(*object_meta, spec, class_name);
+      }
+
+      const double x1 = clamp_value(
+        static_cast<double>(crop.x1) +
+        static_cast<double>(object_meta->rect_params.left) * scale_x, 0.0, source_width);
+      const double y1 = clamp_value(
+        static_cast<double>(crop.y1) +
+        static_cast<double>(object_meta->rect_params.top) * scale_y, 0.0, source_height);
+      const double x2 = clamp_value(
+        static_cast<double>(crop.x1) +
+        static_cast<double>(object_meta->rect_params.left + object_meta->rect_params.width) *
+        scale_x, 0.0, source_width);
+      const double y2 = clamp_value(
+        static_cast<double>(crop.y1) +
+        static_cast<double>(object_meta->rect_params.top + object_meta->rect_params.height) *
+        scale_y, 0.0, source_height);
+      if (!(x2 > x1 && y2 > y1)) {
+        continue;
+      }
+      if (!first) {
+        json << ',';
+      }
+      first = false;
+      json << "{\"class_id\":" << class_id << ",\"class_name\":\""
+           << class_name << "\",\"confidence\":" << object_meta->confidence
+           << ",\"bbox_xyxy\":[" << x1 << ',' << y1 << ',' << x2 << ',' << y2
+           << "],\"bbox_xywh\":[" << x1 << ',' << y1 << ',' << (x2 - x1) << ','
+           << (y2 - y1) << "],\"bbox_center\":[" << ((x1 + x2) / 2.0) << ','
+           << ((y1 + y2) / 2.0) << "]}";
+      ++detection_count;
+    }
+    json << "]}";
+
+    std_msgs::msg::String message;
+    message.data = json.str();
+    publishers_[source_id]->publish(message);
+    if (decorate_enabled_) {
+      attach_camera_label(frame_meta, batch_meta, spec);
+    }
+    ++total_frames_[source_id];
+    ++window_frames_[source_id];
+    total_detections_[source_id] += detection_count;
+    window_detections_[source_id] += detection_count;
+  }
+
+  static void decorate_object(
+    NvDsObjectMeta & object_meta,
+    const SourceSpec & spec,
+    const char * class_name)
+  {
+    NvOSD_ColorParams color{0.2, 1.0, 0.2, 1.0};
+    if (spec.name == "back") {
+      color = NvOSD_ColorParams{0.1, 0.8, 1.0, 1.0};
+    } else if (spec.name == "search") {
+      color = NvOSD_ColorParams{1.0, 0.8, 0.1, 1.0};
+    }
+
+    object_meta.rect_params.border_width = 4U;
+    object_meta.rect_params.border_color = color;
+    object_meta.rect_params.has_bg_color = 0;
+
+    NvOSD_TextParams & text = object_meta.text_params;
+    if (text.display_text != nullptr) {
+      g_free(text.display_text);
+    }
+    text.display_text = g_strdup_printf(
+      "%s | %s %.2f", spec.name.c_str(), class_name, object_meta.confidence);
+    text.x_offset = static_cast<int>(std::max(0.0F, object_meta.rect_params.left));
+    text.y_offset = static_cast<int>(std::max(0.0F, object_meta.rect_params.top - 28.0F));
+    text.font_params.font_name = const_cast<gchar *>("Sans");
+    text.font_params.font_size = 18U;
+    text.font_params.font_color = NvOSD_ColorParams{1.0, 1.0, 1.0, 1.0};
+    text.set_bg_clr = 1;
+    text.text_bg_clr = NvOSD_ColorParams{0.0, 0.0, 0.0, 0.75};
+  }
+
+  // Preview-only camera tag in the top-left corner of each tiled source.
+  // display and record are mutually exclusive modes, so this decoration can
+  // never appear inside the recorded MKV segments.
+  static void attach_camera_label(
+    const NvDsFrameMeta & frame_meta, NvDsBatchMeta & batch_meta, const SourceSpec & spec)
+  {
+    NvDsDisplayMeta * display_meta = nvds_acquire_display_meta_from_pool(&batch_meta);
+    if (display_meta == nullptr) {
+      return;
+    }
+    std::string label = spec.name;
+    std::transform(
+      label.begin(), label.end(), label.begin(),
+      [](unsigned char character) {return static_cast<char>(std::toupper(character));});
+    NvOSD_TextParams & text = display_meta->text_params[0];
+    if (text.display_text != nullptr) {
+      g_free(text.display_text);
+    }
+    text.display_text = g_strdup(label.c_str());
+    text.x_offset = 8;
+    text.y_offset = 18;
+    text.font_params.font_name = const_cast<gchar *>("Sans");
+    text.font_params.font_size = 13U;
+    text.font_params.font_color = NvOSD_ColorParams{1.0, 1.0, 1.0, 1.0};
+    text.set_bg_clr = 1;
+    text.text_bg_clr = NvOSD_ColorParams{0.0, 0.0, 0.0, 0.65};
+    display_meta->num_labels = 1;
+    nvds_add_display_meta_to_frame(const_cast<NvDsFrameMeta *>(&frame_meta), display_meta);
+  }
+
+  void report_stats_if_due()
+  {
+    const auto current = std::chrono::steady_clock::now();
+    const double elapsed = std::chrono::duration<double>(current - stats_start_).count();
+    if (elapsed < 2.0) {
+      return;
+    }
+    std::ostringstream report;
+    report << std::fixed << std::setprecision(1) << "deepstream stats";
+    for (std::size_t index = 0; index < active_source_count_; ++index) {
+      report << ' ' << source_specs_[index].name << "_fps="
+             << (static_cast<double>(window_frames_[index]) / elapsed);
+    }
+    report << " totals(";
+    for (std::size_t index = 0; index < active_source_count_; ++index) {
+      report << (index > 0U ? "," : "") << source_specs_[index].name;
+    }
+    report << ")=";
+    for (std::size_t index = 0; index < active_source_count_; ++index) {
+      report << (index > 0U ? "," : "") << total_frames_[index];
+    }
+    report << " detections(";
+    for (std::size_t index = 0; index < active_source_count_; ++index) {
+      report << (index > 0U ? "," : "") << source_specs_[index].name;
+    }
+    report << ")=";
+    for (std::size_t index = 0; index < active_source_count_; ++index) {
+      report << (index > 0U ? "," : "") << total_detections_[index];
+    }
+    RCLCPP_INFO(get_logger(), "%s", report.str().c_str());
+    window_frames_.fill(0U);
+    window_detections_.fill(0U);
+    stats_start_ = current;
+  }
+
+  void poll_bus()
+  {
+    if (bus_ == nullptr) {
+      return;
+    }
+    GstMessage * message = nullptr;
+    while ((message = gst_bus_pop(bus_)) != nullptr) {
+      switch (GST_MESSAGE_TYPE(message)) {
+        case GST_MESSAGE_ERROR:
+        {
+          GError * error = nullptr;
+          gchar * debug = nullptr;
+          gst_message_parse_error(message, &error, &debug);
+          RCLCPP_ERROR(
+            get_logger(), "DeepStream error from %s: %s; %s",
+            GST_OBJECT_NAME(message->src), error != nullptr ? error->message : "unknown",
+            debug != nullptr ? debug : "no debug details");
+          if (error != nullptr) {
+            g_error_free(error);
+          }
+          g_free(debug);
+          rclcpp::shutdown();
+          break;
+        }
+        case GST_MESSAGE_WARNING:
+        {
+          GError * error = nullptr;
+          gchar * debug = nullptr;
+          gst_message_parse_warning(message, &error, &debug);
+          RCLCPP_WARN(
+            get_logger(), "DeepStream warning from %s: %s",
+            GST_OBJECT_NAME(message->src), error != nullptr ? error->message : "unknown");
+          if (error != nullptr) {
+            g_error_free(error);
+          }
+          g_free(debug);
+          break;
+        }
+        case GST_MESSAGE_EOS:
+          RCLCPP_INFO(get_logger(), "DeepStream pipeline reached EOS");
+          rclcpp::shutdown();
+          break;
+        default:
+          break;
+      }
+      gst_message_unref(message);
+    }
+  }
+
+  std::array<SourceSpec, kSourceCount> source_specs_{};
+  std::array<rclcpp::Publisher<std_msgs::msg::String>::SharedPtr, kSourceCount> publishers_{};
+  std::size_t active_source_count_{0U};
+  bool display_enabled_{false};
+  bool record_enabled_{false};
+  bool record_annotate_{true};
+  bool decorate_enabled_{false};
+  int mux_width_{1280};
+  int mux_height_{720};
+  int record_width_{960};
+  int record_height_{540};
+  bool color_correction_enabled_{false};
+  bool search_sun_filter_{true};
+  double timestamp_sigma_s_{0.0015};
+  int search_exposure_time_{5};
+  int search_gain_{0};
+  int search_brightness_{-8};
+  int search_backlight_compensation_{0};
+  SearchExposureGuard exposure_guard_;
+  bool roi_enabled_{false};
+  std::chrono::milliseconds roi_timeout_{500};
+  unsigned int roi_minimum_size_{32U};
+  std::mutex roi_mutex_;
+  std::array<CropState, kSourceCount> crop_states_{};
+  std::array<GstElement *, kSourceCount> roi_converters_{};
+  std::uint64_t roi_generation_{0U};
+  std::string roi_status_reason_{"startup_full_frame"};
+  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr roi_subscription_;
+  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr roi_status_publisher_;
+  rclcpp::TimerBase::SharedPtr roi_watchdog_timer_;
+  FalconColorMatrix stereo_color_correction_front_{};
+  FalconColorMatrix stereo_color_correction_back_{};
+  std::unordered_set<int> class_filter_;
+  std::vector<std::string> class_names_;
+  int num_detected_classes_{80};
+  std::array<uint64_t, kSourceCount> total_frames_{};
+  std::array<uint64_t, kSourceCount> window_frames_{};
+  std::array<uint64_t, kSourceCount> total_detections_{};
+  std::array<uint64_t, kSourceCount> window_detections_{};
+  std::array<uint32_t, kSourceCount> source_sequences_{};
+  std::array<bool, kSourceCount> sequence_initialized_{};
+  std::chrono::steady_clock::time_point stats_start_;
+  GstElement * pipeline_{nullptr};
+  GstBus * bus_{nullptr};
+  GstPad * infer_src_pad_{nullptr};
+  gulong probe_id_{0U};
+  GstPad * color_src_pad_{nullptr};
+  gulong color_probe_id_{0U};
+  std::array<RecordOverlayContext, kSourceCount> record_overlay_contexts_{};
+  std::array<GstPad *, kSourceCount> record_overlay_pads_{};
+  std::array<gulong, kSourceCount> record_overlay_probe_ids_{};
+  std::array<std::uint64_t, kSourceCount> record_overlay_frames_{};
+  std::uint64_t record_overlay_errors_{0U};
+  std::uint64_t color_corrected_frames_{0U};
+  std::uint64_t color_errors_{0U};
+  rclcpp::TimerBase::SharedPtr bus_timer_;
+  std::string infer_config_path_;
+  std::string pipeline_description_;
+};
+
+int main(int argc, char ** argv)
+{
+  gst_init(&argc, &argv);
+  rclcpp::init(argc, argv);
+  try {
+    auto node = std::make_shared<DeepStreamThreeCameraNode>();
+    rclcpp::spin(node);
+  } catch (const std::exception & error) {
+    std::fprintf(stderr, "deepstream_three_camera_node startup failed: %s\n", error.what());
+    rclcpp::shutdown();
+    return 1;
+  }
+  rclcpp::shutdown();
+  return 0;
+}

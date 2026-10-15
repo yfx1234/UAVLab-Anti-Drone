@@ -1,0 +1,7 @@
+# 仿真结果（每次运行的生成物，不提交，避免仓库膨胀）
+results/
+*.png
+
+# Python 缓存
+**/__pycache__/
+*.py[cod]

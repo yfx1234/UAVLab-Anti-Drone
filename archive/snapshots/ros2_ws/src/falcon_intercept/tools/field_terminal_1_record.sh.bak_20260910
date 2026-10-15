@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+set -eo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/field_terminal_common.sh"
+
+OUTPUT_ROOT="${FALCON_RECORD_ROOT:-/home/uavlab/Jetson_ROS2_V0/flight_yolo_records}"
+RUN_ID="flight-yolo-field-$(date +%Y%m%d-%H%M%S)"
+OUTPUT_DIR="${OUTPUT_ROOT}/${RUN_ID}"
+mkdir -p "${OUTPUT_DIR}"
+export FALCON_RECORD_OUTPUT_DIR="${OUTPUT_DIR}"
+
+set +e
+ros2 launch falcon_intercept field_terminal_1_record.launch.py
+LAUNCH_STATUS=$?
+set -e
+
+STITCHER="${SCRIPT_DIR}/field_terminal_stitch_recording.py"
+for _ in $(seq 1 10); do
+  if find "${OUTPUT_DIR}" -maxdepth 1 -type f -name '*_yolo_*.mkv' -size +0c | grep -q .; then
+    sleep 2
+    break
+  fi
+  sleep 1
+done
+# Stitch detached from this terminal: the re-encode takes a few minutes per
+# camera with no visible output, and a second Ctrl-C or a closed window used
+# to kill it mid-run (leaving 0-byte *_full.mkv). nohup + & survives both;
+# progress goes to stitch.log and the script exits immediately.
+nohup python3 "${STITCHER}" --input-dir "${OUTPUT_DIR}" --output-dir "${OUTPUT_DIR}" \
+  > "${OUTPUT_DIR}/stitch.log" 2>&1 &
+disown
+echo "stitching running in background (survives Ctrl-C / window close):"
+echo "  progress: tail -f ${OUTPUT_DIR}/stitch.log"
+echo "  done when three STITCH_OK lines appear (about 1-2 min per camera)"
+exit 0

@@ -1,0 +1,11 @@
+std_msgs/Header header
+uint32 sequence
+float32 yaw_rate_flu
+float32 progress
+uint32 completed_turns
+bool active
+bool settling
+bool target_cued
+bool timed_out
+bool valid
+string reason

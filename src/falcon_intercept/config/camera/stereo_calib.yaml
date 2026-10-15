@@ -1,0 +1,233 @@
+# Checkerboard-measured stereo calibration (2026-08-04, rigid-board stills).
+# Source: calibration_records/checkerboard_stills_20260804/output/stereo_calib_candidate_final.yaml
+# Production calibration since 2026-08-05. Production perception and closed-loop
+# launches resolve this file by default and the solver enters rectified mode.
+# The field-validated back-image correction is the solver parameter
+# rectified_right_u_offset_px=-1.65.
+calibration_status: measured
+front_sensor: CAM1
+back_sensor: CAM0
+horizontal_disparity_sign: 1.0
+search:
+  calibration_status: vendor_locked_assembled_estimate
+  calibration_method: vendor_nominal_fov
+  image_width: 2560
+  image_height: 1440
+  # Vendor nominal horizontal/vertical FOV: 60/35 degrees.
+  fx: 2217.025033689
+  fy: 2283.984079750
+  cx: 1279.5
+  cy: 719.5
+  distortion: [0.0, 0.0, 0.0, 0.0, 0.0]
+
+stereo_front:
+  calibration_status: measured
+  calibration_method: stereo_joint_chessboard_fixk3_stills
+  image_width: 3840
+  image_height: 2160
+  fx: 9941.889883095939
+  fy: 9932.893400360232
+  cx: 1919.633589049889
+  cy: 730.3230363083479
+  distortion:
+  - 0.06008416398545052
+  - -0.722072395476062
+  - -0.006334478068713411
+  - -0.0019081763293918718
+  - 0.0
+  valid_view_count: 32
+  accepted_image_stems: &id001
+  - pose_003
+  - pose_004
+  - pose_005
+  - pose_006
+  - pose_007
+  - pose_008
+  - pose_009
+  - pose_010
+  - pose_011
+  - pose_012
+  - pose_013
+  - pose_014
+  - pose_017
+  - pose_018
+  - pose_019
+  - pose_020
+  - pose_021
+  - pose_022
+  - pose_023
+  - pose_024
+  - pose_025
+  - pose_026
+  - pose_027
+  - pose_028
+  - pose_029
+  - pose_030
+  - pose_031
+  - pose_032
+  - pose_033
+  - pose_034
+  - pose_035
+  - pose_036
+  board:
+    inner_corners:
+    - 9
+    - 6
+    square_size_m: 0.025
+stereo_back:
+  calibration_status: measured
+  calibration_method: stereo_joint_chessboard_fixk3_stills
+  image_width: 3840
+  image_height: 2160
+  fx: 9958.926433996827
+  fy: 9956.277681695017
+  cx: 1983.9388836221299
+  cy: 758.4941962500418
+  distortion:
+  - 0.05307341458605385
+  - -0.6365176925394697
+  - -0.007167995931368343
+  - 0.0016793360822088064
+  - 0.0
+  valid_view_count: 32
+  accepted_image_stems: *id001
+  board:
+    inner_corners:
+    - 9
+    - 6
+    square_size_m: 0.025
+stereo_pair:
+  calibration_status: measured
+  calibration_method: stereoCalibrate_joint_intrinsics_fixk3_stills
+  # 2026-08-13 现场拟合的后目（右目/back）机械漂移修正（rad，绕 x/y/z 微旋转）：
+  # 标定后支架扭转，rectified 垂直误差中位 66px；用当日 3824 对实飞同名点
+  # 拟合（ωy 与视差简并、强制为 0），留出验证残差中位 9.0px/p90 21px。
+  # 对视差影响中位 +0.77px、距离变化中位 1.4%。下次棋盘格重标定后归零。
+  drift_rotation_back_rad: [-0.006294, 0.0, -0.002337]
+  image_width: 3840
+  image_height: 2160
+  valid_pair_count: 32
+  rms_reprojection_error_px: 0.31539780613738166
+  pair_error_median_px: 0.3102335184812546
+  pair_error_p95_px: 0.6282978504896164
+  rotation_left_to_right_opencv:
+  - - 0.9998367531227996
+    - -0.017292517071034963
+    - -0.005237934536231073
+  - - 0.017282944974928563
+    - 0.9998488951905967
+    - -0.0018672437272001317
+  - - 0.005269432403159698
+    - 0.0017764119711207403
+    - 0.9999845386018013
+  translation_left_to_right_m:
+  - -0.09905504812997606
+  - -0.0010578473667411832
+  - -0.00033159157244583634
+  baseline_m: 0.0990612515267908
+  essential_matrix:
+  - - 1.5662370882827695e-07
+    - 0.00032966229463858457
+    - -0.0010584501732254544
+  - - 0.0001904264391555107
+    - 0.00018169662622516153
+    - 0.09905525345538257
+  - - -0.0006542882698572686
+    - -0.09905837327945587
+    - 0.0001794189820118902
+  fundamental_matrix:
+  - - 6.030339002998328e-12
+    - 1.2704181056940174e-08
+    - -0.00041444695938853775
+  - - 7.333765068621425e-09
+    - 7.003897542531517e-09
+    - 0.03790760742394632
+  - - -0.00025645449022002406
+    - -0.03804780303583544
+    - 1.0
+  rectification:
+    R1:
+    - - 0.9999763398215842
+      - -0.006608381546980829
+      - -0.0019102592381676383
+    - - 0.006606637831337346
+      - 0.9999777548435873
+      - -0.0009176897863519594
+    - - 0.0019162811884020814
+      - 0.0009050476826973326
+      - 0.9999977543750281
+    R2:
+    - - 0.999937378170384
+      - 0.010678719988199458
+      - 0.0033473388164700435
+    - - -0.010681766278919348
+      - 0.9999425491041394
+      - 0.0008935100884381719
+    - - -0.003337604964815222
+      - -0.0009292096260955525
+      - 0.9999939984632756
+    P1:
+    - - 10174.426392766618
+      - 0.0
+      - 1943.6227569580078
+      - 0.0
+    - - 0.0
+      - 10174.426392766618
+      - 739.339469909668
+      - 0.0
+    - - 0.0
+      - 0.0
+      - 1.0
+      - 0.0
+    P2:
+    - - 10174.426392766618
+      - 0.0
+      - 1943.6227569580078
+      - -1007.8914120346728
+    - - 0.0
+      - 10174.426392766618
+      - 739.339469909668
+      - 0.0
+    - - 0.0
+      - 0.0
+      - 1.0
+      - 0.0
+    Q:
+    - - 1.0
+      - 0.0
+      - 0.0
+      - -1943.6227569580078
+    - - 0.0
+      - 1.0
+      - 0.0
+      - -739.339469909668
+    - - 0.0
+      - 0.0
+      - 0.0
+      - 10174.426392766618
+    - - 0.0
+      - 0.0
+      - 10.094764447121417
+      - -0.0
+    valid_roi_front:
+    - 0
+    - 0
+    - 3840
+    - 2160
+    valid_roi_back:
+    - 0
+    - 1
+    - 3840
+    - 2159
+  accepted_image_stems: *id001
+  holdout_epipolar:
+    pairs: 0
+    median_px: 0.0
+    p95_px: 0.0
+    max_px: 0.0
+    per_pair: {}
+  board:
+    inner_corners:
+    - 9
+    - 6
+    square_size_m: 0.025

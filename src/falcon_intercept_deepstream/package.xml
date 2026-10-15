@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>falcon_intercept_deepstream</name>
+  <version>0.1.0</version>
+  <description>Native-resolution NVMM and TensorRT perception path for the Falcon Jetson.</description>
+  <maintainer email="user@example.com">falcon team</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>std_msgs</depend>
+  <exec_depend>rclpy</exec_depend>
+  <build_depend>pkg-config</build_depend>
+  <exec_depend>ros2launch</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

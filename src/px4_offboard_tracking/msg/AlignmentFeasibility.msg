@@ -1,0 +1,15 @@
+std_msgs/Header header
+bool feasible
+bool tilt_ok
+bool thrust_margin_ok
+bool body_rate_ok
+bool altitude_loss_ok
+bool minimum_range_ok
+bool alignment_time_ok
+float64 commanded_tilt
+float64 commanded_thrust
+float64 thrust_margin
+float64 body_rate
+float64 altitude_loss
+float64 range
+float64 alignment_duration

@@ -1,0 +1,25 @@
+# ---- colcon 构建产物 ----
+build/
+install/
+log/
+
+# ---- 模型权重（大二进制不入库，本地保留；结构与获取见 weights/README.md）----
+weights/*
+!weights/README.md
+
+# ---- Python ----
+__pycache__/
+*.pyc
+.venv/
+
+# ---- 仿真/运行副产物 ----
+*.bag
+nohup.out
+*.log
+/core.*
+
+# ---- 编辑器/系统 ----
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,54 @@
+"""Field terminal 1: production three-camera DeepStream with local recording."""
+
+from datetime import datetime
+import os
+from pathlib import Path
+
+from ament_index_python.packages import get_package_share_directory
+from launch import LaunchDescription
+from launch.actions import IncludeLaunchDescription, SetEnvironmentVariable
+from launch.launch_description_sources import PythonLaunchDescriptionSource
+
+
+def generate_launch_description():
+    deepstream_launch = str(
+        Path(get_package_share_directory("falcon_intercept_deepstream"))
+        / "launch"
+        / "deepstream_three_camera_v0.launch.py"
+    )
+    run_id = datetime.now().strftime("%Y%m%d-%H%M%S")
+    output_dir = (
+        Path(os.environ.get(
+            "FALCON_RECORD_OUTPUT_DIR",
+            str(Path("/home/uavlab/Jetson_ROS2_V0/flight_yolo_records")
+                / f"flight-yolo-field-{run_id}"),
+        ))
+    )
+
+    return LaunchDescription(
+        [
+            SetEnvironmentVariable("ROS_LOCALHOST_ONLY", "1"),
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(deepstream_launch),
+                launch_arguments={
+                    "display": "false",
+                    "record": "true",
+                    # Raw video only: the annotation overlay has a known
+                    # box-offset bug (2026-09-06 field review) and the
+                    # detections themselves are recorded in the evidence bag.
+                    "record_annotate": "false",
+                    "record_output_dir": str(output_dir),
+                    "record_bitrate": "4000000",
+                    "record_width": "960",
+                    "record_height": "540",
+                    "record_segment_seconds": "5",
+                    "stereo_roi_enabled": "true",
+                    # 2026-09-10: contact chain only consumes the search camera;
+                    # front/back inference disabled to cut GPU load (new exp
+                    # engine could only hold ~9.5 fps with all three cameras).
+                    "source_mode": "search",
+                    "confidence": "0.35",
+                }.items(),
+            ),
+        ]
+    )

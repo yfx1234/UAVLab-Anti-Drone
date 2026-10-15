@@ -1,0 +1,136 @@
+# Camera and lens hardware truth collected from the supplied product pages.
+#
+# This file is descriptive only. It is deliberately NOT loaded as runtime
+# calibration by perception_geometry.py or stereo_roi_node.py. Product-sheet
+# values can lock the product definition, but they do not replace calibration
+# of the assembled cameras, stereo baseline, camera mounting, or timestamps.
+catalog_status: accepted_vendor_specs
+calibration_status: vendor_locked_assembled_estimate
+retrieved_on: 2026-07-17
+
+acceptance_policy:
+  vendor_specs_are_project_hardware_truth: true
+  accepted_as_truth:
+    - sensor_model_and_pixel_pitch
+    - nominal_sensor_resolution_and_interface
+    - lens_focal_length_f_number_mount_and_rated_resolution
+    - vendor_nominal_fov_and_distortion_bound
+    - vendor_supported_output_modes
+  still_requires_assembled_measurement:
+    - exact_intrinsics_and_distortion_coefficients_for_actual_output_mode
+    - stereo_baseline_and_left_right_rotation_translation
+    - search_to_stereo_rotation_translation
+    - crop_scaling_and_principal_point_shift
+    - capture_timestamp_offset_and_jitter
+
+sources:
+  imx477_module:
+    vendor: Waveshare
+    product: IMX477-160 12.3MP Camera
+    url: https://www.waveshare.net/wiki/IMX477-160_12.3MP_Camera
+    note: The page's 160-degree FOV belongs to the original bundled wide-angle lens.
+  stereo_lens_customer_page:
+    vendor: Tmall seller page supplied by user
+    product: 16mm/500万像素/M12接口/F2.8 MVL-HF1628-05S
+    url: https://detail.tmall.com/item.htm?from=detail&id=739213755212&mi_id=0000HdEtkRQ33w-_ReslNrejiIC6Yz05xBSO1D_tEF9sxKY&spm=tbpc.orderdetail.suborder_itemtitle.1.2a256aa6spDOua
+  stereo_lens_manufacturer_datasheet:
+    vendor: Hikrobot
+    model: MVL-HF1628-05S
+    url: https://www.hikrobotics.com/en2/source/vision/document/2023/12/7/MVL-HF1628-05S_datasheet_20221027.pdf
+  search_camera:
+    vendor: Waveshare
+    product: OS08A10 8MP USB Camera (A)
+    url: https://www.waveshare.net/wiki/OS08A10_8MP_USB_Camera_%28A%29
+
+modules:
+  imx477:
+    sensor: IMX477R
+    megapixels: 12.3
+    native_resolution_px: [4056, 3040]
+    sensor_diagonal_mm: 7.9
+    pixel_pitch_um: [1.55, 1.55]
+    lens_mount: M12
+    output_formats: [RAW12, RAW10, RAW8, COMP8]
+    original_bundle_fov_deg: 160.0
+    original_bundle_fov_valid_after_lens_replacement: false
+  os08a10_usb:
+    sensor: OS08A10
+    megapixels: 8.0
+    still_resolution_px: [3840, 2160]
+    interface: USB2.0
+    formats: [MJPG, YUY2]
+    nominal_video_modes:
+      - {format: MJPG, resolution_px: [3840, 2160], fps: 25}
+      - {format: MJPG, resolution_px: [2560, 1440], fps: 25}
+      - {format: MJPG, resolution_px: [1920, 1080], fps: 25}
+
+lenses:
+  mvl_hf1628_05s:
+    model: MVL-HF1628-05S
+    focal_length_mm: 16.0
+    f_number: 2.8
+    mount: M12x0.5
+    rated_resolution: 5MP
+    rated_sensor_format: 1/1.8-inch
+    image_circle_mm: 8.95
+    tv_distortion_percent_upper_bound: 0.1
+    working_distance_mm: [100, 850]
+    nominal_fov_deg_on_1_1_8_in_sensor:
+      diagonal: 31.0
+      horizontal: 26.0
+      vertical: 17.0
+
+cameras:
+  stereo_front:
+    physical_port: CAM1
+    argus_sensor_id: 1
+    module: imx477
+    lens: mvl_hf1628_05s
+    catalog_prior:
+      # Approximation from 16 mm / 1.55 um. This is not measured K.
+      focal_pixels_on_full_native_sensor_approx: [10322.581, 10322.581]
+      fov_deg_on_full_native_sensor_approx:
+        diagonal: 27.589
+        horizontal: 22.230
+        vertical: 16.753
+      note: The 3840x2160 mode may use a crop/ISP path; recompute K for the actual mode.
+  stereo_back:
+    physical_port: CAM0
+    argus_sensor_id: 0
+    module: imx477
+    lens: mvl_hf1628_05s
+    catalog_prior:
+      focal_pixels_on_full_native_sensor_approx: [10322.581, 10322.581]
+      fov_deg_on_full_native_sensor_approx:
+        diagonal: 27.589
+        horizontal: 22.230
+        vertical: 16.753
+      note: The 3840x2160 mode may use a crop/ISP path; recompute K for the actual mode.
+  search:
+    physical_port: USB
+    module: os08a10_usb
+    catalog_prior:
+      focal_length_mm: 4.9
+      aperture_f_number: 1.6
+      sensor_format: 1/1.8-inch
+      nominal_fov_deg:
+        diagonal: 68.0
+        horizontal: 60.0
+        vertical: 35.0
+      vendor_distortion_text: '< -2.4%'
+      focus: fixed
+
+not_available_from_product_pages:
+  - assembled_camera_intrinsics_cx_cy
+  - assembled_camera_intrinsics_fx_fy_for_each_actual_output_mode
+  - distortion_coefficients_k1_k2_p1_p2_k3
+  - stereo_rotation_and_translation
+  - search_to_stereo_rotation_and_translation
+  - capture_timestamp_offset_and_frame_sync_quality
+  - actual_crop_isp_scaling_and_principal_point_shift
+
+runtime_rule:
+  stereo_calib_yaml: Uses the measured 2026-08-04 checkerboard stereo calibration in production; search intrinsics remain a vendor-FOV estimate.
+  extrinsics_yaml: Uses the supplied SolidWorks assembled estimate.
+  sensor_mapping: CAM1/Argus sensor 1 is the stereo front camera; CAM0/Argus sensor 0 is the stereo back camera; USB is search.
+  roi_and_range: Rectified stereo plus rectified_right_u_offset_px=-1.65 passed the 2026-08-05 RTK field acceptance; flight-control live mode remains separately gated.
