@@ -71,12 +71,14 @@ def generate_launch_description():
                         "observation_topic": DEPTH_TOPIC,
                         "estimate_topic": ESTIMATE_TOPIC,
                         "attitude_topic": "/fmu/out/vehicle_attitude",
-                        # ZED X Mini 4mm 内参——实标值以 SDK
-                        # getCameraInformation() 为准（六件套之三）
-                        "camera_fx": 1274.0,
-                        "camera_fy": 1274.0,
-                        "camera_cx": 960.0,
-                        "camera_cy": 540.0,
+                        # ZED X Mini 4mm 内参——2026-10-15 板上实测值
+                        # （/debug/bridge_state 的 intrinsics_* 透传，HD1080），
+                        # 替换初版 1274/960/540 假设值（cx 偏差 51.7px≈1.8°
+                        # 视线偏差，影响 2° 火控门）
+                        "camera_fx": 1266.5,
+                        "camera_fy": 1266.5,
+                        "camera_cx": 1011.7,
+                        "camera_cy": 538.4,
                         "camera_width": 1920,
                         "camera_height": 1080,
                         # 安装四元数（宽轴沿机头）：与机加实物严格一致
