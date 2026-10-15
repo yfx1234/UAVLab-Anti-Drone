@@ -43,6 +43,10 @@ def generate_launch_description():
             # 感知桥（板上 main 侧感知 -> 拦截链 V1 接口）
             DeclareLaunchArgument("use_perception_bridge", default_value="true"),
             DeclareLaunchArgument("bridge_selection", default_value="confidence"),
+            # 桥输入话题可换（domain 0 全链测试用 /test/perception/observations_json
+            # 避开真实感知的 JSON 流，见 tools/board_test/）
+            DeclareLaunchArgument(
+                "bridge_input_topic", default_value="/perception/observations_json"),
             # ---- 感知桥（PerceptionFrame v2 JSON -> DepthObservation V1） ----
             Node(
                 package="zed_perception_bridge",
@@ -52,7 +56,8 @@ def generate_launch_description():
                 condition=IfCondition(LaunchConfiguration("use_perception_bridge")),
                 parameters=[
                     {
-                        "input_json_topic": "/perception/observations_json",
+                        "input_json_topic": LaunchConfiguration(
+                            "bridge_input_topic"),
                         "output_topic": DEPTH_TOPIC,
                         "debug_topic": "/debug/bridge_state",
                         "selection": LaunchConfiguration("bridge_selection"),
