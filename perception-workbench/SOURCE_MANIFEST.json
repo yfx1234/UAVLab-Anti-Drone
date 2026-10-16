@@ -1,7 +1,8 @@
 {
-  "source_commit": "201f98ce88cdd108126a1e8dbf53ce2baf6dd67c",
+  "source_commit": "3aff8fc22ca5c565a176f6a796bef879df553830",
   "package": "perception-workbench",
   "source_only": true,
+  "hash_basis": "git_blob_bytes",
   "files": [
     {
       "path": ".gitattributes",
@@ -21,15 +22,15 @@
       "path": ".impeccable/design.json",
       "git_blob": "a08e8aa7c94d58a624817adaccf377a4d2b11e7e",
       "git_mode": "100644",
-      "sha256": "0d70a62d58c84fe5cc769b54f77960bca405b6ca695295ba7b59b756f3241a81",
-      "bytes": 30340
+      "sha256": "851279ff8b23b7eec2cf519aff5d1bf6fdc0f206a219c26b5ec90c8a91dd41c3",
+      "bytes": 29826
     },
     {
       "path": ".impeccable/surface-briefs/console.md",
       "git_blob": "1078812c71918813190d77b3e713db8080806d01",
       "git_mode": "100644",
-      "sha256": "8a2e44127c8ffca259b0bbca0424451330fabc431d720cfd741e279f6f42ae9e",
-      "bytes": 4266
+      "sha256": "61f8a4f246d3322e595cc0672e8f5d9ebfe398faedca9a867d754de88b89572b",
+      "bytes": 4232
     },
     {
       "path": "DESIGN.md",
@@ -91,8 +92,8 @@
       "path": "board/zed_tracking/README.md",
       "git_blob": "e1558dd9187dc3dc9981e21e1f23e0fdb564812f",
       "git_mode": "100644",
-      "sha256": "e80d2a4b29dc2c296d99de87cc2658f307430547edb4abb36fe4d57a705ddfb5",
-      "bytes": 345
+      "sha256": "c5af4554053ed9e4d8fc2b2162a48c0dcfb729eac6ff204d84fb45483de499aa",
+      "bytes": 340
     },
     {
       "path": "board/zed_tracking/config/perception_nano.yaml",
@@ -215,10 +216,10 @@
     },
     {
       "path": "board/zed_tracking/src/zed_perception_standalone.cpp",
-      "git_blob": "69d4f366081e347e14ef012ee6cfb62adcd0ef07",
+      "git_blob": "b90580bb504b40cca0bf57491898ccfe735f8c13",
       "git_mode": "100644",
-      "sha256": "925684dd551b6992201acc366b2c731d024900b4a3fbcaf4652a14c6f134a362",
-      "bytes": 53938
+      "sha256": "ac887c0d74a853f506cb06c59ef0842a7d5b13b04f6161e7a10688a644c3a3d5",
+      "bytes": 54454
     },
     {
       "path": "board/zed_tracking/src/zed_source.hpp",
@@ -278,10 +279,10 @@
     },
     {
       "path": "board/zed_tracking/tools/annotate_session.py",
-      "git_blob": "d46d7429be342f70e59f17836117824b16217211",
+      "git_blob": "36b5754d0f88f21aac533585f23d4717a2daad6b",
       "git_mode": "100644",
-      "sha256": "b3ecc3d7c8e0edab9361e1b0f9c9d7e643f1d21945ef77cf8dd286a4fb097009",
-      "bytes": 8004
+      "sha256": "16e23e90956d123d018139fbed73682976e1f472cefb1435cf8824c4273a4b63",
+      "bytes": 11704
     },
     {
       "path": "board/zed_tracking/tools/build_model_manifest.py",
@@ -348,10 +349,10 @@
     },
     {
       "path": "board/zed_tracking/tools/perception_supervisor.py",
-      "git_blob": "0ae15ad23e68580924e22c53ee418dfdb71343bd",
+      "git_blob": "3f278ab8432d2ab31ecc66bc2c35697766db352a",
       "git_mode": "100644",
-      "sha256": "ef496570cdcb049161deb4713315217ee1723ce15a7bd5c0d48dcaa5b5733455",
-      "bytes": 21368
+      "sha256": "11a5b1abd0816d0230318718282e257223bb90a07c020946455944bba125e9cb",
+      "bytes": 21625
     },
     {
       "path": "board/zed_tracking/tools/recording_profiles.py",
@@ -385,15 +386,15 @@
       "path": "docs/NX完整检查_2026-10-13.md",
       "git_blob": "f3d183973f4e7d16e05f675d625303aba5a63075",
       "git_mode": "100644",
-      "sha256": "d525cbb244650aed61fe47839c6cb5b23eeaf631ec5c7fbc681b91694444c2e4",
-      "bytes": 10097
+      "sha256": "08e5ba7c7547d960b8c95dab0d73c2003e0460a2fa7c338684aea63e217426dd",
+      "bytes": 10020
     },
     {
       "path": "docs/NX性能与外场复核_2026-10-14.md",
       "git_blob": "a12321b1a5898228f636b2f1e94eb6e8bffab1d2",
       "git_mode": "100644",
-      "sha256": "5a6c0da188f5be4bf24a103a496498e3fe6ba48a41bc84d62294e9d2ea4446a6",
-      "bytes": 8548
+      "sha256": "2dd203e9f3f63309ada9db804f84fbc99eba4fb951b79482ee1bbb0c3421e63f",
+      "bytes": 8487
     },
     {
       "path": "docs/NX结项复核_2026-10-14.md",
@@ -413,8 +414,8 @@
       "path": "docs/ZED感知与采集平台_修改与验证记录.md",
       "git_blob": "56adfba9ff2bdb8121a4da947ab7b52c915b1eda",
       "git_mode": "100644",
-      "sha256": "03f4e984176c4bd358aada1b63dcd36e02b2f251e4468290c7f56e3f73340bf6",
-      "bytes": 13880
+      "sha256": "834bcc87f599fcfacfa10b61c421dc098e8c9c781d5a98d7b289474a39d1c9e9",
+      "bytes": 13721
     },
     {
       "path": "docs/ZED感知与采集平台_简单使用版.md",
@@ -434,15 +435,15 @@
       "path": "docs/experiments/2026-10-16-detection-screening.json",
       "git_blob": "485b12a68026f4a469d4ba1ce0501deb310e7a78",
       "git_mode": "100644",
-      "sha256": "823c464b82ac38a1c238c3ce78d1bc32ce993254036a3c2f527a22ebd53d4f63",
-      "bytes": 90500
+      "sha256": "2862649fbd912373f933504a87144bf5ef5e727f95d27f6774436d51a8993f03",
+      "bytes": 87753
     },
     {
       "path": "docs/experiments/2026-10-16-large-dataset-screening.json",
       "git_blob": "e3939f95f90f0a77289e31e644e0bd1f5eaf63db",
       "git_mode": "100644",
-      "sha256": "91a4922228545cf056ae3c9493a1add0ff19d0b336f8fe90ef828b93fea34b83",
-      "bytes": 16691
+      "sha256": "3a62155973a6934cb532feecd45c744b5289ba395a4be771ca12b9d3e29e3ff5",
+      "bytes": 16220
     },
     {
       "path": "docs/generic-sky-field-test.md",
@@ -476,43 +477,43 @@
       "path": "docs/selective-media-workflow.md",
       "git_blob": "b8fa1f321e59aa5bed29b50a8bff7f0f64e1668e",
       "git_mode": "100644",
-      "sha256": "81431ad92fd3a35017f2d23199906ca9701f2616c9fb5560841b7e433ad7a199",
-      "bytes": 5858
+      "sha256": "4f734514817053f8c71bd15d03721d5440359b38eac26966550ff111eb828ad1",
+      "bytes": 5808
     },
     {
       "path": "docs/superpowers/plans/2026-10-11-beijing-media-library-polish.md",
       "git_blob": "a7569d95de949b6857f00b4a234a423ba3352483",
       "git_mode": "100644",
-      "sha256": "1ba8c4468d8af7786f6d5298def5be26c4a1e2688008521b1de23a6a5ff8684e",
-      "bytes": 7227
+      "sha256": "6b237e8a79f6d3b178102b5f17b4c06a3b1e4151afa6cbab80f605479c92431a",
+      "bytes": 7148
     },
     {
       "path": "docs/superpowers/plans/2026-10-11-console-and-download-optimization.md",
       "git_blob": "0a9ad6bcb57fe7c385b02d9953ccd07c6194ef0e",
       "git_mode": "100644",
-      "sha256": "d80db156cceea93edad5c6e96d845be2a0c2dd89a86159140873d2f3d246cef2",
-      "bytes": 3918
+      "sha256": "042da68fd4a66fda1bf2ea472b1232095d630d8efcdc0a79dbb4ec9984acc303",
+      "bytes": 3880
     },
     {
       "path": "docs/superpowers/plans/2026-10-11-selective-video-download.md",
       "git_blob": "d8e0d3fdfa6afad40c2cc430c47003017ef3fb0b",
       "git_mode": "100644",
-      "sha256": "60048672e1e3a51d0e4afb316d1ff24974d65aaab157cd2941f10c1f7cb3367d",
-      "bytes": 3829
+      "sha256": "5257f65d70937a93da98aee340fa6f752992db009cc46954e18cbc9223f1830f",
+      "bytes": 3797
     },
     {
       "path": "docs/superpowers/plans/2026-10-11-session-management-depth-clock.md",
       "git_blob": "e682eb0d2db15c46dd7ba5ab3e574ee5e04fcc3a",
       "git_mode": "100644",
-      "sha256": "2809efbf61b6d4abac2a6b17056d6b225148d7e38cfe8fefc0a7b9928b21299c",
-      "bytes": 2883
+      "sha256": "7820e2adee4ece025c4ad00449f236f4b95c56c571d0bd78ab2bd865d48fb632",
+      "bytes": 2865
     },
     {
       "path": "docs/superpowers/plans/2026-10-12-camera-controls-and-fixed-rail.md",
       "git_blob": "4d55be0bef6d1699e972dcc78e9ab9f26dccf1bc",
       "git_mode": "100644",
-      "sha256": "d2c1f33c45930a3f0c3b56077b18bb0cb480f0b100f3b1710e97e128a69fef5f",
-      "bytes": 2913
+      "sha256": "2ff1355b41647be2160e32c8766d9745d1dca7e73fa8af8da0994be865732947",
+      "bytes": 2884
     },
     {
       "path": "docs/superpowers/plans/2026-10-12-generic-sky-detection.md",
@@ -527,6 +528,27 @@
       "git_mode": "100644",
       "sha256": "8bbedfa6c8b565d75846d06bdc4ac7d9d3a79d92321132a83c326477a4c4a2d3",
       "bytes": 6473
+    },
+    {
+      "path": "docs/superpowers/plans/2026-10-16-saved-media-names.md",
+      "git_blob": "c4877293db46202de1ceb9f4106ceec23caf47d4",
+      "git_mode": "100644",
+      "sha256": "80f5e00c6712246f0caa4fc4836fef71014f43f962ae1b94ef44dff3f8627214",
+      "bytes": 1540
+    },
+    {
+      "path": "docs/superpowers/plans/2026-10-16-selected-video-library.md",
+      "git_blob": "57cdb4e4d2095e9727bdbb8197c723c6f33fea56",
+      "git_mode": "100644",
+      "sha256": "0e7714094a64d2e4503f7a18a0447b3ae789034b80f4baa71e9501239cb5c8c4",
+      "bytes": 4402
+    },
+    {
+      "path": "docs/保存视频命名与源码同步_2026-10-16.md",
+      "git_blob": "d0ba615245e63284455d865104613ab82047ff74",
+      "git_mode": "100644",
+      "sha256": "fcaabc3176c5fc668efe15617664f821770f377decb2d6b57e26697bd74a9481",
+      "bytes": 2923
     },
     {
       "path": "docs/免自训四旋翼检测调研与离线测试_2026-10-16.md",
@@ -546,8 +568,8 @@
       "path": "docs/外场素材与YOLO输入复核_2026-10-14.md",
       "git_blob": "1e8bce0e687f6639c38573e8604b23bc359030cf",
       "git_mode": "100644",
-      "sha256": "08567ae48ec7288a082781e66db9555830e544142695aa013f1b39ba7d0a1b92",
-      "bytes": 7689
+      "sha256": "813288b594d398079a595b84bb9b7e4bfedb2d65b99f46bc060846448d447e77",
+      "bytes": 7635
     },
     {
       "path": "docs/大规模公开无人机模型核查_2026-10-16.md",
@@ -571,6 +593,20 @@
       "bytes": 3004
     },
     {
+      "path": "docs/所选视频检测与数据集清理_2026-10-16.md",
+      "git_blob": "e43bd9a4ca02814b7fab8f305e570b87dc56d964",
+      "git_mode": "100644",
+      "sha256": "4998d719e0f47221df71451151b89aa5ebe03055d46ff6846ddb80b18a4972b3",
+      "bytes": 3741
+    },
+    {
+      "path": "docs/本机视频删除_2026-10-16.md",
+      "git_blob": "1c14f6003f6874b1da2ea080fe278aab121182b1",
+      "git_mode": "100644",
+      "sha256": "d06122bb6491e19b1412a1c2cddd738571de22d21ec27f8a0f4739c750b4dff3",
+      "bytes": 1266
+    },
+    {
       "path": "docs/本机视频备注与下载按钮_2026-10-16.md",
       "git_blob": "3c47e9587668fc2e960e368a018ee84c984ba16b",
       "git_mode": "100644",
@@ -590,6 +626,13 @@
       "git_mode": "100644",
       "sha256": "b25fea5083c00db496bb462431fdf61ac3b5dc2f958c3c257ac3d333c9c6f056",
       "bytes": 2125
+    },
+    {
+      "path": "docs/素材库检测预览与模型分类_2026-10-16.md",
+      "git_blob": "189ac14ab5bbea114e554677782fb94f356fe059",
+      "git_mode": "100644",
+      "sha256": "4d84d87243eb08d8e7b12bc6ac715fe3426ccc80f9e526c76215515d14d322da",
+      "bytes": 4347
     },
     {
       "path": "docs/观测接口与设备状态.md",
@@ -616,22 +659,22 @@
       "path": "environment/current-nano.json",
       "git_blob": "ae6dcb5cfcf614155b92a4bd656bd04107b3d164",
       "git_mode": "100644",
-      "sha256": "afb3579ce4ed7217959f092d0a9d6e1d2f3e48eebc0fede9c3aeaeb92400bf15",
-      "bytes": 26770
+      "sha256": "17d848114b19cb2073ef6b742e2fea892fd7ce9edddec3836e88cd010441a41e",
+      "bytes": 26634
     },
     {
       "path": "environment/current-nx16.json",
       "git_blob": "c9026d08971c777e048c31b9079df7f56a874b39",
       "git_mode": "100644",
-      "sha256": "c91f48c647223087e94cc351903f63ee99a7087b1b8760c838a7ccfbe9dca3ba",
-      "bytes": 22594
+      "sha256": "00e9ec3337c5a48205f80a132f9652211ef9ae1135e76a9ef057799bb521141d",
+      "bytes": 21858
     },
     {
       "path": "environment/current-pc.json",
       "git_blob": "671444cb5ff6e156718034cd3feaa792112bed80",
       "git_mode": "100644",
-      "sha256": "d1e357ec682dbf40e1c4caecc08261012e48ca5c4c8867bfd99d41d698e73474",
-      "bytes": 208
+      "sha256": "fe2bee1096340b57fd139fb27e3770c4d062ebcfee2eb0f7c07ef22d72d65202",
+      "bytes": 198
     },
     {
       "path": "environment/detection-stability-validation.json",
@@ -679,29 +722,43 @@
       "path": "environment/hardware/zed-x-mini-setup.md",
       "git_blob": "1d8ff5a9eb115fa5ec8aff30b2aa31b51e6542c8",
       "git_mode": "100644",
-      "sha256": "050219ba2b4986fa8274b368a04452631841c0eabfad2fac2112dcd97796c0a8",
-      "bytes": 8256
+      "sha256": "23e040f48ac435c9659e0a7a920190f8166f1eb3b3724877603ab0a7858de214",
+      "bytes": 8253
     },
     {
       "path": "environment/migration-tool-validation.json",
       "git_blob": "1d1f7f0a55e193c4b3f05f0ce03b5a156c87f33c",
       "git_mode": "100644",
-      "sha256": "6346754ae1075defc00a3bfd665b0292c6e4fb16edaa789eeed5976025cb6758",
-      "bytes": 785
+      "sha256": "fb58459c819e919e8f1fe2fc32085cbf12092024371036e7d659f351c0c17355",
+      "bytes": 756
+    },
+    {
+      "path": "panel/annotation_preview.py",
+      "git_blob": "151b310c2a01b53cd1e59163b1c450967d576dac",
+      "git_mode": "100644",
+      "sha256": "12011c1f8e625ed6c628440fb0837fe341aec96be4a71fb4cff16c5dbfcf2f92",
+      "bytes": 5917
+    },
+    {
+      "path": "panel/annotation_transport.py",
+      "git_blob": "b42339c9ace0f58f7e70dbcbaac3b0b2e73dd292",
+      "git_mode": "100644",
+      "sha256": "e22f39a751b5f24feeecd4db3790dd24e8719604641d34c6e3792f1060d3e0bf",
+      "bytes": 1394
     },
     {
       "path": "panel/board_client.py",
-      "git_blob": "51606fd5a79d350f8e493a7d5a6207d44a05e6be",
+      "git_blob": "2f06847bdd64a83eb5583e646e06c52add163afd",
       "git_mode": "100644",
-      "sha256": "7a17f94aa94fa6e55a07e7135c28f0b1b726204c01cab9e79f0710d690ccf652",
-      "bytes": 3850
+      "sha256": "29d21243a416603f77af8fbda563ce80620448d6937791776b3d0afafe3e4bf0",
+      "bytes": 5281
     },
     {
       "path": "panel/dashboard.py",
-      "git_blob": "3082ff5928ffd01d4a1a1469df26f04788e7df97",
+      "git_blob": "4ea7b08bc40bc38dc9d09d6b8a58c6423a31c1fa",
       "git_mode": "100644",
-      "sha256": "2b121f5a77f9732febf8316b15cd549ffb7ac75ea6311e4934fec930fc9b3008",
-      "bytes": 23745
+      "sha256": "d82ceaecdacdc54a75807726c72ce7e2ecbc309c2955c327f3a4906da4c1a5f5",
+      "bytes": 21642
     },
     {
       "path": "panel/frame_receiver.py",
@@ -712,10 +769,10 @@
     },
     {
       "path": "panel/index.html",
-      "git_blob": "410b1a53529549d422b6993ef273b6e7c1f3db6c",
+      "git_blob": "49f46ff853ca28987b3cc72de6fd06b236c1fbfe",
       "git_mode": "100644",
-      "sha256": "ebb9d4e2e7589547cbc74923743d0873138b2f8a23173a589a217bf380c9402c",
-      "bytes": 84382
+      "sha256": "e918dbab56b480f8056118024044c99da36bd85e2cde07b24350af089f493e33",
+      "bytes": 91296
     },
     {
       "path": "panel/job_manager.py",
@@ -725,11 +782,25 @@
       "bytes": 1612
     },
     {
-      "path": "panel/media_library.py",
-      "git_blob": "dab3eb2cd1f9e85f55d6b37381a7d6a56e455437",
+      "path": "panel/media_filename_migration.py",
+      "git_blob": "6198f522dad636ace5649f92afa864cd5f439eea",
       "git_mode": "100644",
-      "sha256": "8505d8d0b39f203fb2366ebb2cfff49c5d8ea79e597fefbcf8a9f1d9f1d6ba87",
-      "bytes": 13584
+      "sha256": "c5fd7fc3ea95b2e60bdb0a6cae649f3ee689acb32d367284d8b208d3171f6c0a",
+      "bytes": 6085
+    },
+    {
+      "path": "panel/media_library.py",
+      "git_blob": "05beb8e36562a95dcdc5d340f6315db2d0b554e6",
+      "git_mode": "100644",
+      "sha256": "3813f4e82c1e024648e28afeb999b086c72265dd1a849739e1c1d17703d22678",
+      "bytes": 18692
+    },
+    {
+      "path": "panel/media_names.py",
+      "git_blob": "1804462b36db64a0c86f588de6739ac9934c6aac",
+      "git_mode": "100644",
+      "sha256": "393c6709bbaabd098673826c7fde07ec19f613a5a0b4482684e34572237f1ee3",
+      "bytes": 3067
     },
     {
       "path": "panel/preview_recorder.py",
@@ -747,10 +818,10 @@
     },
     {
       "path": "panel/session_manager.py",
-      "git_blob": "4331bbe00681a20879808eba84da7ce9b47278b7",
+      "git_blob": "285e04817be88de7f82ee5c0b5333c763658393b",
       "git_mode": "100644",
-      "sha256": "384399086f347a1889b73c83880021ce6fa14435b47a4e6b31822f916676b0a8",
-      "bytes": 13431
+      "sha256": "7c321aa70620cc1f1bfd326aac2e3929b787058539193fe19ea5e064d725f11d",
+      "bytes": 14227
     },
     {
       "path": "panel/test_dashboard.py",
@@ -788,6 +859,13 @@
       "bytes": 2698
     },
     {
+      "path": "scripts/migrate_media_names.py",
+      "git_blob": "92417a110ed41e8a74e31a2402e285b29194b164",
+      "git_mode": "100644",
+      "sha256": "8cae84d8b155fbd3d478a04ce3c892c8b2946ceb881b32d021ef465024d1be93",
+      "bytes": 1989
+    },
+    {
       "path": "scripts/prepare_nx_boot.py",
       "git_blob": "d5b19fbd11ac9a40b37bf3748c866476cf10798b",
       "git_mode": "100644",
@@ -816,6 +894,20 @@
       "bytes": 7341
     },
     {
+      "path": "tests/test_annotation_input.py",
+      "git_blob": "609341fae53065c3778b73c6de2cb0a715789f8e",
+      "git_mode": "100644",
+      "sha256": "6e654e19c3a7759566b458e490dda092586eaaf564a69a10f22587d53b90ab69",
+      "bytes": 1348
+    },
+    {
+      "path": "tests/test_annotation_preview.py",
+      "git_blob": "fc354c208ba9169bb3ba20dfb24b7cba0448b67d",
+      "git_mode": "100644",
+      "sha256": "aadaef7c9838899273f4e5bcb29018d3271387d58895dc0effb652c9230cf3f2",
+      "bytes": 7206
+    },
+    {
       "path": "tests/test_board_smoke.py",
       "git_blob": "9c411a8a197ce5b3582831f10d71bc6e603d88ae",
       "git_mode": "100644",
@@ -826,8 +918,8 @@
       "path": "tests/test_cached_workflow.py",
       "git_blob": "3cbb1c64c6646a5cf479e1f1bceb275fa01ddde0",
       "git_mode": "100644",
-      "sha256": "1e942b93d0c64d30216a5c671780cf821ff2c50a1175e98681b5a265c92f9cc8",
-      "bytes": 1456
+      "sha256": "3753b343e697e53ec88a59e85c962682317bff5e2edbfd320d27e4fbcc138f81",
+      "bytes": 1455
     },
     {
       "path": "tests/test_camera_configuration.py",
@@ -840,8 +932,8 @@
       "path": "tests/test_clock_folder.py",
       "git_blob": "48cc0c68e116aa070955d1ffb53181db1081b71d",
       "git_mode": "100644",
-      "sha256": "8d94f8fb58713900844b94fc1079987f4793d7e160826e3dc33617ed03b92b1f",
-      "bytes": 2003
+      "sha256": "4747020c983f0982c39fd3312b34beb891143ab46c0c76c2bc4107000a92d96d",
+      "bytes": 2002
     },
     {
       "path": "tests/test_depth_video_cache.py",
@@ -866,10 +958,10 @@
     },
     {
       "path": "tests/test_download_performance.py",
-      "git_blob": "1126e714d43945b6f0eb06ffd3f7480a59e76371",
+      "git_blob": "be55da8ad0ee7e8ebc4c5bfc73fd6dd083587fb0",
       "git_mode": "100644",
-      "sha256": "a01c47de1c492f216f23ea531e1d73b403c80ccedd55064bf3c01cebcd0a8ad2",
-      "bytes": 10951
+      "sha256": "194536a626b20c6ca4155e97a1a0ced1c07fa23d4b3c7d334bd2a88a5376bfcf",
+      "bytes": 11401
     },
     {
       "path": "tests/test_export_mapping_board.py",
@@ -886,11 +978,25 @@
       "bytes": 5810
     },
     {
+      "path": "tests/test_frontend_annotation.py",
+      "git_blob": "e1d50d18a713f39b0857ee9a032be71e6cf73485",
+      "git_mode": "100644",
+      "sha256": "9952c46ec20d7b163ed43ebd8dd58af385110dade8de443d3cdbaea2e7e6f9a5",
+      "bytes": 6920
+    },
+    {
       "path": "tests/test_frontend_hardware_state.py",
       "git_blob": "fe0f41db47b4884505ef946d1fbe13933d9f24c3",
       "git_mode": "100644",
       "sha256": "ec4be429ca0805ccbf79f56f5cbb43d37815e22f24c40caa6f8f78bb7de9a34d",
       "bytes": 2361
+    },
+    {
+      "path": "tests/test_frontend_local_delete.py",
+      "git_blob": "432ef99a91aefca3ed815fc157981e816ac037e4",
+      "git_mode": "100644",
+      "sha256": "4bc0a609b5773a13a6fe68153d120d05cbf7852742867f52e19c8aa731f5c0b9",
+      "bytes": 2673
     },
     {
       "path": "tests/test_frontend_media_notes.py",
@@ -949,6 +1055,20 @@
       "bytes": 6400
     },
     {
+      "path": "tests/test_local_media_delete.py",
+      "git_blob": "1dfeea9d750828190b9f1486cdc0011b4bce927a",
+      "git_mode": "100644",
+      "sha256": "9d369a2310828ee3a870a45ea7ab3003e254c8ce97020648f5f122392151640f",
+      "bytes": 4148
+    },
+    {
+      "path": "tests/test_media_identity.py",
+      "git_blob": "50da843692e4b24717668271c6279d11aac06228",
+      "git_mode": "100644",
+      "sha256": "a757c256975d9406e9a3e608d31906b17f1ab4b412aefc0c6beda33f6089e7af",
+      "bytes": 3040
+    },
+    {
       "path": "tests/test_media_notes.py",
       "git_blob": "ee26a8d69a79d478a586e65b06e5cf7f73670698",
       "git_mode": "100644",
@@ -973,8 +1093,8 @@
       "path": "tests/test_native_video_board.py",
       "git_blob": "b6c6867a1bf66af959351c6455de33775bc3528d",
       "git_mode": "100644",
-      "sha256": "b77e449fb02aa6b9c9059981833a7aa2fb31ff24c0e32a1bf71063c6406bda79",
-      "bytes": 3218
+      "sha256": "3ece72c7eca29e3111f6103754225da238f539532aced054eeeaf47a3609a712",
+      "bytes": 3166
     },
     {
       "path": "tests/test_nx_boot.py",
@@ -992,10 +1112,10 @@
     },
     {
       "path": "tests/test_operator_notes_models.py",
-      "git_blob": "c17edf6be04e4114e90b8ad7594bcf6b8ed302d5",
+      "git_blob": "1555224857e3dbe0ae9bd0ef45db1d0d92b22b86",
       "git_mode": "100644",
-      "sha256": "1eb3ea1c541a29c2b40aecf0d5c32982cbb9e60af3f68d6c303930aebf66969e",
-      "bytes": 4055
+      "sha256": "c434017cbc4329ad4e7eb4e3ece2568369c7be224e6cfce2d91558217a59207c",
+      "bytes": 4486
     },
     {
       "path": "tests/test_pc_scene_registry.py",
@@ -1019,11 +1139,18 @@
       "bytes": 1861
     },
     {
+      "path": "tests/test_saved_media_names.py",
+      "git_blob": "acab93d0b7a8090297cbc5147329f4dbb61dfda1",
+      "git_mode": "100644",
+      "sha256": "5178c96af13eb0be083289fc461d416b02b2416a1c741828a8757ead9973d3d6",
+      "bytes": 7588
+    },
+    {
       "path": "tests/test_scene_busy.py",
       "git_blob": "f3c490bf6a2d84ac04ed2f37e4a2b756c4d97bae",
       "git_mode": "100644",
-      "sha256": "213850e7b738b44de7944198c0f3da976d05d5b659cdc3144746878f27e1f81d",
-      "bytes": 1152
+      "sha256": "e6ecdbedb6635fbb8951f272428e16a0916123ea53c3ad764ce58401c3bb1e7a",
+      "bytes": 1151
     },
     {
       "path": "tests/test_selective_download.py",
@@ -1036,8 +1163,8 @@
       "path": "tests/test_session_catalog.py",
       "git_blob": "76f42786b9ef04f9a7f79ebc17fd806561ae9a23",
       "git_mode": "100644",
-      "sha256": "a1df5e73afe73e1b0c926c4336c089ba01dd8a9b4976651b194aa33e331d364f",
-      "bytes": 4114
+      "sha256": "10ab66dc9b208fd4b1f53bc5cddc89e846ec09d7d64d85b1cb62c816857e52b6",
+      "bytes": 4113
     },
     {
       "path": "tests/test_session_finalization.py",
@@ -1057,8 +1184,8 @@
       "path": "tests/test_transfer_regression.py",
       "git_blob": "386843424a1b11748245bfcd2603d73b827bd027",
       "git_mode": "100644",
-      "sha256": "1b23029872fc5da0dd1bc142750654a7bb9549f897a8a20ebf4ddcb0849e2bdc",
-      "bytes": 3063
+      "sha256": "85b74c07ead44ca971629e49f40101898420110b8bfcff57cecb3697359d4bc9",
+      "bytes": 3062
     },
     {
       "path": "tests/test_transport_freshness.py",

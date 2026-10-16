@@ -60,10 +60,17 @@ class DownloadPerformanceTests(unittest.TestCase):
             dest.mkdir(parents=True)
             part=dest/'rgb_video.mp4.part';part.write_bytes(b'x'*len(data))
             with self.assertRaisesRegex(ValueError,'校验失败'):manager.download('fixture',kind='rgb')
+            part=next(dest.glob('*.part'))
             self.assertEqual(part.stat().st_size,0)
             result=manager.download('fixture',kind='rgb')
-            self.assertEqual((dest/'rgb_video.mp4').read_bytes(),data)
+            output=pathlib.Path(result['folder'])/result['files'][0]['file']
+            self.assertEqual(output.read_bytes(),data)
+            self.assertIn('原视频RGB_第1段_下载原件',output.name)
+            self.assertEqual(result['files'][0]['remote_file'],'exports/segment_1/rgb_video.mp4')
             self.assertEqual(result['transfer_bytes'],len(data))
+            reused=manager.download('fixture',kind='rgb')
+            self.assertEqual(reused['transfer_bytes'],0)
+            self.assertTrue(reused['files'][0]['reused'])
 
     def test_nx_preview_speed_requires_consistent_identity_and_requested_rate(self):
         good=self.healthy_preview();good['pipeline'].update(module_sku='P3767-0000',platform_configuration_consistent=True,configured_capture_fps=30,capture_hz=30,mem_available_kib=10*1024*1024)

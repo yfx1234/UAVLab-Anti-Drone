@@ -8,6 +8,7 @@ import time
 import threading
 import shutil
 from scene_registry import SceneRegistry
+from media_names import local_download_relative
 
 class SessionManager:
     def __init__(self,board,root,registry=None,status_provider=None):
@@ -130,8 +131,16 @@ class SessionManager:
                         attr=sftp.lstat(base+'/'+str(pathlib.PurePosixPath(*rel.parts[:i])))
                         if stat.S_ISLNK(attr.st_mode):raise ValueError('不下载符号链接')
                 measured('path_check_s',checked_path)
-                target=dest/pathlib.Path(*rel.parts);target.parent.mkdir(parents=True,exist_ok=True)
+                local_rel=local_download_relative(self.registry,session_id,str(rel))
+                target=dest/pathlib.Path(*local_rel.parts);target.parent.mkdir(parents=True,exist_ok=True)
                 if not target.resolve().is_relative_to(dest.resolve()):raise ValueError('本机文件路径越界')
+                # Adopt earlier downloads and partial transfers without discarding bytes.
+                legacy=dest/pathlib.Path(*rel.parts)
+                if legacy!=target:
+                    for previous,current in ((legacy,target),(legacy.with_name(legacy.name+'.part'),target.with_name(target.name+'.part'))):
+                        if previous.is_file() and not current.exists():
+                            if previous.is_symlink() or not previous.resolve().is_relative_to(dest.resolve()):raise ValueError('本机文件路径越界')
+                            previous.rename(current)
                 if target.is_file() and target.stat().st_size==info['bytes']:
                     report('remote_hash','校验',str(rel))
                     source=measured('remote_checksum_s',lambda:call('session_checksum',{'session_id':session_id,'file':str(rel)}))
@@ -142,7 +151,7 @@ class SessionManager:
                             while chunk:=existing.read(1024*1024):existing_sha.update(chunk)
                         return existing_sha.hexdigest()
                     if measured('local_hash_s',existing_hash)==source['sha256']:
-                        done+=info['bytes'];checks.append({'file':str(rel),'sha256':source['sha256'],'reused':True})
+                        done+=info['bytes'];checks.append({'file':str(local_rel),'remote_file':str(rel),'sha256':source['sha256'],'reused':True})
                         report('reused','已存在',str(rel));continue
                 part=target.with_name(target.name+'.part');offset=part.stat().st_size if part.exists() else 0
                 if offset>info['bytes']:raise ValueError('续传文件大于源文件')
@@ -184,7 +193,7 @@ class SessionManager:
                     # reset this transfer's temporary file; keep any published copy.
                     with part.open('wb'):pass
                     raise ValueError('下载校验失败；临时文件已重置，请重试下载')
-                measured('local_publish_s',lambda:part.replace(target));checks.append({'file':str(rel),'sha256':sha.hexdigest()})
+                measured('local_publish_s',lambda:part.replace(target));checks.append({'file':str(local_rel),'remote_file':str(rel),'sha256':sha.hexdigest()})
             (dest/('download_integrity_'+kind+'.json')).write_text(json.dumps(checks),encoding='utf-8')
             timings.update(transfer_s=transfer_elapsed,total_download_s=time.monotonic()-operation_started)
             report('complete','下载完成')

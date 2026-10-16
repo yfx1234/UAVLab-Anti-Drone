@@ -52,7 +52,7 @@ struct Frame {
   uint32_t sequence{0};int64_t stamp{0};double acquired{0};int w{0},h{0};
   std::vector<unsigned char> bgra;std::vector<float> depth,confidence;
   std::string session;uint32_t segment{0};bool recorded{false};uint64_t detector_generation{0};
-  double effective_size{.30};std::string model,calibration_id;bool calibrated{false};
+  double effective_size{.30},yolo_confidence{.55};std::string model,calibration_id;bool calibrated{false};
   bool yolo_enabled{false},generic_enabled{false};double nominal_size{.30};
   std::string generic_sensitivity{"standard"};zed_tracking::CameraMotionSample motion;
 };
@@ -113,6 +113,7 @@ class Perception final:public rclcpp::Node {
   fs::path calibration_file_{"/home/uavlab/Jetson_ROS2_V0/perception_config/range_calibration.json"};
   std::string run_,boot_,profile_,engine_,model_;double target_size_{.30},effective_size_{.30};std::string size_definition_{"unconfirmed_30cm_extent"},calibration_id_{"initial_prior"};
   std::atomic<bool> stop_{false},detector_{false};std::atomic<int> detector_state_{0}; // disabled/loading/running/error
+  std::atomic<double> yolo_confidence_{.55};
   std::atomic<bool> generic_detector_{false};std::atomic<int> generic_state_{0};
   std::string generic_sensitivity_{"standard"};
   std::atomic<uint64_t> detector_generation_{0};bool calibrated_{false};
@@ -165,7 +166,7 @@ class Perception final:public rclcpp::Node {
       {"frame_key",run_+"_"+std::to_string(f.sequence)},{"sequence",f.sequence},{"stamp_ns",f.stamp},
       {"monotonic_s",f.acquired},{"image_width",f.w},{"image_height",f.h},{"model_id",f.model},{"camera_serial",intrinsics_.serial_number},
       {"detector_enabled",(f.yolo_enabled&&detector_state_==2)||(f.generic_enabled&&generic_state_==2)},
-      {"yolo_enabled",f.yolo_enabled},{"detector_state",detector_state_.load()},
+      {"yolo_enabled",f.yolo_enabled},{"yolo_confidence",f.yolo_confidence},{"detector_state",detector_state_.load()},
       {"generic_detector_enabled",f.generic_enabled},{"generic_detector_state",generic_state_.load()},
       {"detector_generation",f.detector_generation},{"generic_sensitivity",f.generic_sensitivity},
       {"camera_motion_valid",f.motion.valid},
@@ -216,6 +217,7 @@ class Perception final:public rclcpp::Node {
     j["average_capture_hz"]=sequence_/elapsed;j["average_inference_hz"]=inferred_/elapsed;
     last_status_time_=now;last_status_capture_=sequence_;last_status_infer_=inferred_;
     j["detector_state"]=detector_state_.load();j["detector_enabled"]=detector_.load();
+    j["yolo_confidence"]=yolo_confidence_.load();
     j["generic_detector_state"]=generic_state_.load();j["generic_detector_enabled"]=generic_detector_.load();
     j["detector_generation"]=detector_generation_.load();
     j["preview_frames"]=preview_.frames_sent.load();j["preview_mbps"]=preview_.bytes_sent*8/elapsed/1e6;j["preview_listening"]=preview_.listening.load();
@@ -263,13 +265,15 @@ class Perception final:public rclcpp::Node {
       std::string action=cmd.at("operation");Json p=cmd.value("params",Json::object());
       if(action=="set_detector"){
         bool enabled=p.at("enabled");
+        const double confidence=p.value("confidence",yolo_confidence_.load());
+        if(!std::isfinite(confidence)||confidence<.25||confidence>1)throw std::runtime_error("confidence must be between 0.25 and 1");
         if((enabled||p.contains("model_id"))&&!zed_tracking::model_change_allowed(!session_id_.empty(),model_,p.value("model_id",model_)))
           throw std::runtime_error("finish recording before changing model identity");
         if(enabled||p.contains("model_id")){{std::lock_guard<std::mutex> l(state_mutex_);engine_=p.value("engine_path",engine_);model_=p.value("model_id",model_);}apply_range_calibration();}
         source.set_depth_enabled(enabled||generic_detector_);depth_enabled_=source.depth_enabled();
-        ++detector_generation_;detector_=enabled;detector_state_=enabled?1:0;
+        yolo_confidence_=confidence;++detector_generation_;detector_=enabled;detector_state_=enabled?1:0;
         {std::lock_guard<std::mutex> l(queue_mutex_);if(latest_)pending_work_.release(latest_->session);latest_.reset();}queue_cv_.notify_all();
-        if(!session_id_.empty())log(session_/"events.jsonl",{{"event","detector_change"},{"source","yolo"},{"enabled",enabled},{"generation",detector_generation_.load()},{"monotonic_s",monotonic_s()}});
+        if(!session_id_.empty())log(session_/"events.jsonl",{{"event","detector_change"},{"source","yolo"},{"enabled",enabled},{"confidence",confidence},{"generation",detector_generation_.load()},{"monotonic_s",monotonic_s()}});
       }else if(action=="set_generic_detector"){
         bool enabled=p.at("enabled");std::string sensitivity;
         {std::lock_guard<std::mutex> l(state_mutex_);sensitivity=p.value("sensitivity",generic_sensitivity_);}
@@ -389,7 +393,7 @@ class Perception final:public rclcpp::Node {
           log(session_/"frames.jsonl",{{"sequence",seq},{"stamp_ns",stamp},{"monotonic_s",now},{"segment_id",seg},
             {"submitted",true},{"recorded",nullptr},{"sdk_recording_status",rs.status},
             {"sdk_frames_ingested",rs.number_frames_ingested},{"sdk_frames_encoded",rs.number_frames_encoded},
-            {"yolo_enabled",detector_.load()},{"generic_detector_enabled",generic_detector_.load()},
+            {"yolo_enabled",detector_.load()},{"yolo_confidence",yolo_confidence_.load()},{"generic_detector_enabled",generic_detector_.load()},
             {"detector_generation",detector_generation_.load()},{"camera_motion_valid",motion.valid},
             {"camera_motion_timestamp_ns",motion.timestamp_ns},{"camera_quaternion_wxyz",motion.quaternion_wxyz}});
           if(recording_failures_>=10)finish_record(source,"sdk_recording_failed");
@@ -419,7 +423,7 @@ class Perception final:public rclcpp::Node {
         auto f=std::make_shared<Frame>();f->sequence=seq;f->stamp=stamp;f->acquired=now;f->session=sid;f->segment=seg;f->recorded=recorded;f->detector_generation=detector_generation_;
         {std::lock_guard<std::mutex> l(state_mutex_);f->model=model_;f->effective_size=effective_size_;f->calibration_id=calibration_id_;f->calibrated=calibrated_;
           f->generic_sensitivity=generic_sensitivity_;f->nominal_size=target_size_;}
-        f->yolo_enabled=detector_;f->generic_enabled=generic_detector_;f->motion=motion;
+        f->yolo_enabled=detector_;f->yolo_confidence=yolo_confidence_;f->generic_enabled=generic_detector_;f->motion=motion;
         const sl::Mat& left=source.retrieve_left();f->w=int(left.getWidth());f->h=int(left.getHeight());
         size_t rowbytes=size_t(f->w)*4;f->bgra.resize(rowbytes*f->h);auto ptr=left.getPtr<sl::uchar1>();
         for(int y=0;y<f->h;++y)std::memcpy(f->bgra.data()+y*rowbytes,reinterpret_cast<const unsigned char*>(ptr)+y*left.getStepBytes(),rowbytes);
@@ -451,7 +455,7 @@ class Perception final:public rclcpp::Node {
       input[at]=row[x][2]/255.f;input[at+plane]=row[x][1]/255.f;input[at+2*plane]=row[x][0]/255.f;}}
     const auto& output=runner.infer(input.data());const auto& shape=runner.output_shape();
     if(shape.size()!=3||shape[0]!=1||shape[2]!=6)throw std::runtime_error("only end-to-end [1,N,6] output approved");
-    auto boxes=zed_tracking::decode_end_to_end(output.data(),shape[1],.55);
+    auto boxes=zed_tracking::decode_end_to_end(output.data(),shape[1],f.yolo_confidence);
     boxes.erase(std::remove_if(boxes.begin(),boxes.end(),[](const Detection& b){return b.class_id!=0||!std::isfinite(b.x1+b.x2+b.y1+b.y2+b.score);}),boxes.end());
     for(auto& b:boxes){double x1=b.x1,y1=b.y1,x2=b.x2,y2=b.y2;zed_tracking::map_box_back(lb,&x1,&y1,&x2,&y2);
       b.x1=float(x1);b.y1=float(y1);b.x2=float(x2);b.y2=float(y2);}

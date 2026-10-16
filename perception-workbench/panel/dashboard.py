@@ -18,12 +18,13 @@ from preview_recorder import PreviewRecorder
 from session_manager import SessionManager
 from media_library import MediaLibrary
 from scene_registry import SceneRegistry
+from annotation_preview import AnnotationPreview
 
 BASE=pathlib.Path(__file__).resolve().parent
 OUTPUT=pathlib.Path(os.environ.get('UAVLAB_OUTPUT_DIRECTORY',str(BASE.parents[1]/'outputs'/'perception_data'))).resolve()
 BOARD_ACTIONS={'check_device','start_capture','stop_capture','set_detector','start_raw_record','stop_raw_record',
                'list_sessions','list_models','test_model','select_model','save_calibration','export_session','export_diagnostics','prepare_dataset','rename_session','delete_session','save_session_metadata'}
-LOCAL_ACTIONS={'connect','disconnect','start_preview_record','stop_preview_record','download_session','download_asset','extract_local_frames','cancel_job','open_media_folder',
+LOCAL_ACTIONS={'connect','disconnect','start_preview_record','stop_preview_record','download_session','download_asset','extract_local_frames','cancel_job','open_media_folder','delete_local_media',
                'interceptor_start','interceptor_stop','annotate_session'}
 INTERCEPTOR_STATUS_CMD='python3 /home/uavlab/interceptor_ws/deploy/interceptor_status.py'
 INTERCEPTOR_CONTROL_CMD='bash /home/uavlab/interceptor_ws/deploy/run_interceptor_stack.sh'
@@ -112,11 +113,17 @@ class Panel:
         rid=data.get('request_id',uuid.uuid4().hex)
         if not isinstance(rid,str) or not re.fullmatch('[a-zA-Z0-9_-]{1,80}',rid):raise ValueError('请求 ID 无效')
         # Reserve at submission, including queued work, so delete cannot race a transfer.
-        scene_action=action in ('download_session','download_asset','export_session','extract_local_frames','rename_session','delete_session','save_session_metadata')
+        scene_action=action in ('download_session','download_asset','export_session','extract_local_frames','rename_session','delete_session','save_session_metadata','annotate_session')
         sid=params.get('session_id') if scene_action else None
         with self.lock:
             with self.jobs.lock:
                 if rid in self.jobs.ids:return self.jobs.ids[rid]
+            if action=='delete_local_media':
+                target=self.media.deletion_target(params.get('relative'),params.get('confirmation'))
+                sid=target.get('source_session_id') or target['session_id']
+            if action=='annotate_session':
+                target=self.media.selected(params.get('relative'))
+                sid=target.get('source_session_id') or target['session_id']
             if sid:
                 if sid in self.scene_jobs:raise ValueError('该场次正在下载、转换或修改，请完成后再操作')
                 self.scene_jobs[sid]=rid
@@ -150,6 +157,7 @@ class Panel:
                 return self.recorder.stop()
             if action=='extract_local_frames':return self.media.extract(params['session_id'],params.get('fps',2))
             if action=='open_media_folder':return self.media.open_folder(params['relative'])
+            if action=='delete_local_media':return self.media.delete(params['relative'],params.get('confirmation'))
             if not self.connected:raise ValueError('请先连接板子')
             if action in ('interceptor_start','interceptor_stop'):
                 # 拦截链启停：常量脚本路径经 SSH 执行；启动 2s 后栈自检，
@@ -159,34 +167,9 @@ class Panel:
                 lines=[line for line in out.splitlines() if line.strip()]
                 return {'output':lines[-3:]}
             if action=='annotate_session':
-                # 检测预览：板上对场次已导出的 RGB 视频跑所选模型画框，
-                # SFTP 取回放进本场次本地 exports/annotated/，媒体库直接可播。
-                # 本机场次目录必须在最前面检查——否则要等板上跑完几分钟
-                # 才在取回时失败（2026-10-16 用户实测踩坑）。
-                sid=params.get('session_id');model_id=params.get('model_id')
-                if not isinstance(sid,str) or not re.fullmatch('[a-zA-Z0-9_-]{1,80}',sid):raise ValueError('场次无效')
-                if not isinstance(model_id,str) or not re.fullmatch('[0-9a-f]{64}',model_id):raise ValueError('模型无效')
-                try:folder=self.media.registry.folder(sid)
-                except (ValueError,KeyError):raise ValueError('本机还没有该场次的下载目录：请先下载一次整场 RGB 视频，再生成检测预览')
-                models=self.board.call('list_models')
-                if not any(m.get('model_id')==model_id for m in models):raise ValueError('所选模型不存在')
-                ready=self.board.call('ready_media',{'session_id':sid,'mode':'rgb_video'})
-                if not ready.get('ready'):
-                    fresh=self.board.call('status')
-                    if fresh.get('pid'):raise ValueError('该场次视频尚未生成；请先停止相机，再生成检测预览')
-                    request=dict(request_id=uuid.uuid4().hex,**{'expected_'+k:fresh[k] for k in ('boot_id','run_id','revision')})
-                    converted=self.board.call('export_session',{'session_id':sid,'mode':'rgb_video','fps':15},request,timeout=3700)
-                    if converted['result']['state']!='complete':raise ValueError('场次不完整，不能生成检测预览：'+'；'.join(converted['result']['integrity_errors']))
-                out=self.board.exec_command(
-                    'python3 /home/uavlab/Jetson_ROS2_V0/perception_tools/annotate_session.py --session %s --model-id %s'%(sid,model_id),timeout=3600)
-                result=json.loads([line for line in out.splitlines() if line.strip()][-1])
-                if not result.get('ok'):raise ValueError('检测预览生成失败：'+str(result.get('error')))
-                target_dir=folder/'exports'/'annotated';target_dir.mkdir(parents=True,exist_ok=True)
-                board_output=result['output'];stem=pathlib.Path(board_output).stem
-                local=target_dir/(stem+'.view.mp4')
-                self.board.fetch_file(board_output,str(local))
-                return {'ok':True,'relative':local.relative_to(self.media.root).as_posix(),'url':'/api/media/'+urllib.parse.quote(local.relative_to(self.media.root).as_posix()),
-                        'frames':result.get('frames'),'detected_frames':result.get('detected_frames'),'avg_inference_ms':result.get('avg_inference_ms'),'model_tag':result.get('model_tag')}
+                def annotation_progress(value):
+                    with self.lock:self.progress[rid]=value
+                return AnnotationPreview(self.board,self.media).run(params,annotation_progress)
             if action in ('download_session','download_asset'):
                 download_started=time.monotonic();timings={}
                 def progress(value):

@@ -3,6 +3,7 @@ import pathlib,json,subprocess,time,shutil,urllib.parse,uuid,os,re,contextlib
 from preview_recorder import PreviewRecorder
 from scene_registry import SceneRegistry
 from windows_file_location import reveal_file
+from media_names import video_filename,video_kind
 
 class MediaLibrary:
     def __init__(self,root,preview_root=None,registry=None):
@@ -54,6 +55,18 @@ class MediaLibrary:
         prepared['media_preparation_methods']=sorted({row['preparation'] for row in prepared['media']})
         prepared['timings_s']={**result.get('timings_s',{}),'local_prepare_s':elapsed}
         return prepared
+    def prepare_annotation(self,source,output):
+        """Publish only complete H264/yuv420p files, including repairs in place."""
+        source=pathlib.Path(source);output=pathlib.Path(output)
+        if source==output and self._can_stream_copy(source):return output
+        tmp=output.with_name(uuid.uuid4().hex+'.tmp.mp4')
+        encoding=['-c:v','copy'] if self._can_stream_copy(source) else ['-c:v','libx264','-crf','16','-preset','veryfast','-pix_fmt','yuv420p']
+        try:
+            self._run(['-y','-i',str(source),'-map','0:v:0','-an',*encoding,'-movflags','+faststart',str(tmp)],source.parent)
+            if not tmp.is_file() or not tmp.stat().st_size:raise ValueError('播放转换未生成有效视频，请重试')
+            tmp.replace(output)
+        finally:tmp.unlink(missing_ok=True)
+        return output
     @staticmethod
     def _cache_matches(output,sidecar,binding):
         try:return output.is_file() and output.stat().st_size>0 and json.loads(sidecar.read_text(encoding='utf-8'))==binding
@@ -80,7 +93,9 @@ class MediaLibrary:
             source=folder/f['file']
             if source.suffix!='.mp4':continue
             source=self.path(source.resolve().relative_to(self.root).as_posix())
-            output=source.with_name(source.stem+'.view.mp4');tmp=source.with_name(source.stem+'.view.tmp.mp4')
+            kind=video_kind(source)
+            output=source.with_name(video_filename(self.registry.scenes[sid]['created_at_unix_s'],kind,source.parent.name))
+            tmp=source.with_name(uuid.uuid4().hex+'.tmp.mp4')
             stat=source.stat()
             sidecar=output.with_suffix('.json');binding={'source_sha256':f.get('sha256'),'source_bytes':stat.st_size,'source_mtime_ns':stat.st_mtime_ns}
             method='cache'
@@ -98,7 +113,7 @@ class MediaLibrary:
                     finally:sidecar_tmp.unlink(missing_ok=True)
                 finally:tmp.unlink(missing_ok=True)
             relative=output.relative_to(self.root).as_posix()
-            media.append(dict(self._row(self.registry.scenes[sid],sid,result['kind'],source.parent.name,relative,source.name),path=str(output),preparation=method))
+            media.append(dict(self._row(self.registry.scenes[sid],sid,kind,source.parent.name,relative,output.name),path=str(output),preparation=method))
         whole=self._whole_scene(folder,sid,result,media,cancelled)
         if whole:media.insert(0,whole)
         return dict(result,folder=str(folder),session_id=sid,media=media)
@@ -112,7 +127,7 @@ class MediaLibrary:
         rows=sorted(media,key=lambda r:int(r['segment'].removeprefix('segment_')))
         sources=[self.path(r['relative']) for r in rows]
         destination=folder/'exports/session';destination.mkdir(exist_ok=True)
-        output=destination/(kind+'_video.view.mp4');sidecar=output.with_suffix('.json')
+        output=destination/video_filename(self.registry.scenes[sid]['created_at_unix_s'],kind,'session');sidecar=output.with_suffix('.json')
         binding={'method':'concat_stream_copy_v1','segments':[{'file':p.relative_to(folder).as_posix(),'bytes':p.stat().st_size,'mtime_ns':p.stat().st_mtime_ns} for p in sources]}
         method='cache'
         if not self._cache_matches(output,sidecar,binding):
@@ -135,7 +150,8 @@ class MediaLibrary:
                 folder=self.registry.checked(self.root,entry['folder'])
                 for p in folder.glob('exports/*/*.view.mp4'):
                     if p.is_symlink():continue
-                    relative=p.relative_to(self.root).as_posix();kind='depth' if p.name.startswith('depth_') else 'rgb'
+                    if '.tmp.' in p.name:continue
+                    relative=p.relative_to(self.root).as_posix();kind=video_kind(p)
                     rows.append(dict(self._row(entry,sid,kind,p.parent.name,relative,p.name),path=str(p.resolve())))
             if self.preview_root:
                 for pid,entry in self.registry.previews.items():
@@ -147,7 +163,7 @@ class MediaLibrary:
                         rows.append(dict(self._row(entry,pid,'preview_'+entry.get('view_mode','rgb'),p.stem,relative,p.name),path=str(p.resolve())))
             def order(row):
                 number=re.search(r'(\d+)$',row['segment'])
-                return (-row['created_at_unix_s'],row.get('source_session_id') or row['session_id'],int(number[1]) if number else 0,row['kind'],row['relative'])
+                return (-row['scene_created_at_unix_s'],row.get('source_session_id') or row['session_id'],int(number[1]) if number else 0,row['kind'],row['relative'])
             return sorted(rows,key=order)
     def _notes(self,entry,sid,kind):
         source=self.registry.scenes.get(entry.get('source_session_id') or sid)
@@ -160,15 +176,71 @@ class MediaLibrary:
         return metadata
     def _row(self,entry,sid,kind,segment,relative,filename):
         metadata=self._notes(entry,sid,kind);notes=' · '.join(metadata[k] for k in ('label','scene','lighting') if metadata.get(k))
+        scene=self.registry.scenes.get(entry.get('source_session_id') or sid,entry)
+        scene_stamp=scene['created_at_unix_s']
+        annotation={}
+        if kind=='annotated':
+            annotation=self.registry._json(self.root/pathlib.PurePosixPath(relative).with_suffix('.json'))
+            if not isinstance(annotation,dict):annotation={}
+        family=annotation.get('model_family')
+        if kind=='annotated' and family not in ('custom','general'):
+            tag=str(annotation.get('model_tag') or filename).lower()
+            family='general' if 'glad' in tag else 'custom' if 'exp_' in tag or 'custom' in tag else 'unknown'
+        type_label=('自训检测' if family=='custom' else '通用检测' if family=='general' else '检测视频') if kind=='annotated' else '深度视频' if kind in ('depth','preview_depth') else '原视频（RGB）' if kind=='rgb' else '电脑预览'
+        source_segment=annotation.get('source_segment',segment)
+        scope='整场' if source_segment=='session' else '第 '+source_segment.removeprefix('segment_')+' 段' if source_segment.startswith('segment_') else ''
+        shape=annotation.get('input_nchw',[]);details=[]
+        if not shape and kind=='annotated':
+            legacy=re.search(r'glad-(\d+)x(\d+)',filename)
+            if legacy:shape=[1,3,int(legacy[1]),int(legacy[2])]
+        if isinstance(shape,list) and len(shape)==4:details.append(str(shape[3])+' × '+str(shape[2]))
+        confidence=annotation.get('confidence',annotation.get('conf'))
+        if isinstance(confidence,(int,float)):details.append('阈值 '+format(confidence,'.2f'))
+        if kind=='annotated':
+            generated=self.registry._stamp(annotation.get('generated_at_unix_s'))
+            legacy_time=re.search(r'_(\d{8})_(\d{6})(?:_|\.)',filename)
+            if generated:details.append('生成 '+self.registry.default_name(generated)[5:19])
+            elif legacy_time:
+                date,clock=legacy_time.groups()
+                details.append('生成 '+date[4:6]+'-'+date[6:8]+' '+clock[:2]+':'+clock[2:4]+':'+clock[4:])
+        title=self.registry.default_name(scene_stamp)+' / '+type_label+(' · '+scope if scope else '')+(' · '+' · '.join(details) if details else '')
+        if entry['display_name']!=self.registry.default_name(scene_stamp):title+=' / '+entry['display_name']
+        if notes:title+=' · '+notes
         return {'session_id':sid,'source_session_id':entry.get('source_session_id'),'display_name':entry['display_name'],
             'metadata':metadata,
+            'scene_created_at_unix_s':scene_stamp,'type_label':type_label,'model_family':family,
             'created_at_unix_s':entry['created_at_unix_s'],'created_time_uncertain':entry.get('created_time_uncertain',True),
             'kind':kind,'segment':segment,'relative':relative,'url':'/api/media/'+urllib.parse.quote(relative),
-            'name':entry['display_name']+(' · '+notes if notes else '')+' / '+('电脑预览 / ' if kind.startswith('preview_') else '')+('整场视频' if segment=='session' else segment)+' / '+filename,
+            'name':title,
             'local_sync_error':entry.get('local_sync_error')}
     def scene_names(self,rows):
         self.registry.update(rows)
     def rename_scene(self,sid,name):return self.registry.rename(sid,name)
+    def deletion_target(self,relative,confirmation):
+        if not isinstance(relative,str) or not relative or confirmation!=relative:
+            raise ValueError('请确认要删除的本机视频')
+        return self.selected(relative)
+    def selected(self,relative):
+        with self.registry.lock:
+            if not isinstance(relative,str) or not relative:raise ValueError('请选择本机视频')
+            row=next((r for r in self.list() if r['relative']==relative),None)
+            if row is None:raise ValueError('该本机视频未列出或正在录制，请刷新后重试')
+            root=self.preview_root if relative.startswith('preview_videos/') else self.root
+            parts=pathlib.PurePosixPath(relative).parts
+            candidate=root.joinpath(*(parts[1:] if relative.startswith('preview_videos/') else parts))
+            if any(p.is_symlink() for p in (candidate,*candidate.parents) if p!=root and p.is_relative_to(root)):
+                raise ValueError('不允许删除链接指向的视频')
+            self.path(relative)
+            return row
+    def delete(self,relative,confirmation):
+        row=self.deletion_target(relative,confirmation)
+        with self.registry.operation(row.get('source_session_id') or row['session_id']):
+            with self.registry.lock:
+                self.deletion_target(relative,confirmation)
+                source=self.path(relative)
+                try:source.unlink()
+                except PermissionError as e:raise ValueError('视频被占用或无删除权限，请关闭其他播放器后重试') from e
+                return {'deleted':True,'relative':relative,'file':str(source)}
     def open_folder(self,relative):
         with self.registry.lock:
             source=self.path(relative)
@@ -179,7 +251,7 @@ class MediaLibrary:
         if not re.fullmatch('[a-zA-Z0-9_-]{1,80}',session_id) or not .2<=fps<=15:raise ValueError('场次或抽帧参数无效')
         with self.registry.operation(session_id):return self._extract(session_id,fps)
     def _extract(self,session_id,fps):
-        folder=self.registry.folder(session_id);videos=sorted(folder.glob('exports/*/rgb_video.mp4'),key=lambda p:int(re.search(r'(\d+)$',p.parent.name)[1]))
+        folder=self.registry.folder(session_id);videos=sorted((p for p in folder.glob('exports/segment_*/*.mp4') if video_kind(p)=='rgb' and not p.name.endswith('.view.mp4')),key=lambda p:int(re.search(r'(\d+)$',p.parent.name)[1]))
         if not videos:raise ValueError('先下载该场次 RGB 视频，再在电脑抽帧')
         output=folder/('training_images_'+uuid.uuid4().hex[:8]);output.mkdir()
         for i,source in enumerate(videos,1):

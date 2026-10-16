@@ -22,7 +22,7 @@ EXE=WS/'install_perception/zed_tracking/lib/zed_tracking/zed_perception_standalo
 BOOT_FILE=pathlib.Path('/proc/sys/kernel/random/boot_id')
 SCHEMAS={
  'status':set(),'check_device':set(),'start_capture':{'profile','model_id','capture_fps','camera_resolution'},'stop_capture':set(),
- 'set_detector':{'enabled','model_id'},'set_generic_detector':{'enabled','sensitivity'},'start_raw_record':{'label','scene','lighting','size_definition','known_distance_m','distance_source','client_started_at_unix_s','codec'},
+ 'set_detector':{'enabled','model_id','confidence'},'set_generic_detector':{'enabled','sensitivity'},'start_raw_record':{'label','scene','lighting','size_definition','known_distance_m','distance_source','client_started_at_unix_s','codec'},
  'stop_raw_record':set(),'list_sessions':set(),'list_models':set(),'test_model':{'model_id'},
  'select_model':{'model_id'},'save_calibration':{'target_size_m','size_definition','samples'},
  'export_session':{'session_id','fps','mode'},'export_diagnostics':set(),
@@ -42,6 +42,9 @@ def validate_action(action,params):
         if not isinstance(mode,str) or mode not in rates or type(fps) is not int or fps not in rates[mode]:
             raise ValueError('unsupported ZED X Mini resolution/FPS pair')
     if action in ('set_detector','set_generic_detector') and type(params.get('enabled')) is not bool:raise ValueError('enabled must be bool')
+    if 'confidence' in params:
+        value=params['confidence']
+        if isinstance(value,bool) or not isinstance(value,(int,float)) or not math.isfinite(value) or not .25<=value<=1:raise ValueError('置信度阈值需在 0.25–1 之间')
     if action=='set_generic_detector' and params['enabled']:raise ValueError('通用检测已停用，当前仅使用 YOLO')
     if 'model_id' in params and (not isinstance(params['model_id'],str) or not re.fullmatch('[0-9a-f]{64}',params['model_id'])):raise ValueError('invalid model identity')
     if action=='start_raw_record' and params.get('codec','LOSSLESS') not in ('LOSSLESS','H264_LOSSLESS'):raise ValueError('unsupported recording codec')
