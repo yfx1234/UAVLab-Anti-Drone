@@ -51,6 +51,12 @@ class BoardClient:
             return text
         finally:
             stdin.close();stdout.close();stderr.close()
+    def fetch_file(self,remote,local,timeout=1800):
+        """SFTP download of a fixed board artifact (annotated preview videos)."""
+        with self.connection() as client:
+            sftp=client.open_sftp()
+            try:sftp.get(remote,local)
+            finally:sftp.close()
     def call_on(self,client,action,params=None,request=None,timeout=50):
         """Use a new RPC channel on an already pinned/authenticated connection."""
         data=dict(request or {});data.update(action=action,params=params or {})
