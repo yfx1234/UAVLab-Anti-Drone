@@ -24,7 +24,7 @@ BASE=pathlib.Path(__file__).resolve().parent
 OUTPUT=pathlib.Path(os.environ.get('UAVLAB_OUTPUT_DIRECTORY',str(BASE.parents[1]/'outputs'/'perception_data'))).resolve()
 BOARD_ACTIONS={'check_device','start_capture','stop_capture','set_detector','start_raw_record','stop_raw_record',
                'list_sessions','list_models','test_model','select_model','save_calibration','export_session','export_diagnostics','prepare_dataset','rename_session','delete_session','save_session_metadata'}
-LOCAL_ACTIONS={'connect','disconnect','start_preview_record','stop_preview_record','download_session','download_asset','extract_local_frames','cancel_job','open_media_folder',
+LOCAL_ACTIONS={'connect','disconnect','start_preview_record','stop_preview_record','download_session','download_asset','extract_local_frames','cancel_job','open_media_folder','delete_local_media',
                'interceptor_start','interceptor_stop','annotate_session'}
 INTERCEPTOR_STATUS_CMD='python3 /home/uavlab/interceptor_ws/deploy/interceptor_status.py'
 INTERCEPTOR_CONTROL_CMD='bash /home/uavlab/interceptor_ws/deploy/run_interceptor_stack.sh'
@@ -118,6 +118,9 @@ class Panel:
         with self.lock:
             with self.jobs.lock:
                 if rid in self.jobs.ids:return self.jobs.ids[rid]
+            if action=='delete_local_media':
+                target=self.media.deletion_target(params.get('relative'),params.get('confirmation'))
+                sid=target.get('source_session_id') or target['session_id']
             if sid:
                 if sid in self.scene_jobs:raise ValueError('该场次正在下载、转换或修改，请完成后再操作')
                 self.scene_jobs[sid]=rid
@@ -151,6 +154,7 @@ class Panel:
                 return self.recorder.stop()
             if action=='extract_local_frames':return self.media.extract(params['session_id'],params.get('fps',2))
             if action=='open_media_folder':return self.media.open_folder(params['relative'])
+            if action=='delete_local_media':return self.media.delete(params['relative'],params.get('confirmation'))
             if not self.connected:raise ValueError('请先连接板子')
             if action in ('interceptor_start','interceptor_stop'):
                 # 拦截链启停：常量脚本路径经 SSH 执行；启动 2s 后栈自检，

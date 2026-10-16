@@ -182,6 +182,28 @@ class MediaLibrary:
     def scene_names(self,rows):
         self.registry.update(rows)
     def rename_scene(self,sid,name):return self.registry.rename(sid,name)
+    def deletion_target(self,relative,confirmation):
+        with self.registry.lock:
+            if not isinstance(relative,str) or not relative or confirmation!=relative:
+                raise ValueError('请确认要删除的本机视频')
+            row=next((r for r in self.list() if r['relative']==relative),None)
+            if row is None:raise ValueError('该本机视频未列出或正在录制，请刷新后重试')
+            root=self.preview_root if relative.startswith('preview_videos/') else self.root
+            parts=pathlib.PurePosixPath(relative).parts
+            candidate=root.joinpath(*(parts[1:] if relative.startswith('preview_videos/') else parts))
+            if any(p.is_symlink() for p in (candidate,*candidate.parents) if p!=root and p.is_relative_to(root)):
+                raise ValueError('不允许删除链接指向的视频')
+            self.path(relative)
+            return row
+    def delete(self,relative,confirmation):
+        row=self.deletion_target(relative,confirmation)
+        with self.registry.operation(row.get('source_session_id') or row['session_id']):
+            with self.registry.lock:
+                self.deletion_target(relative,confirmation)
+                source=self.path(relative)
+                try:source.unlink()
+                except PermissionError as e:raise ValueError('视频被占用或无删除权限，请关闭其他播放器后重试') from e
+                return {'deleted':True,'relative':relative,'file':str(source)}
     def open_folder(self,relative):
         with self.registry.lock:
             source=self.path(relative)
