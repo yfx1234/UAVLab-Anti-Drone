@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""检测预览：对已导出的场次 RGB 视频跑指定模型，画框输出标注 MP4。
+"""检测预览：对电脑选中的视频跑指定模型，画框输出标注 MP4。
 
 用法（板上）：
+  python3 annotate_session.py --input-job <job_id> --input-sha256 <sha256> --model-id <engine_sha256>
+兼容旧场次脚本：
   python3 annotate_session.py --session <session_id> --model-id <engine_sha256>
 
 流程：
@@ -35,6 +37,7 @@ WEIGHTS_ROOT = os.path.expanduser(
     "~/Jetson_ROS2_V0/weights/candidates")
 RECORDS_ROOT = os.path.expanduser(
     "~/Jetson_ROS2_V0/perception_records")
+JOBS_ROOT = os.path.expanduser("~/Jetson_ROS2_V0/perception_annotation_jobs")
 CONF = 0.55          # 与 zed_perception_standalone decode_end_to_end 同阈值
 CLASS_ID = 0         # 平台只放行 class 0
 
@@ -99,25 +102,43 @@ def letterbox(frame, hw):
     return canvas, scale, left, top
 
 
+def input_job(job_id, digest):
+    """Accept only an isolated upload with the exact digest submitted by the PC."""
+    if not isinstance(job_id,str) or not re.fullmatch('[0-9a-f]{32}',job_id):raise ValueError('检测任务 ID 无效')
+    if not isinstance(digest,str) or not re.fullmatch('[0-9a-f]{64}',digest):raise ValueError('源视频校验值无效')
+    root=os.path.realpath(JOBS_ROOT);folder=os.path.join(root,job_id)
+    source=os.path.join(folder,'source.mp4')
+    if os.path.islink(folder) or os.path.islink(source) or os.path.realpath(source)!=source or not os.path.isfile(source):
+        raise ValueError('所选视频不存在或路径无效')
+    if sha256_file(source)!=digest:raise ValueError('所选视频传输校验失败，请重试')
+    if os.path.lexists(os.path.join(folder,'output.mp4')):raise ValueError('检测任务输出已存在')
+    return [source],os.path.join(folder,'output.mp4')
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--session", required=True)
+    source_group=parser.add_mutually_exclusive_group(required=True)
+    source_group.add_argument("--session")
+    source_group.add_argument("--input-job")
+    parser.add_argument("--input-sha256")
     parser.add_argument("--model-id", required=True)
     parser.add_argument("--confidence", type=float, default=CONF)
     args = parser.parse_args()
-    if not re.fullmatch(r"[a-zA-Z0-9_-]{1,80}", args.session) or \
+    if (args.session is not None and not re.fullmatch(r"[a-zA-Z0-9_-]{1,80}", args.session)) or \
             not re.fullmatch(r"[0-9a-f]{64}", args.model_id):
         raise SystemExit(json.dumps({"ok": False, "error": "参数无效"}))
     if not math.isfinite(args.confidence) or not .25 <= args.confidence <= 1:
         raise ValueError("置信度阈值需在 0.25–1 之间")
 
     onnx_path, tag, manifest = find_model(args.model_id)
-    session_dir = os.path.join(RECORDS_ROOT, args.session)
-    segments = sorted(
-        glob.glob(os.path.join(session_dir, "exports", "segment_*",
-                               "rgb_video.mp4")),
-        key=lambda p: int(re.search(r"(\d+)$",
-                          os.path.basename(os.path.dirname(p))).group(1)))
+    if args.input_job:
+        segments,job_output=input_job(args.input_job,args.input_sha256)
+        session_dir=os.path.dirname(job_output)
+    else:
+        session_dir = os.path.join(RECORDS_ROOT, args.session)
+        segments = sorted(
+            glob.glob(os.path.join(session_dir, "exports", "segment_*", "rgb_video.mp4")),
+            key=lambda p: int(re.search(r"(\d+)$", os.path.basename(os.path.dirname(p))).group(1)))
     if not segments:
         raise SystemExit(json.dumps(
             {"ok": False, "error": "场次没有已导出的 RGB 视频，请重试板上视频准备"}))
@@ -148,7 +169,7 @@ def main():
     hw = (shape[2], shape[3])
 
     stamp = time.strftime("%Y%m%d_%H%M%S") + '_' + uuid.uuid4().hex[:8]
-    output = os.path.join(session_dir,
+    output = job_output if args.input_job else os.path.join(session_dir,
                           "annotated_%s_%s.mp4" % (tag, stamp))
     writer = None
     frames = detected_frames = 0
@@ -226,6 +247,7 @@ def main():
         "model_tag": tag,
         "input_nchw": [1, 3, hw[0], hw[1]],
         "conf": args.confidence,
+        "source_sha256": args.input_sha256 if args.input_job else None,
     }), flush=True)
 
 

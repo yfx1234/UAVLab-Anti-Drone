@@ -7,6 +7,18 @@ HTML = (pathlib.Path(__file__).resolve().parents[1] / 'panel/index.html').read_t
 
 
 class FrontendAnnotationTests(unittest.TestCase):
+    def test_annotation_uses_selected_local_video_not_left_scene(self):
+        handler=HTML.split("byId('annotateSession').onclick=",1)[1].split("byId('cancelDownload')",1)[0]
+        self.run_node("""
+const assert=require('node:assert/strict');
+const nodes={mediaSelect:{value:'/api/media/selected'},annotateModel:{value:'a'.repeat(64)},annotateConfidence:{value:'0.35'}};
+const byId=id=>nodes[id],localMedia=[{url:'/api/media/selected',relative:'selected/exports/segment_2/rgb_video.view.mp4',name:'所选视频'}];
+const selectedSession=()=>{throw new Error('Must not use left scene')},messages=[],message=(...args)=>messages.push(args),loadMedia=async()=>{};
+let params,response=null;async function action(name,value){params=value;return response;}
+const handler="""+handler+"""
+handler().then(async()=>{assert.equal(params.relative,'selected/exports/segment_2/rgb_video.view.mp4');assert.equal(params.confidence,.35);assert.equal(params.session_id,undefined);response={cleanup_warning:'cleanup failed'};await handler();assert.match(messages.at(-1)[0],/cleanup failed/);assert.equal(messages.at(-1)[1],true);}).catch(e=>{console.error(e);process.exitCode=1;});
+""")
+
     def run_node(self, script):
         if not shutil.which('node'): self.skipTest('Node required')
         result = subprocess.run(['node', '-e', script], capture_output=True, text=True, encoding='utf-8', timeout=10)

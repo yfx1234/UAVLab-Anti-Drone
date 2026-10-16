@@ -121,6 +121,9 @@ class Panel:
             if action=='delete_local_media':
                 target=self.media.deletion_target(params.get('relative'),params.get('confirmation'))
                 sid=target.get('source_session_id') or target['session_id']
+            if action=='annotate_session':
+                target=self.media.selected(params.get('relative'))
+                sid=target.get('source_session_id') or target['session_id']
             if sid:
                 if sid in self.scene_jobs:raise ValueError('该场次正在下载、转换或修改，请完成后再操作')
                 self.scene_jobs[sid]=rid

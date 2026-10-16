@@ -160,7 +160,7 @@ class MediaLibrary:
                         rows.append(dict(self._row(entry,pid,'preview_'+entry.get('view_mode','rgb'),p.stem,relative,p.name),path=str(p.resolve())))
             def order(row):
                 number=re.search(r'(\d+)$',row['segment'])
-                return (-row['created_at_unix_s'],row.get('source_session_id') or row['session_id'],int(number[1]) if number else 0,row['kind'],row['relative'])
+                return (-row['scene_created_at_unix_s'],row.get('source_session_id') or row['session_id'],int(number[1]) if number else 0,row['kind'],row['relative'])
             return sorted(rows,key=order)
     def _notes(self,entry,sid,kind):
         source=self.registry.scenes.get(entry.get('source_session_id') or sid)
@@ -173,19 +173,53 @@ class MediaLibrary:
         return metadata
     def _row(self,entry,sid,kind,segment,relative,filename):
         metadata=self._notes(entry,sid,kind);notes=' · '.join(metadata[k] for k in ('label','scene','lighting') if metadata.get(k))
+        scene=self.registry.scenes.get(entry.get('source_session_id') or sid,entry)
+        scene_stamp=scene['created_at_unix_s']
+        annotation={}
+        if kind=='annotated':
+            annotation=self.registry._json(self.root/pathlib.PurePosixPath(relative).with_suffix('.json'))
+            if not isinstance(annotation,dict):annotation={}
+        family=annotation.get('model_family')
+        if kind=='annotated' and family not in ('custom','general'):
+            tag=str(annotation.get('model_tag') or filename).lower()
+            family='general' if 'glad' in tag else 'custom' if 'exp_' in tag or 'custom' in tag else 'unknown'
+        type_label=('自训检测' if family=='custom' else '通用检测' if family=='general' else '检测视频') if kind=='annotated' else '深度视频' if kind in ('depth','preview_depth') else '原视频（RGB）' if kind=='rgb' else '电脑预览'
+        source_segment=annotation.get('source_segment',segment)
+        scope='整场' if source_segment=='session' else '第 '+source_segment.removeprefix('segment_')+' 段' if source_segment.startswith('segment_') else ''
+        shape=annotation.get('input_nchw',[]);details=[]
+        if not shape and kind=='annotated':
+            legacy=re.search(r'glad-(\d+)x(\d+)',filename)
+            if legacy:shape=[1,3,int(legacy[1]),int(legacy[2])]
+        if isinstance(shape,list) and len(shape)==4:details.append(str(shape[3])+' × '+str(shape[2]))
+        confidence=annotation.get('confidence',annotation.get('conf'))
+        if isinstance(confidence,(int,float)):details.append('阈值 '+format(confidence,'.2f'))
+        if kind=='annotated':
+            generated=self.registry._stamp(annotation.get('generated_at_unix_s'))
+            legacy_time=re.search(r'_(\d{8})_(\d{6})(?:_|\.)',filename)
+            if generated:details.append('生成 '+self.registry.default_name(generated)[5:19])
+            elif legacy_time:
+                date,clock=legacy_time.groups()
+                details.append('生成 '+date[4:6]+'-'+date[6:8]+' '+clock[:2]+':'+clock[2:4]+':'+clock[4:])
+        title=self.registry.default_name(scene_stamp)+' / '+type_label+(' · '+scope if scope else '')+(' · '+' · '.join(details) if details else '')
+        if entry['display_name']!=self.registry.default_name(scene_stamp):title+=' / '+entry['display_name']
+        if notes:title+=' · '+notes
         return {'session_id':sid,'source_session_id':entry.get('source_session_id'),'display_name':entry['display_name'],
             'metadata':metadata,
+            'scene_created_at_unix_s':scene_stamp,'type_label':type_label,'model_family':family,
             'created_at_unix_s':entry['created_at_unix_s'],'created_time_uncertain':entry.get('created_time_uncertain',True),
             'kind':kind,'segment':segment,'relative':relative,'url':'/api/media/'+urllib.parse.quote(relative),
-            'name':entry['display_name']+(' · '+notes if notes else '')+' / '+('电脑预览 / ' if kind.startswith('preview_') else '')+('检测标注' if kind=='annotated' else '整场视频' if segment=='session' else segment)+' / '+filename,
+            'name':title,
             'local_sync_error':entry.get('local_sync_error')}
     def scene_names(self,rows):
         self.registry.update(rows)
     def rename_scene(self,sid,name):return self.registry.rename(sid,name)
     def deletion_target(self,relative,confirmation):
+        if not isinstance(relative,str) or not relative or confirmation!=relative:
+            raise ValueError('请确认要删除的本机视频')
+        return self.selected(relative)
+    def selected(self,relative):
         with self.registry.lock:
-            if not isinstance(relative,str) or not relative or confirmation!=relative:
-                raise ValueError('请确认要删除的本机视频')
+            if not isinstance(relative,str) or not relative:raise ValueError('请选择本机视频')
             row=next((r for r in self.list() if r['relative']==relative),None)
             if row is None:raise ValueError('该本机视频未列出或正在录制，请刷新后重试')
             root=self.preview_root if relative.startswith('preview_videos/') else self.root

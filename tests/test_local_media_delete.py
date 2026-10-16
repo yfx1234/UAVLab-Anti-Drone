@@ -70,5 +70,12 @@ class LocalMediaDeleteTests(unittest.TestCase):
         self.assertFalse(self.video.exists())
         self.assertEqual(p.scene_jobs,{})
 
+    def test_annotation_reserves_selected_source_even_when_left_scene_differs(self):
+        p=Panel.__new__(Panel);p.lock=threading.RLock();p.connected=True;p.media=self.media
+        p.jobs=JobManager();p.scene_jobs={'session_test':'download'}
+        self.addCleanup(p.jobs.pool.shutdown)
+        with self.assertRaisesRegex(ValueError,'正在'):
+            p.submit({'action':'annotate_session','params':{'relative':self.relative,'session_id':'unrelated'}})
+
 
 if __name__=='__main__':unittest.main()
