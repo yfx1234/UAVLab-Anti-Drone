@@ -149,12 +149,22 @@ class MediaLibrary:
                 number=re.search(r'(\d+)$',row['segment'])
                 return (-row['created_at_unix_s'],row.get('source_session_id') or row['session_id'],int(number[1]) if number else 0,row['kind'],row['relative'])
             return sorted(rows,key=order)
-    @staticmethod
-    def _row(entry,sid,kind,segment,relative,filename):
+    def _notes(self,entry,sid,kind):
+        source=self.registry.scenes.get(entry.get('source_session_id') or sid)
+        if source is None:return {}
+        if isinstance(source.get('metadata'),dict):return self.registry.note_metadata(source['metadata'])
+        folder=self.registry.checked(self.root,source['folder'])
+        manifest=self.registry._json(folder/'manifest.json')
+        metadata=self.registry.note_metadata(manifest.get('metadata')) if isinstance(manifest,dict) else {}
+        metadata.update(self.registry.note_metadata(self.registry._json(folder/'notes.json')))
+        return metadata
+    def _row(self,entry,sid,kind,segment,relative,filename):
+        metadata=self._notes(entry,sid,kind);notes=' · '.join(metadata[k] for k in ('label','scene','lighting') if metadata.get(k))
         return {'session_id':sid,'source_session_id':entry.get('source_session_id'),'display_name':entry['display_name'],
+            'metadata':metadata,
             'created_at_unix_s':entry['created_at_unix_s'],'created_time_uncertain':entry.get('created_time_uncertain',True),
             'kind':kind,'segment':segment,'relative':relative,'url':'/api/media/'+urllib.parse.quote(relative),
-            'name':entry['display_name']+' / '+('电脑预览 / ' if kind.startswith('preview_') else '')+('整场视频' if segment=='session' else segment)+' / '+filename,
+            'name':entry['display_name']+(' · '+notes if notes else '')+' / '+('电脑预览 / ' if kind.startswith('preview_') else '')+('整场视频' if segment=='session' else segment)+' / '+filename,
             'local_sync_error':entry.get('local_sync_error')}
     def scene_names(self,rows):
         self.registry.update(rows)

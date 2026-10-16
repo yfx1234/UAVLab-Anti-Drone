@@ -80,6 +80,12 @@ class SceneRegistry:
         return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value > 0 else None
 
     @staticmethod
+    def note_metadata(value):
+        if not isinstance(value, dict): return {}
+        return {k: v for k, v in value.items() if k in {'label', 'scene', 'lighting'}
+                and isinstance(v, str) and len(v) <= 300 and not any(ord(c) < 32 or ord(c) == 127 for c in v)}
+
+    @staticmethod
     def checked(root, component):
         if not isinstance(component, str) or pathlib.PureWindowsPath(component).name != component or component in ('.', '..'):
             raise ValueError('本机场次路径越界')
@@ -156,6 +162,8 @@ class SceneRegistry:
                 # First board metadata replaces a local-only import name/time. The operation
                 # lock waits for any conversion of that scene; subsequent refreshes do not move it.
                 entry = self.scenes[sid]
+                if isinstance(row.get('metadata'), dict):
+                    entry['metadata'] = self.note_metadata(row['metadata'])
                 try:
                     if entry.get('pending_board_metadata') or entry['folder'] == sid:
                         self._sync_scene(sid); entry['pending_board_metadata'] = False
