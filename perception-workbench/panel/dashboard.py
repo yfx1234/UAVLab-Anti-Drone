@@ -23,7 +23,10 @@ BASE=pathlib.Path(__file__).resolve().parent
 OUTPUT=pathlib.Path(os.environ.get('UAVLAB_OUTPUT_DIRECTORY',str(BASE.parents[1]/'outputs'/'perception_data'))).resolve()
 BOARD_ACTIONS={'check_device','start_capture','stop_capture','set_detector','start_raw_record','stop_raw_record',
                'list_sessions','list_models','test_model','select_model','save_calibration','export_session','export_diagnostics','prepare_dataset','rename_session','delete_session','save_session_metadata'}
-LOCAL_ACTIONS={'connect','disconnect','start_preview_record','stop_preview_record','download_session','download_asset','extract_local_frames','cancel_job','open_media_folder'}
+LOCAL_ACTIONS={'connect','disconnect','start_preview_record','stop_preview_record','download_session','download_asset','extract_local_frames','cancel_job','open_media_folder',
+               'interceptor_start','interceptor_stop','annotate_session'}
+INTERCEPTOR_STATUS_CMD='python3 /home/uavlab/interceptor_ws/deploy/interceptor_status.py'
+INTERCEPTOR_CONTROL_CMD='bash /home/uavlab/interceptor_ws/deploy/run_interceptor_stack.sh'
 
 def valid_request(host,origin,token,expected):
     return host in ('127.0.0.1:8767','localhost:8767') and origin=='http://'+host and isinstance(token,str) and hmac.compare_digest(token,expected)
@@ -37,7 +40,9 @@ class Panel:
         self.sessions=SessionManager(self.board,OUTPUT/'board_sessions',registry,self.transfer_state)
         self.media=MediaLibrary(OUTPUT/'board_sessions',OUTPUT/'preview_videos',registry)
         self.cancelled=set();self.progress={};self.events=[];self.scene_jobs={}
+        self.interceptor={};self.interceptor_error=None;self.interceptor_observed_at=0.0
         self.thread=threading.Thread(target=self._poll,daemon=True);self.thread.start()
+        self.interceptor_thread=threading.Thread(target=self._interceptor_poll,daemon=True);self.interceptor_thread.start()
     def _poll(self):
         while not self.closed.wait(1):
             if not self.connected:continue
@@ -50,6 +55,17 @@ class Panel:
                 self.receiver.set_enabled(bool(state.get('pid')))
             except Exception as e:
                 with self.lock:self.error=str(e)
+    def _interceptor_poll(self):
+        """2s 轮询拦截链状态（~/interceptor_ws 部署，只读脚本，日志解析在板上完成）。"""
+        while not self.closed.wait(2):
+            if not self.connected:continue
+            try:
+                raw=self.board.exec_command(INTERCEPTOR_STATUS_CMD,timeout=12)
+                data=json.loads(raw.strip().splitlines()[-1])
+                if not isinstance(data,dict) or 'running' not in data:raise ValueError('拦截链状态格式无效')
+                with self.lock:self.interceptor=data;self.interceptor_error=None;self.interceptor_observed_at=time.monotonic()
+            except Exception as e:
+                with self.lock:self.interceptor_error=str(e)
     def observe_state(self,state,request_started):
         received=time.monotonic();transit=max(0,received-request_started)
         state=state.copy()
@@ -86,6 +102,8 @@ class Panel:
             return {'api_version':2,'instance_id':self.instance_id,'host':HOST,'connected':self.connected,'state':state,'error':self.error,
                     'control_roundtrip_ms':getattr(self,'control_roundtrip_ms',None),
                     'local_revision':self.local_revision,'preview':self.receiver.snapshot(),'preview_recording':self.recorder.snapshot(),
+                    'interceptor':self.interceptor,'interceptor_error':self.interceptor_error,
+                    'interceptor_age_s':max(0.0,time.monotonic()-self.interceptor_observed_at) if self.interceptor_observed_at else None,
                     'events':self.events[-15:],'output_directory':str(OUTPUT)}
     def submit(self,data):
         action=data.get('action');params=data.get('params',{})
@@ -133,6 +151,40 @@ class Panel:
             if action=='extract_local_frames':return self.media.extract(params['session_id'],params.get('fps',2))
             if action=='open_media_folder':return self.media.open_folder(params['relative'])
             if not self.connected:raise ValueError('请先连接板子')
+            if action in ('interceptor_start','interceptor_stop'):
+                # 拦截链启停：常量脚本路径经 SSH 执行；启动 2s 后栈自检，
+                # 输出末行含 pid/日志路径或失败原因
+                out=self.board.exec_command(
+                    INTERCEPTOR_CONTROL_CMD+' '+action.removeprefix('interceptor_'),timeout=45)
+                lines=[line for line in out.splitlines() if line.strip()]
+                return {'output':lines[-3:]}
+            if action=='annotate_session':
+                # 检测预览：板上对场次已导出的 RGB 视频跑所选模型画框，
+                # SFTP 取回放进本场次本地 exports/annotated/，媒体库直接可播
+                sid=params.get('session_id');model_id=params.get('model_id')
+                if not isinstance(sid,str) or not re.fullmatch('[a-zA-Z0-9_-]{1,80}',sid):raise ValueError('场次无效')
+                if not isinstance(model_id,str) or not re.fullmatch('[0-9a-f]{64}',model_id):raise ValueError('模型无效')
+                models=self.board.call('list_models')
+                if not any(m.get('model_id')==model_id for m in models):raise ValueError('所选模型不存在')
+                ready=self.board.call('ready_media',{'session_id':sid,'mode':'rgb_video'})
+                if not ready.get('ready'):
+                    fresh=self.board.call('status')
+                    if fresh.get('pid'):raise ValueError('该场次视频尚未生成；请先停止相机，再生成检测预览')
+                    request=dict(request_id=uuid.uuid4().hex,**{'expected_'+k:fresh[k] for k in ('boot_id','run_id','revision')})
+                    converted=self.board.call('export_session',{'session_id':sid,'mode':'rgb_video','fps':15},request,timeout=3700)
+                    if converted['result']['state']!='complete':raise ValueError('场次不完整，不能生成检测预览：'+'；'.join(converted['result']['integrity_errors']))
+                out=self.board.exec_command(
+                    'python3 /home/uavlab/Jetson_ROS2_V0/perception_tools/annotate_session.py --session %s --model-id %s'%(sid,model_id),timeout=3600)
+                result=json.loads([line for line in out.splitlines() if line.strip()][-1])
+                if not result.get('ok'):raise ValueError('检测预览生成失败：'+str(result.get('error')))
+                try:folder=self.media.registry.folder(sid)
+                except (ValueError,KeyError):raise ValueError('本机没有该场次目录，请先下载一次整场 RGB 视频再生成检测预览')
+                target_dir=folder/'exports'/'annotated';target_dir.mkdir(parents=True,exist_ok=True)
+                board_output=result['output'];stem=pathlib.Path(board_output).stem
+                local=target_dir/(stem+'.view.mp4')
+                self.board.fetch_file(board_output,str(local))
+                return {'ok':True,'relative':local.relative_to(self.media.root).as_posix(),'url':'/api/media/'+urllib.parse.quote(local.relative_to(self.media.root).as_posix()),
+                        'frames':result.get('frames'),'detected_frames':result.get('detected_frames'),'avg_inference_ms':result.get('avg_inference_ms'),'model_tag':result.get('model_tag')}
             if action in ('download_session','download_asset'):
                 download_started=time.monotonic();timings={}
                 def progress(value):

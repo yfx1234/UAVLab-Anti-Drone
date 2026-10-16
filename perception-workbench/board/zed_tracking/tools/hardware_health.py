@@ -28,6 +28,24 @@ def read_hardware(root=pathlib.Path('/'), disk_root=None):
         if name=='cpu-thermal':temperatures['cpu']=value
         if name=='gpu-thermal':temperatures['gpu']=value
     if values:temperatures['max']=max(values)
+    cpu_times=None
+    for line in text(root/'proc/stat').splitlines():
+        fields=line.split()
+        if not fields or fields[0]!='cpu':continue
+        try:
+            ticks=[int(value) for value in fields[1:9]]
+            if len(ticks)>=4 and all(value>=0 for value in ticks):
+                # guest/guest_nice are already included in user/nice.
+                cpu_times={'total':sum(ticks),'idle':ticks[3]+(ticks[4] if len(ticks)>4 else 0)}
+        except ValueError:pass
+        break
+    gpu_load=None
+    for pattern in ('sys/devices/platform/17000000.gpu/load','sys/devices/platform/gpu.0/load',
+                    'sys/class/devfreq/*gpu*/device/load','sys/class/devfreq/*gpu*/load'):
+        for path in root.glob(pattern):
+            gpu_load=number(path,0,1000)
+            if gpu_load is not None:break
+        if gpu_load is not None:break
     voltage=power=None
     # Discover by rail label; hwmon indices can change across boots.
     for label in (root/'sys/bus/i2c/drivers/ina3221').glob('*/hwmon/hwmon*/in*_label'):
@@ -56,7 +74,9 @@ def read_hardware(root=pathlib.Path('/'), disk_root=None):
     try:
         disk=os.statvfs(disk_root or root);free=disk.f_bavail*disk.f_frsize
     except (OSError,AttributeError):free=None
-    return {'temperatures_c':temperatures,'module_input_voltage_v':voltage,'module_power_w':power,
+    return {'temperatures_c':temperatures,'cpu_times_ticks':cpu_times,
+            'gpu_utilization_pct':None if gpu_load is None else gpu_load/10,
+            'module_input_voltage_v':voltage,'module_power_w':power,
             'power_rail':'VDD_IN' if voltage is not None else None,'mem_available_kib':available,
             'disk_free_bytes':free,'network':network,'radio_signal_dbm':None,
             'radio_signal_status':'not_provided','source':'linux_sysfs_read_only'}
@@ -64,15 +84,24 @@ def read_hardware(root=pathlib.Path('/'), disk_root=None):
 
 def hardware_snapshot(boot_id,cache_file,disk_root=None,now=None):
     now=time.monotonic() if now is None else now;cache_file=pathlib.Path(cache_file)
+    previous=None
     try:
         cached=json.loads(cache_file.read_text())
         age=now-cached['sample_monotonic_s']
-        if cached.get('schema_version')==1 and cached.get('boot_id')==boot_id and 0<=age<2:
-            return dict(cached,sample_age_s=age)
+        if cached.get('schema_version')==2 and cached.get('boot_id')==boot_id and age>=0:
+            if age<2:return dict(cached,sample_age_s=age)
+            if age<=10:previous=cached
     except (OSError,ValueError,KeyError,TypeError):pass
     started=time.perf_counter()
-    result=dict(read_hardware(disk_root=disk_root),schema_version=1,boot_id=boot_id,
+    result=dict(read_hardware(disk_root=disk_root),schema_version=2,boot_id=boot_id,
                 sample_monotonic_s=now,sample_age_s=0)
+    result['cpu_utilization_pct']=None
+    before=(previous or {}).get('cpu_times_ticks');after=result.get('cpu_times_ticks')
+    if isinstance(before,dict) and isinstance(after,dict):
+        try:
+            total=after['total']-before['total'];idle=after['idle']-before['idle']
+            if total>0 and 0<=idle<=total:result['cpu_utilization_pct']=100*(total-idle)/total
+        except (KeyError,TypeError):pass
     result['collection_ms']=(time.perf_counter()-started)*1000
     temporary=cache_file.with_name(cache_file.name+'.'+uuid.uuid4().hex+'.tmp')
     try:

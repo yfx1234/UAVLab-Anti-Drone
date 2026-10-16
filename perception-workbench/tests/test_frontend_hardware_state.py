@@ -14,7 +14,11 @@ const state={connected:true,error:null,control_roundtrip_ms:150};let s={hardware
 function render(){
 '''+block+r'''}
 render();assert.equal(byId('boardTemperature').textContent,'55.0 °C');assert.equal(byId('memory').textContent,'—');assert.equal(byId('disk').textContent,'—');assert.equal(byId('radioSignal').textContent,'未接入');
+assert.equal(byId('cpuUsage').textContent,'—');assert.equal(byId('gpuUsage').textContent,'—');
+s.hardware.cpu_utilization_pct=25;s.hardware.gpu_utilization_pct=0;render();assert.equal(byId('cpuUsage').textContent,'25 %');assert.equal(byId('gpuUsage').textContent,'0 %');
+s.hardware.gpu_utilization_pct=150;render();assert.equal(byId('gpuUsage').textContent,'—');
 s.hardware.sample_age_s=6.1;render();assert.equal(byId('boardVoltage').textContent,'—');assert.equal(byId('controlRoundtrip').textContent,'—');
+assert.equal(byId('cpuUsage').textContent,'—');assert.equal(byId('gpuUsage').textContent,'—');
 s.hardware.sample_age_s=0;state.error='timeout';render();assert.equal(byId('boardTemperature').textContent,'—');assert.equal(byId('linkHealth').textContent,'连接异常');
 state.error=null;state.connected=false;render();assert.equal(byId('boardPower').textContent,'—');assert.equal(byId('linkHealth').textContent,'未连接');
 '''

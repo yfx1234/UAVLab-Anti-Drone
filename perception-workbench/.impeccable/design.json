@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-14T14:10:32.587Z",
+  "generatedAt": "2026-10-16T07:11:24.249651Z",
   "title": "Design System: UAVLab 感知与采集工作台",
   "extensions": {
     "colorMeta": {
@@ -375,8 +375,8 @@
       "kind": "button",
       "refersTo": "button-primary",
       "description": "紧凑整场下载胶囊；图标与文字组整体居中，参数行保留实际规格。",
-      "html": "<button class=\"ds-primary\" type=\"button\"><svg class=\"ds-download-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M12 3v12m-4-4 4 4 4-4M4 16v5h16v-5\"/></svg><span class=\"ds-button-copy\"><strong>下载整场 RGB 视频</strong><small>1920 × 1080 · MP4</small></span></button>",
-      "css": ".ds-primary{display:inline-flex;align-items:center;justify-content:center;gap:7px;font:500 13px/1.5 var(--font-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",\"Noto Sans SC\",\"PingFang SC\",\"Hiragino Sans GB\",Arial,sans-serif);min-height:50px;border:0;border-radius:999px;padding:9px 14px;cursor:pointer;transition:background .15s ease-out,box-shadow .15s ease-out}.ds-primary:focus-visible{outline:2px solid #788795;outline-offset:3px}.ds-primary:disabled{color:#858589;background:#eeeef1;cursor:default}@media(prefers-reduced-motion:reduce){.ds-primary{transition:none}}.ds-primary{background:var(--blue,#303033);color:#fff}.ds-primary:active:not(:disabled){background:#d9d9df}.ds-primary:hover:not(:disabled){background:#171719} .ds-primary{width:100%;text-align:left}.ds-download-icon{width:20px;height:20px;stroke:currentColor;stroke-width:1.6;fill:none;stroke-linecap:round;stroke-linejoin:round;flex:none;margin-right:5px}.ds-button-copy{display:block}.ds-button-copy strong{display:block;font-size:13px;font-weight:600}.ds-button-copy small{display:block;font-size:11px;font-weight:400;color:#e4f3ee;margin-top:3px}.ds-primary:disabled small{color:#76868a}@media(max-width:800px){.ds-primary{padding:9px 12px}.ds-download-icon{display:none}}@media(max-width:599px){.ds-download-icon{display:block}}"
+      "html": "<button class=\"ds-primary\" type=\"button\"><svg class=\"ds-download-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M12 4v11m-4-4 4 4 4-4M5 17v3h14v-3\"/></svg><span class=\"ds-button-copy\"><strong>下载整场 RGB 视频</strong><small>1920 × 1080 · MP4</small></span></button>",
+      "css": ".ds-primary{display:inline-flex;align-items:center;justify-content:center;gap:7px;font:500 13px/1.5 var(--font-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",\"Noto Sans SC\",\"PingFang SC\",\"Hiragino Sans GB\",Arial,sans-serif);min-height:50px;border:0;border-radius:999px;padding:9px 14px;cursor:pointer;transition:background .15s ease-out,box-shadow .15s ease-out}.ds-primary:focus-visible{outline:2px solid #788795;outline-offset:3px}.ds-primary:disabled{color:#858589;background:#eeeef1;cursor:default}@media(prefers-reduced-motion:reduce){.ds-primary{transition:none}}.ds-primary{background:var(--blue,#303033);color:#fff}.ds-primary:active:not(:disabled){background:#d9d9df}.ds-primary:hover:not(:disabled){background:#171719} .ds-primary{width:100%;text-align:left}.ds-download-icon{width:18px;height:18px;stroke:currentColor;stroke-width:1.75;fill:none;stroke-linecap:round;stroke-linejoin:round;flex:none;margin:0;justify-self:center}.ds-button-copy{display:block}.ds-button-copy strong{display:block;font-size:13px;font-weight:600}.ds-button-copy small{display:block;font-size:11px;font-weight:400;color:#e4f3ee;margin-top:3px}.ds-primary:disabled small{color:#76868a}@media(max-width:800px){.ds-primary{padding:9px 12px}.ds-download-icon{display:block}}@media(max-width:599px){.ds-download-icon{display:block}}.ds-primary{display:grid;grid-template-columns:20px minmax(0,148px);gap:12px;justify-content:center}"
     },
     {
       "name": "Secondary control",
@@ -496,7 +496,9 @@
       "Do 让桌面控制和素材来源栏 sticky 并内部滚动，窄屏恢复相应折叠或自然堆叠；反馈固定显示且不改变内容流。",
       "Do 保留键盘焦点、禁用、空状态、失败重试、取消与不可逆确认。",
       "Do 用胶囊按钮、分尺度圆角与轻环境阴影；常驻控件和表面保持无外围描边。",
-      "Do 按 --media-room 等比缩小整个本机回放卡片，让 stage 占满卡片宽度，以原比例和 contain 展示完整画面。"
+      "Do 按 --media-room 等比缩小整个本机回放卡片，让 stage 占满卡片宽度，以原比例和 contain 展示完整画面。",
+      "Do 将场次栏与视频卡片作为一个工作区整体居中，平衡两侧留白。",
+      "Do 将 CPU/GPU 使用率作为只读健康信息，缺失、首次采样或过期时显示未知。"
     ],
     "donts": [
       "Don't 恢复蓝色主操作、全场 13px 正文或每个标题前的装饰图标。",
