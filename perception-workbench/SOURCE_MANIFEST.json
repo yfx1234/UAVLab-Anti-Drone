@@ -1,5 +1,5 @@
 {
-  "source_commit": "dfd30e329afa8b7f24e8debf85f797ec43f97f1c",
+  "source_commit": "9d019566de1cb5b90ed4ef4747647f244af9199b",
   "package": "perception-workbench",
   "source_only": true,
   "hash_basis": "git_blob_bytes",
@@ -600,6 +600,13 @@
       "bytes": 7389
     },
     {
+      "path": "docs/尺寸估距参数界面_2026-10-16.md",
+      "git_blob": "50aa2825371ffc0945f08a6cc2d7755ccb2bd14d",
+      "git_mode": "100644",
+      "sha256": "2fc0af27acca96e91fb21cf94ffba2066b6a0c2c956e6e61eb21251eddf70c46",
+      "bytes": 2582
+    },
+    {
       "path": "docs/工作台与链路优化_2026-10-14.md",
       "git_blob": "b51be2db48596bc1b02515d038bbd0bbab23ddba",
       "git_mode": "100644",
@@ -797,10 +804,10 @@
     },
     {
       "path": "panel/index.html",
-      "git_blob": "49f46ff853ca28987b3cc72de6fd06b236c1fbfe",
+      "git_blob": "320dcfcd72b6f944f508bf9a7a46c7f26e17700e",
       "git_mode": "100644",
-      "sha256": "e918dbab56b480f8056118024044c99da36bd85e2cde07b24350af089f493e33",
-      "bytes": 91296
+      "sha256": "30329777fb40f62501074581089fc2dc529acbdb45769b7c39fc5a69d6194233",
+      "bytes": 95234
     },
     {
       "path": "panel/job_manager.py",
@@ -1062,11 +1069,18 @@
       "bytes": 2824
     },
     {
-      "path": "tests/test_frontend_workspace.py",
-      "git_blob": "3a4608740e2cd70fe96d2e7893d46f516ecef636",
+      "path": "tests/test_frontend_range_size.py",
+      "git_blob": "543f346b31e1a207d01b92d4caccdea3b95805c4",
       "git_mode": "100644",
-      "sha256": "64f2040d772e28b1360892f31eb2fda51a8360e8024036242837149a6c08592e",
-      "bytes": 14386
+      "sha256": "72058d46400926a7b711fe68f7c5fc53790e07d92926a5f859cd9f37736594c9",
+      "bytes": 4077
+    },
+    {
+      "path": "tests/test_frontend_workspace.py",
+      "git_blob": "bc61ed966e5b34ce3ebb01a0a42401aec870aca8",
+      "git_mode": "100644",
+      "sha256": "889fbaffc9fb1ca96e760390f42186adb95b27254ee3666829c8ea2d890fd79f",
+      "bytes": 14416
     },
     {
       "path": "tests/test_generic_configuration.py",
