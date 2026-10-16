@@ -2743,5 +2743,6 @@
     }
   },
   "untested_on_NX": true,
-  "unseen_airframes_and_bird_negatives_not_evaluated": true
+  "unseen_airframes_and_bird_negatives_not_evaluated": true,
+  "subsequent_label_audit_note": "2026-10-16 GLAD follow-up found 3 unresolved candidates in prior target_present=false frames. The 67 confirmed positives are not exhaustive ground truth; the other 22 frames are unreferenced, not proven negatives. Negative-condition and unmatched counters retain original labels, not semantic FP. See 2026-10-16-large-dataset-screening.json and companion report. All models require unified relabeling before formal recall/precision."
 }
