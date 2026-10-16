@@ -47,6 +47,7 @@ class AnnotationPreviewTests(unittest.TestCase):
             updates=[]
             result=AnnotationPreview(Board(),library,transport=transport).run({'relative':relative,'session_id':'wrong_scene','model_id':'a'*64,'confidence':.3},updates.append)
             output=library.path(result['relative'])
+            self.assertTrue(output.name.startswith('20261013-150320_通用检测_第2段_640x384_c0.30_'))
             self.assertTrue(library._can_stream_copy(output))
             metadata=json.loads(output.with_suffix('.json').read_text(encoding='utf-8'))
             self.assertEqual(metadata['source_relative'],relative)

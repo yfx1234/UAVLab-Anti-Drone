@@ -9,6 +9,7 @@ import time
 import urllib.parse
 import uuid
 from annotation_transport import AnnotationTransport,JOBS_ROOT
+from media_names import video_filename
 
 
 class AnnotationPreview:
@@ -58,13 +59,12 @@ class AnnotationPreview:
                 report({'phase_code':'transfer','stage':'取回标注视频'})
                 self.board.fetch_file(str(remote),str(part),progress=lambda done,total:report({'phase_code':'transfer','stage':'取回标注视频','downloaded_bytes':done,'total_bytes':total}))
                 if not part.stat().st_size:raise ValueError('取回的标注视频为空，请重试')
-                shape=result.get('input_nchw',[])
-                resolution=('%sx%s'%(shape[3],shape[2])) if len(shape)==4 else 'input'
-                output=target/('detected_%s_%s_%s.view.mp4'%(family,resolution,job_id))
                 report({'phase_code':'local_encode','stage':'转换为网页播放格式'})
                 metadata=dict(result,model_id=model_id,model_family=family,confidence=confidence,
                     source_relative=row['relative'],source_name=row['name'],source_segment=row['segment'],
                     source_session_id=sid,source_sha256=digest,scene_created_at_unix_s=row['scene_created_at_unix_s'],generated_at_unix_s=time.time())
+                output=target/video_filename(row['scene_created_at_unix_s'],'annotated',row['segment'],annotation=metadata,token=job_id[:12])
+                if output.exists():raise ValueError('标注文件名已存在，请重试')
                 try:
                     self.media.prepare_annotation(part,output)
                     output.with_suffix('.json').write_text(json.dumps(metadata,ensure_ascii=False),encoding='utf-8')

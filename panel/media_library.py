@@ -3,6 +3,7 @@ import pathlib,json,subprocess,time,shutil,urllib.parse,uuid,os,re,contextlib
 from preview_recorder import PreviewRecorder
 from scene_registry import SceneRegistry
 from windows_file_location import reveal_file
+from media_names import video_filename,video_kind
 
 class MediaLibrary:
     def __init__(self,root,preview_root=None,registry=None):
@@ -58,7 +59,7 @@ class MediaLibrary:
         """Publish only complete H264/yuv420p files, including repairs in place."""
         source=pathlib.Path(source);output=pathlib.Path(output)
         if source==output and self._can_stream_copy(source):return output
-        tmp=output.with_name(output.stem+'.'+uuid.uuid4().hex+'.tmp.mp4')
+        tmp=output.with_name(uuid.uuid4().hex+'.tmp.mp4')
         encoding=['-c:v','copy'] if self._can_stream_copy(source) else ['-c:v','libx264','-crf','16','-preset','veryfast','-pix_fmt','yuv420p']
         try:
             self._run(['-y','-i',str(source),'-map','0:v:0','-an',*encoding,'-movflags','+faststart',str(tmp)],source.parent)
@@ -92,7 +93,9 @@ class MediaLibrary:
             source=folder/f['file']
             if source.suffix!='.mp4':continue
             source=self.path(source.resolve().relative_to(self.root).as_posix())
-            output=source.with_name(source.stem+'.view.mp4');tmp=source.with_name(source.stem+'.view.tmp.mp4')
+            kind=video_kind(source)
+            output=source.with_name(video_filename(self.registry.scenes[sid]['created_at_unix_s'],kind,source.parent.name))
+            tmp=source.with_name(uuid.uuid4().hex+'.tmp.mp4')
             stat=source.stat()
             sidecar=output.with_suffix('.json');binding={'source_sha256':f.get('sha256'),'source_bytes':stat.st_size,'source_mtime_ns':stat.st_mtime_ns}
             method='cache'
@@ -110,7 +113,7 @@ class MediaLibrary:
                     finally:sidecar_tmp.unlink(missing_ok=True)
                 finally:tmp.unlink(missing_ok=True)
             relative=output.relative_to(self.root).as_posix()
-            media.append(dict(self._row(self.registry.scenes[sid],sid,result['kind'],source.parent.name,relative,source.name),path=str(output),preparation=method))
+            media.append(dict(self._row(self.registry.scenes[sid],sid,kind,source.parent.name,relative,output.name),path=str(output),preparation=method))
         whole=self._whole_scene(folder,sid,result,media,cancelled)
         if whole:media.insert(0,whole)
         return dict(result,folder=str(folder),session_id=sid,media=media)
@@ -124,7 +127,7 @@ class MediaLibrary:
         rows=sorted(media,key=lambda r:int(r['segment'].removeprefix('segment_')))
         sources=[self.path(r['relative']) for r in rows]
         destination=folder/'exports/session';destination.mkdir(exist_ok=True)
-        output=destination/(kind+'_video.view.mp4');sidecar=output.with_suffix('.json')
+        output=destination/video_filename(self.registry.scenes[sid]['created_at_unix_s'],kind,'session');sidecar=output.with_suffix('.json')
         binding={'method':'concat_stream_copy_v1','segments':[{'file':p.relative_to(folder).as_posix(),'bytes':p.stat().st_size,'mtime_ns':p.stat().st_mtime_ns} for p in sources]}
         method='cache'
         if not self._cache_matches(output,sidecar,binding):
@@ -148,7 +151,7 @@ class MediaLibrary:
                 for p in folder.glob('exports/*/*.view.mp4'):
                     if p.is_symlink():continue
                     if '.tmp.' in p.name:continue
-                    relative=p.relative_to(self.root).as_posix();kind='annotated' if p.parent.name=='annotated' else 'depth' if p.name.startswith('depth_') else 'rgb'
+                    relative=p.relative_to(self.root).as_posix();kind=video_kind(p)
                     rows.append(dict(self._row(entry,sid,kind,p.parent.name,relative,p.name),path=str(p.resolve())))
             if self.preview_root:
                 for pid,entry in self.registry.previews.items():
@@ -248,7 +251,7 @@ class MediaLibrary:
         if not re.fullmatch('[a-zA-Z0-9_-]{1,80}',session_id) or not .2<=fps<=15:raise ValueError('场次或抽帧参数无效')
         with self.registry.operation(session_id):return self._extract(session_id,fps)
     def _extract(self,session_id,fps):
-        folder=self.registry.folder(session_id);videos=sorted(folder.glob('exports/*/rgb_video.mp4'),key=lambda p:int(re.search(r'(\d+)$',p.parent.name)[1]))
+        folder=self.registry.folder(session_id);videos=sorted((p for p in folder.glob('exports/segment_*/*.mp4') if video_kind(p)=='rgb' and not p.name.endswith('.view.mp4')),key=lambda p:int(re.search(r'(\d+)$',p.parent.name)[1]))
         if not videos:raise ValueError('先下载该场次 RGB 视频，再在电脑抽帧')
         output=folder/('training_images_'+uuid.uuid4().hex[:8]);output.mkdir()
         for i,source in enumerate(videos,1):
