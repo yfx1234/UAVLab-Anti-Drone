@@ -43,4 +43,10 @@ class OperatorNotesModelsTests(unittest.TestCase):
    with self.subTest(mid=mid),self.assertRaises(ValueError):supervisor.validate_action('set_detector',{'enabled':True,'model_id':mid})
   with patch.object(supervisor,'models',return_value=[]),self.assertRaises(ValueError):supervisor.model_by_id('a'*64)
 
+class LiveConfidenceTests(unittest.TestCase):
+ def test_confidence_is_validated_before_it_reaches_the_node(self):
+  for value in (.25,.55,1):supervisor.validate_action('set_detector',{'enabled':True,'confidence':value})
+  for value in (0,.24,1.01,True,'0.55',float('nan'),float('inf')):
+   with self.subTest(value=value),self.assertRaises(ValueError):supervisor.validate_action('set_detector',{'enabled':True,'confidence':value})
+
 if __name__=='__main__':unittest.main()

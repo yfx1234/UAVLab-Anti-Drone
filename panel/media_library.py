@@ -54,6 +54,18 @@ class MediaLibrary:
         prepared['media_preparation_methods']=sorted({row['preparation'] for row in prepared['media']})
         prepared['timings_s']={**result.get('timings_s',{}),'local_prepare_s':elapsed}
         return prepared
+    def prepare_annotation(self,source,output):
+        """Publish only complete H264/yuv420p files, including repairs in place."""
+        source=pathlib.Path(source);output=pathlib.Path(output)
+        if source==output and self._can_stream_copy(source):return output
+        tmp=output.with_name(output.stem+'.'+uuid.uuid4().hex+'.tmp.mp4')
+        encoding=['-c:v','copy'] if self._can_stream_copy(source) else ['-c:v','libx264','-crf','16','-preset','veryfast','-pix_fmt','yuv420p']
+        try:
+            self._run(['-y','-i',str(source),'-map','0:v:0','-an',*encoding,'-movflags','+faststart',str(tmp)],source.parent)
+            if not tmp.is_file() or not tmp.stat().st_size:raise ValueError('播放转换未生成有效视频，请重试')
+            tmp.replace(output)
+        finally:tmp.unlink(missing_ok=True)
+        return output
     @staticmethod
     def _cache_matches(output,sidecar,binding):
         try:return output.is_file() and output.stat().st_size>0 and json.loads(sidecar.read_text(encoding='utf-8'))==binding
@@ -135,7 +147,8 @@ class MediaLibrary:
                 folder=self.registry.checked(self.root,entry['folder'])
                 for p in folder.glob('exports/*/*.view.mp4'):
                     if p.is_symlink():continue
-                    relative=p.relative_to(self.root).as_posix();kind='depth' if p.name.startswith('depth_') else 'rgb'
+                    if '.tmp.' in p.name:continue
+                    relative=p.relative_to(self.root).as_posix();kind='annotated' if p.parent.name=='annotated' else 'depth' if p.name.startswith('depth_') else 'rgb'
                     rows.append(dict(self._row(entry,sid,kind,p.parent.name,relative,p.name),path=str(p.resolve())))
             if self.preview_root:
                 for pid,entry in self.registry.previews.items():
@@ -164,7 +177,7 @@ class MediaLibrary:
             'metadata':metadata,
             'created_at_unix_s':entry['created_at_unix_s'],'created_time_uncertain':entry.get('created_time_uncertain',True),
             'kind':kind,'segment':segment,'relative':relative,'url':'/api/media/'+urllib.parse.quote(relative),
-            'name':entry['display_name']+(' · '+notes if notes else '')+' / '+('电脑预览 / ' if kind.startswith('preview_') else '')+('整场视频' if segment=='session' else segment)+' / '+filename,
+            'name':entry['display_name']+(' · '+notes if notes else '')+' / '+('电脑预览 / ' if kind.startswith('preview_') else '')+('检测标注' if kind=='annotated' else '整场视频' if segment=='session' else segment)+' / '+filename,
             'local_sync_error':entry.get('local_sync_error')}
     def scene_names(self,rows):
         self.registry.update(rows)

@@ -25,6 +25,8 @@ import os
 import re
 import sys
 import time
+import uuid
+import math
 
 import cv2
 import numpy as np
@@ -101,10 +103,13 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--session", required=True)
     parser.add_argument("--model-id", required=True)
+    parser.add_argument("--confidence", type=float, default=CONF)
     args = parser.parse_args()
     if not re.fullmatch(r"[a-zA-Z0-9_-]{1,80}", args.session) or \
             not re.fullmatch(r"[0-9a-f]{64}", args.model_id):
         raise SystemExit(json.dumps({"ok": False, "error": "参数无效"}))
+    if not math.isfinite(args.confidence) or not .25 <= args.confidence <= 1:
+        raise ValueError("置信度阈值需在 0.25–1 之间")
 
     onnx_path, tag, manifest = find_model(args.model_id)
     session_dir = os.path.join(RECORDS_ROOT, args.session)
@@ -115,7 +120,18 @@ def main():
                           os.path.basename(os.path.dirname(p))).group(1)))
     if not segments:
         raise SystemExit(json.dumps(
-            {"ok": False, "error": "场次没有已导出的 RGB 视频（先在面板生成/下载整场 RGB）"}))
+            {"ok": False, "error": "场次没有已导出的 RGB 视频，请重试板上视频准备"}))
+
+    total_frames = 0
+    for path in segments:
+        probe = cv2.VideoCapture(path)
+        try:
+            if not probe.isOpened(): raise ValueError("无法读取视频分段：" + path)
+            count = int(probe.get(cv2.CAP_PROP_FRAME_COUNT))
+            if count <= 0: raise ValueError("视频分段没有有效帧：" + path)
+            total_frames += count
+        finally: probe.release()
+    print(json.dumps({"phase_code": "model_load", "stage": "加载检测模型", "total_frames": total_frames}), flush=True)
 
     import onnxruntime as ort
     providers = []
@@ -126,18 +142,20 @@ def main():
     session = ort.InferenceSession(onnx_path, providers=providers)
     inp = session.get_inputs()[0]
     shape = [d if isinstance(d, int) else -1 for d in inp.shape]
-    if len(shape) != 4 or shape[0] != 1 or min(shape[1:]) <= 0:
+    if len(shape) != 4 or shape[0] != 1 or shape[1] != 3 or min(shape[1:]) <= 0:
         raise SystemExit(json.dumps(
             {"ok": False, "error": "ONNX 输入不是静态 [1,3,H,W]: %s" % inp.shape}))
     hw = (shape[2], shape[3])
 
-    stamp = time.strftime("%Y%m%d_%H%M%S")
+    stamp = time.strftime("%Y%m%d_%H%M%S") + '_' + uuid.uuid4().hex[:8]
     output = os.path.join(session_dir,
                           "annotated_%s_%s.mp4" % (tag, stamp))
     writer = None
     frames = detected_frames = 0
     infer_ms = []
-    for seg_path in segments:
+    started = last_report = time.monotonic()
+    print(json.dumps({"phase_code": "inference", "stage": "逐帧检测", "frames": 0, "total_frames": total_frames}), flush=True)
+    for segment_index, seg_path in enumerate(segments, 1):
         cap = cv2.VideoCapture(seg_path)
         if not cap.isOpened():
             raise SystemExit(json.dumps(
@@ -148,6 +166,10 @@ def main():
         if writer is None:
             writer = cv2.VideoWriter(output, cv2.VideoWriter_fourcc(*"mp4v"),
                                      fps, (width, height))
+            if not writer.isOpened(): raise ValueError("无法创建标注视频，请检查板上磁盘空间")
+            output_spec = (fps, width, height)
+        elif output_spec != (fps, width, height):
+            raise ValueError("场次分段的视频尺寸或帧率不一致，未发布不完整结果")
         while True:
             ok, frame_bgr = cap.read()
             if not ok:
@@ -163,7 +185,7 @@ def main():
             drew = False
             for row in rows:
                 x1, y1, x2, y2, score, cls = row
-                if cls != CLASS_ID or score < CONF or not x2 > x1 or not y2 > y1:
+                if cls != CLASS_ID or not np.isfinite(score) or score < args.confidence or not x2 > x1 or not y2 > y1:
                     continue
                 if not all(np.isfinite(v) for v in (x1, y1, x2, y2)):
                     continue
@@ -183,22 +205,33 @@ def main():
                 drew = True
             detected_frames += bool(drew)
             writer.write(frame_bgr)
-            if frames % 600 == 0:
-                print(json.dumps({"progress": frames,
+            if time.monotonic() - last_report >= 1 or frames == total_frames:
+                elapsed = time.monotonic() - started
+                print(json.dumps({"phase_code": "inference", "stage": "逐帧检测", "frames": frames,
+                                  "total_frames": total_frames, "segment": segment_index, "segments": len(segments),
+                                  "eta_s": max(0, (total_frames - frames) * elapsed / frames),
                                   "detected_frames": detected_frames}),
                       flush=True)
+                last_report = time.monotonic()
         cap.release()
     if writer is not None:
         writer.release()
+    if frames != total_frames:
+        raise ValueError("视频读取提前结束：预期 %s 帧，实际 %s 帧；未发布不完整结果" % (total_frames, frames))
+    if not frames or not os.path.getsize(output): raise ValueError("标注视频为空")
     print(json.dumps({
         "ok": True, "output": output, "frames": frames,
         "detected_frames": detected_frames,
         "avg_inference_ms": round(float(np.mean(infer_ms)), 1) if infer_ms else None,
         "model_tag": tag,
         "input_nchw": [1, 3, hw[0], hw[1]],
-        "conf": CONF,
+        "conf": args.confidence,
     }), flush=True)
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as error:
+        print(json.dumps({"ok": False, "error": str(error)}, ensure_ascii=False), flush=True)
+        sys.exit(1)
