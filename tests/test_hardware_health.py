@@ -42,4 +42,54 @@ class HardwareHealthTests(unittest.TestCase):
    with patch('hardware_health.read_hardware',return_value={}):
     self.assertEqual(hardware_health.hardware_snapshot('boot',cache,now=1)['sample_age_s'],0)
 
+ def test_cpu_ticks_exclude_guest_and_gpu_permille_has_real_zero(self):
+  with tempfile.TemporaryDirectory() as tmp:
+   root=pathlib.Path(tmp);self.fixture(root)
+   (root/'proc/stat').write_text('cpu  100 20 30 400 10 5 6 7 90 10\ncpu0 1 2 3 4\n')
+   gpu=root/'sys/devices/platform/17000000.gpu/load';gpu.parent.mkdir(parents=True);gpu.write_text('852')
+   h=hardware_health.read_hardware(root,root)
+   self.assertEqual(h['cpu_times_ticks'],{'total':578,'idle':410})
+   self.assertEqual(h['gpu_utilization_pct'],85.2)
+   gpu.write_text('0');self.assertEqual(hardware_health.read_hardware(root,root)['gpu_utilization_pct'],0)
+   gpu.write_text('1001');self.assertIsNone(hardware_health.read_hardware(root,root)['gpu_utilization_pct'])
+
+ def test_missing_or_malformed_utilization_stays_unknown(self):
+  with tempfile.TemporaryDirectory() as tmp:
+   root=pathlib.Path(tmp);self.fixture(root)
+   (root/'proc/stat').write_text('cpu  100 bad 20 30\n')
+   h=hardware_health.read_hardware(root,root)
+   self.assertIsNone(h['cpu_times_ticks']);self.assertIsNone(h['gpu_utilization_pct'])
+
+ def test_cpu_interval_warms_up_and_rejects_reset_boot_and_clock_jump(self):
+  with tempfile.TemporaryDirectory() as tmp:
+   cache=pathlib.Path(tmp)/'health.json'
+   samples=[{'cpu_times_ticks':{'total':1000,'idle':600}},
+            {'cpu_times_ticks':{'total':1200,'idle':750}},
+            {'cpu_times_ticks':{'total':1300,'idle':800}},
+            {'cpu_times_ticks':{'total':1400,'idle':820}},
+            {'cpu_times_ticks':{'total':10,'idle':5}}]
+   with patch('hardware_health.read_hardware',side_effect=samples) as read:
+    first=hardware_health.hardware_snapshot('boot',cache,now=10)
+    self.assertIsNone(first['cpu_utilization_pct'])
+    self.assertIsNone(hardware_health.hardware_snapshot('boot',cache,now=11)['cpu_utilization_pct'])
+    self.assertEqual(read.call_count,1)
+    self.assertEqual(hardware_health.hardware_snapshot('boot',cache,now=12.1)['cpu_utilization_pct'],25)
+    self.assertIsNone(hardware_health.hardware_snapshot('newboot',cache,now=14.2)['cpu_utilization_pct'])
+    self.assertIsNone(hardware_health.hardware_snapshot('newboot',cache,now=9)['cpu_utilization_pct'])
+    self.assertIsNone(hardware_health.hardware_snapshot('newboot',cache,now=15)['cpu_utilization_pct'])
+
+ def test_cpu_invalid_idle_delta_is_not_clamped_into_a_healthy_value(self):
+  with tempfile.TemporaryDirectory() as tmp:
+   cache=pathlib.Path(tmp)/'health.json'
+   with patch('hardware_health.read_hardware',side_effect=[{'cpu_times_ticks':{'total':100,'idle':50}}, {'cpu_times_ticks':{'total':110,'idle':70}}]):
+    hardware_health.hardware_snapshot('boot',cache,now=1)
+    self.assertIsNone(hardware_health.hardware_snapshot('boot',cache,now=4)['cpu_utilization_pct'])
+
+ def test_long_pause_requires_a_new_cpu_baseline(self):
+  with tempfile.TemporaryDirectory() as tmp:
+   cache=pathlib.Path(tmp)/'health.json'
+   with patch('hardware_health.read_hardware',side_effect=[{'cpu_times_ticks':{'total':100,'idle':50}}, {'cpu_times_ticks':{'total':1100,'idle':550}}]):
+    hardware_health.hardware_snapshot('boot',cache,now=1)
+    self.assertIsNone(hardware_health.hardware_snapshot('boot',cache,now=100)['cpu_utilization_pct'])
+
 if __name__=='__main__':unittest.main()
