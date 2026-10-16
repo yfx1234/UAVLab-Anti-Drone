@@ -21,6 +21,7 @@ main{max-width:1760px;margin:auto;padding:22px 24px calc(var(--health-height) + 
 .interceptor-stage{display:flex;flex-wrap:wrap;gap:5px;margin-top:13px}.stage-chip{font-size:11px;line-height:1;padding:6px 9px;border-radius:999px;background:var(--control-fill);color:var(--muted);white-space:nowrap}.stage-chip.done{background:#e2efe8;color:var(--green)}.stage-chip.now{background:var(--blue);color:#fff;font-weight:600}.interceptor-checks{margin-top:11px;font-size:12px;line-height:2;color:var(--muted);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}.interceptor-checks b{color:var(--ink);font-weight:600}.interceptor-checks .good{color:var(--green)}.interceptor-checks .bad{color:var(--red)}.interceptor-checks .row-line{display:flex;justify-content:space-between;gap:10px}.interceptor-checks .row-line span:first-child{flex:none}.interceptor-raw{margin-top:10px}.interceptor-raw summary{width:fit-content;font-size:11px;color:var(--muted);cursor:pointer}
 
 .source-annotate{margin-top:24px}.source-annotate label{display:block;margin-top:12px}.annotation-actions{margin-top:16px}#annotateConfidence,#yoloConfidence{width:100%;box-sizing:border-box}#annotationProgress{margin-top:16px}#annotationDetail:empty{display:none}
+.range-size-control{margin-top:18px}#rangeSizeCm{width:100%;box-sizing:border-box}.range-size-control .row{margin-top:8px}.range-size-control .row button{font-size:12px;white-space:nowrap}.range-size-control .help{margin-top:8px;min-height:20px;font-variant-numeric:tabular-nums}
 </style>
 </head>
 <body>
@@ -33,7 +34,7 @@ main{max-width:1760px;margin:auto;padding:22px 24px calc(var(--health-height) + 
 <section id="workspaceLive" class="workspace workspace-live" role="tabpanel" aria-labelledby="tabLive" tabindex="0">
 <details id="controlsDrawer" class="controls" open><summary>相机与录像控制<svg class="disclosure" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></summary><div class="controls-content" aria-label="采集与录像控制">
 <section class="group"><h2>设备连接</h2><div class="row"><button id="connect" class="primary">连接板子</button><button id="disconnect">断开连接</button></div><details><summary>密码连接</summary><label for="password">SSH 密码</label><input id="password" type="password" autocomplete="current-password" placeholder="输入会话密码"></details></section>
-<section class="group"><h2>相机采集</h2><label for="captureResolution">分辨率</label><select id="captureResolution"><option value="HD1080">1920 × 1080</option><option value="HD1200">1920 × 1200</option><option value="SVGA">960 × 600</option></select><div class="camera-settings-row"><div><label for="captureFps">采集帧率</label><select id="captureFps"><option value="15">15 fps</option><option value="30">30 fps · 实验</option><option value="60">60 fps · 实验</option></select></div><span id="detectorStatus" class="status-pill">YOLO 已暂停</span></div><div class="row"><button id="startCapture" class="primary">启动相机</button><button id="stopCapture" class="danger">停止相机</button></div><label for="yoloFamily">YOLO 模型类型</label><select id="yoloFamily"><option value="custom">自训模型</option><option value="general">通用模型</option></select><label for="yoloInput">输入分辨率</label><select id="yoloInput"><option value="">连接后读取模型</option></select><label for="yoloConfidence">置信度阈值</label><input id="yoloConfidence" type="number" min="0.25" max="1" step="0.01" value="0.55"><div class="row detector-actions"><button id="enableDetector">开启 YOLO</button><button id="disableDetector">暂停 YOLO</button></div></section>
+<section class="group"><h2>相机采集</h2><label for="captureResolution">分辨率</label><select id="captureResolution"><option value="HD1080">1920 × 1080</option><option value="HD1200">1920 × 1200</option><option value="SVGA">960 × 600</option></select><div class="camera-settings-row"><div><label for="captureFps">采集帧率</label><select id="captureFps"><option value="15">15 fps</option><option value="30">30 fps · 实验</option><option value="60">60 fps · 实验</option></select></div><span id="detectorStatus" class="status-pill">YOLO 已暂停</span></div><div class="row"><button id="startCapture" class="primary">启动相机</button><button id="stopCapture" class="danger">停止相机</button></div><label for="yoloFamily">YOLO 模型类型</label><select id="yoloFamily"><option value="custom">自训模型</option><option value="general">通用模型</option></select><label for="yoloInput">输入分辨率</label><select id="yoloInput"><option value="">连接后读取模型</option></select><label for="yoloConfidence">置信度阈值</label><input id="yoloConfidence" type="number" min="0.25" max="1" step="0.01" value="0.55"><div class="row detector-actions"><button id="enableDetector">开启 YOLO</button><button id="disableDetector">暂停 YOLO</button></div><div class="range-size-control"><label for="rangeSizeCm">估距等效尺寸（cm）</label><input id="rangeSizeCm" type="number" min="1" max="500" step="0.1" value="30" inputmode="decimal" aria-describedby="rangeSizeStatus" title="用于尺寸估距及深度一致性检查；手动参数不代表正式标定。"><div class="row"><button id="rangeSize30" title="恢复30 cm默认先验">30 cm</button><button id="rangeSize247" title="自训1280×736的双目参考初标候选，参考范围约2.7–9.6 m">24.7 cm</button><button id="saveRangeSize">保存参数</button></div><p id="rangeSizeStatus" class="help" role="status" aria-live="polite">启动相机后读取当前参数</p></div></section>
 <section class="group"><h2>板上录像</h2><label for="recordCodec">素材类型</label><select id="recordCodec"><option value="LOSSLESS">LOSSLESS</option><option value="H264_LOSSLESS">H264_LOSSLESS</option></select><div class="row"><button id="startRaw" class="primary">开始板上录像</button><button id="stopRaw">停止板上录像</button></div><div id="recordMetrics" class="record-metrics" hidden><span>已录制 <b id="recordDuration">00:00</b></span><span>可录约 <b id="recordRemaining">—</b></span></div><p id="sessionInfo" class="session-active" hidden></p><details><summary>采集备注</summary><label for="sessionLabel">备注</label><input id="sessionLabel" placeholder="采集备注" maxlength="100"><label for="scene">场景</label><input id="scene" placeholder="场景 / 背景" maxlength="200"><label for="lighting">光照</label><input id="lighting" placeholder="光照条件" maxlength="100"><p id="noteStatus" class="help" role="status" aria-live="polite">起录时保存到新场次</p><button id="retryNotes" class="quiet-button" hidden>重试保存备注</button></details></section>
 <section class="group"><h2>拦截链</h2><div class="row"><button id="interceptorStart" class="primary">启动拦截链</button><button id="interceptorStop" class="danger">停止拦截链</button></div><div id="interceptorStage" class="interceptor-stage" hidden></div><div id="interceptorChecks" class="interceptor-checks">连接板子后显示拦截链状态</div><details class="interceptor-raw"><summary>原始日志（调试）</summary><pre id="interceptorTail" class="interceptor-tail" hidden></pre></details><p class="help">飞手手动起飞后切 offboard 交由拦截链接管；任意时刻切出立即回到手动。开火为软事件（无硬件触发）。</p></section>
 
@@ -122,7 +123,7 @@ function update(){
  const size={HD1080:[1920,1080],HD1200:[1920,1200],SVGA:[960,600]}[byId('captureResolution').value]||[1920,1080];byId('captureSpec').textContent='采集 '+(p.image_width||size[0])+' × '+(p.image_height||size[1])+' · '+(p.configured_capture_fps||byId('captureFps').value)+' fps';
  const detectorNames=['YOLO 已暂停','YOLO 启动中','YOLO 运行中','YOLO 异常'];byId('detectorStatus').textContent=state.error?'YOLO 待核对':detectorNames[p.detector_state||0];byId('detectorStatus').classList.toggle('good',p.detector_state===2&&!state.error);byId('detectorStatus').classList.toggle('bad',p.detector_state===3);
  for(const id of ['yoloFamily','yoloInput','yoloConfidence'])byId(id).disabled=!state.connected||!modelsLoaded||busy||controlBusy||restarted||!!state.error||['starting','recording','finalizing'].includes(p.record_state);if(!busy&&s.pid&&modelsLoaded&&s.model_id&&byId('yoloInput').value!==s.model_id)populateModels('live',s.model_id);
- hydrateNotes();
+ updateRangeSizeControl();hydrateNotes();
  byId('connection').textContent=state.error?'连接中断':state.connected?'板子已连接':'板子未连接';byId('connection').classList.toggle('good',state.connected&&!state.error);
  byId('cameraState').textContent=state.error?'状态待更新':cameraNames[s.camera_state]||'相机未启动';byId('recordState').textContent=state.error?'录像状态待核对':recordNames[p.record_state]||'板上录像待机';byId('cameraState').classList.toggle('good',running&&!state.error);byId('cameraState').classList.toggle('bad',!!state.error||['error','unresponsive'].includes(s.camera_state));byId('recordState').classList.toggle('good',recording&&!state.error);
  const clock=s.clock||{},offset=clock.offset_from_pc_s,clockKnown=typeof offset==='number'&&Number.isFinite(offset),clockWarning=clockKnown&&Math.abs(offset)>5;
@@ -265,6 +266,46 @@ async function action(actionName,params={},options={}){
 }
 function selectedSession(){return byId('sessionSelect').value;}
 function selectedModel(){return byId('yoloInput').value;}
+// Size estimate controls
+let rangeSizeDirty=false,rangeSizePending=null,rangeSizeSaving=false;
+function rangeSizeReason(){
+ const s=state.state||{},p=s.pipeline||{};
+ if(!state.connected||state.error||restarted)return '连接板子后读取当前参数';
+ if(!s.pid||s.camera_state!=='running')return '启动相机后可读取和保存参数';
+ if(['starting','recording','finalizing'].includes(p.record_state))return '录像中不可修改尺寸估距参数';
+ if(p.record_state!=='idle'||typeof p.target_size_m!=='number'||!Number.isFinite(p.target_size_m))return '等待相机参数更新';
+ if(busy||controlBusy||rangeSizeSaving)return '正在处理操作，请稍候';
+ return '';
+}
+function rangeSizeCmText(meters){return String(Number((meters*100).toFixed(4)));}
+function updateRangeSizeControl(){
+ const s=state.state||{},p=s.pipeline||{},input=byId('rangeSizeCm'),current=p.target_size_m;
+ const known=state.connected&&!state.error&&!!s.pid&&s.camera_state==='running'&&typeof current==='number'&&Number.isFinite(current)&&current>0;
+ if(known&&rangeSizePending!==null&&Math.abs(current-rangeSizePending)<1e-8){rangeSizePending=null;rangeSizeDirty=false;}
+ if(known&&!rangeSizeDirty&&rangeSizePending===null&&document.activeElement!==input)input.value=rangeSizeCmText(current);
+ const reason=rangeSizeReason();for(const id of ['rangeSizeCm','rangeSize30','rangeSize247','saveRangeSize'])byId(id).disabled=!!reason;
+ let status=known?'当前 '+rangeSizeCmText(current)+' cm · '+(p.size_estimate_calibrated?'已标定，手动保存会替换标定':'手动参数 · 未标定'):'';
+ if(reason)status+=(status?'；':'')+reason;
+ else if(rangeSizePending!==null)status+='；等待确认 '+rangeSizeCmText(rangeSizePending)+' cm';
+ else if(rangeSizeDirty)status+='；有未保存修改';
+ byId('rangeSizeStatus').textContent=status;
+}
+function editRangeSize(){rangeSizeDirty=true;rangeSizePending=null;updateRangeSizeControl();}
+async function saveRangeSize(){
+ const cm=Number(byId('rangeSizeCm').value);
+ if(!Number.isFinite(cm)||cm<1||cm>500)return message('尺寸估距参数需为 1–500 cm',true);
+ const reason=rangeSizeReason();if(reason)return message(reason,true);
+ rangeSizeSaving=true;updateRangeSizeControl();
+ try{
+  const result=await action('save_calibration',{target_size_m:cm/100,size_definition:'manual_projection_extent_unvalidated',samples:[]},{label:'保存尺寸估距参数'});
+  if(result){rangeSizePending=cm/100;rangeSizeDirty=true;message('已保存 '+String(cm)+' cm · 手动参数，未正式标定');}
+ }catch(error){message('尺寸估距参数保存失败：'+error.message,true);}
+ finally{rangeSizeSaving=false;updateRangeSizeControl();}
+}
+byId('rangeSizeCm').oninput=editRangeSize;
+for(const [id,cm] of [['rangeSize30',30],['rangeSize247',24.7]])byId(id).onclick=()=>{byId('rangeSizeCm').value=String(cm);editRangeSize();};
+byId('saveRangeSize').onclick=saveRangeSize;
+// End size estimate controls
 let modelsLoaded=false,noteSession='',notePending=null,noteTimer=null,noteSaving=null;
 function modelInputLabel(model){const shape=model.manifest?.input_nchw||model.manifest?.input?.shape;if(model.manifest?.build_environment?.module_sku!=='P3767-0000')return '';const glad=(model.name||'').toLowerCase().includes('glad');const s=JSON.stringify(shape);if(s==='[1,3,736,1280]')return glad?'GLAD 通用 MAV · 1280 × 736':'原输入 · 1280 × 736';if(s==='[1,3,1088,1920]')return glad?'GLAD 通用 MAV · 1920 × 1088':'1080p · 1920 × 1088';if(s==='[1,3,384,640]')return glad?'GLAD 通用 MAV · 640 × 384':'';return '';}
 let modelCatalog=[];
