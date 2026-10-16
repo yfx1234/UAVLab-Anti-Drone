@@ -1,5 +1,5 @@
 {
-  "source_commit": "9d019566de1cb5b90ed4ef4747647f244af9199b",
+  "source_commit": "f81e73b87554d1120a0e60928bb965bfbfbec525",
   "package": "perception-workbench",
   "source_only": true,
   "hash_basis": "git_blob_bytes",
@@ -601,10 +601,10 @@
     },
     {
       "path": "docs/尺寸估距参数界面_2026-10-16.md",
-      "git_blob": "50aa2825371ffc0945f08a6cc2d7755ccb2bd14d",
+      "git_blob": "8314ca241a39f3327de79e11e309a023bdf23246",
       "git_mode": "100644",
-      "sha256": "2fc0af27acca96e91fb21cf94ffba2066b6a0c2c956e6e61eb21251eddf70c46",
-      "bytes": 2582
+      "sha256": "a7189944d60572332bd090689f0a588d4f151aeb51ecd1571868d72cdc45ea1c",
+      "bytes": 2509
     },
     {
       "path": "docs/工作台与链路优化_2026-10-14.md",
@@ -804,10 +804,10 @@
     },
     {
       "path": "panel/index.html",
-      "git_blob": "320dcfcd72b6f944f508bf9a7a46c7f26e17700e",
+      "git_blob": "08697e930c47338a3a8962d635643fca06d71174",
       "git_mode": "100644",
-      "sha256": "30329777fb40f62501074581089fc2dc529acbdb45769b7c39fc5a69d6194233",
-      "bytes": 95234
+      "sha256": "937858e82d69f070b9caac775dfeaa90e3ee8b4db656766f377ec416ca94258b",
+      "bytes": 94254
     },
     {
       "path": "panel/job_manager.py",
@@ -1070,10 +1070,10 @@
     },
     {
       "path": "tests/test_frontend_range_size.py",
-      "git_blob": "543f346b31e1a207d01b92d4caccdea3b95805c4",
+      "git_blob": "6bdccf30b77eec48bdc278248a389e87c1224d2e",
       "git_mode": "100644",
-      "sha256": "72058d46400926a7b711fe68f7c5fc53790e07d92926a5f859cd9f37736594c9",
-      "bytes": 4077
+      "sha256": "34bdede80c1d4e351a767361f259bd1c70725b4c21727871ea724c40de8305a2",
+      "bytes": 4062
     },
     {
       "path": "tests/test_frontend_workspace.py",

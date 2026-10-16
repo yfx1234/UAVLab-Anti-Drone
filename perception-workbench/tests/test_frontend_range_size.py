@@ -22,17 +22,18 @@ let response={ok:true};const action=async(name,params,options)=>{calls.push({nam
         result=subprocess.run(['node','-e',harness+script+"\n(async()=>{\n"+assertions+"\n})().catch(e=>{console.error(e);process.exitCode=1;});"],capture_output=True,text=True,encoding='utf-8',timeout=10)
         self.assertEqual(result.returncode,0,result.stderr)
 
-    def test_presets_convert_centimetres_and_wait_for_confirmed_state(self):
+    def test_manual_value_converts_centimetres_and_waits_for_confirmed_state(self):
         self.run_browser_logic("""
 updateRangeSizeControl();assert.equal(byId('rangeSizeCm').value,'30');
-byId('rangeSize247').onclick();assert.equal(byId('rangeSizeCm').value,'24.7');assert.equal(calls.length,0);
+byId('rangeSizeCm').value='24.7';byId('rangeSizeCm').oninput();assert.equal(calls.length,0);
 await byId('saveRangeSize').onclick();
 assert.equal(calls[0].name,'save_calibration');assert.equal(calls[0].params.target_size_m,.247);
 assert.deepEqual(calls[0].params.samples,[]);assert.match(calls[0].params.size_definition,/manual/);
 updateRangeSizeControl();assert.equal(byId('rangeSizeCm').value,'24.7','old poll must not replace the saved value');
-state.state.pipeline.target_size_m=.247;updateRangeSizeControl();assert.match(byId('rangeSizeStatus').textContent,/24.7/);
-byId('rangeSize30').onclick();await byId('saveRangeSize').onclick();assert.equal(calls[1].params.target_size_m,.3);
-assert.match(byId('rangeSizeStatus').textContent,/未标定/);
+state.state.pipeline.target_size_m=.247;updateRangeSizeControl();
+state.state.pipeline.target_size_m=.31;updateRangeSizeControl();assert.equal(byId('rangeSizeCm').value,'31');
+byId('rangeSizeCm').value='30';byId('rangeSizeCm').oninput();await byId('saveRangeSize').onclick();assert.equal(calls[1].params.target_size_m,.3);
+assert.equal(messages.at(-1)[0],'已保存 30 cm');
 """)
 
     def test_poll_does_not_overwrite_draft_or_focused_input(self):
@@ -41,7 +42,6 @@ updateRangeSizeControl();byId('rangeSizeCm').value='26.5';byId('rangeSizeCm').on
 state.state.pipeline.target_size_m=.247;updateRangeSizeControl();assert.equal(byId('rangeSizeCm').value,'26.5');
 document.activeElement=byId('rangeSizeCm');updateRangeSizeControl();assert.equal(byId('rangeSizeCm').value,'26.5');
 response=null;await byId('saveRangeSize').onclick();updateRangeSizeControl();assert.equal(byId('rangeSizeCm').value,'26.5');
-assert.match(byId('rangeSizeStatus').textContent,/未保存/);
 """)
 
     def test_invalid_values_never_reach_board(self):
@@ -61,7 +61,7 @@ for(const phase of ['starting','recording','finalizing']){
 state.state.pipeline.record_state='idle';state.connected=false;updateRangeSizeControl();await byId('saveRangeSize').onclick();
 assert.equal(byId('rangeSizeCm').disabled,true);state.connected=true;state.state.pid=null;state.state.camera_state='stopped';
 updateRangeSizeControl();await byId('saveRangeSize').onclick();assert.equal(calls.length,0);
-assert.match(byId('rangeSizeStatus').textContent,/启动相机/);
+assert.match(messages.at(-1)[0],/启动相机/);
 """)
 
 
