@@ -160,10 +160,14 @@ class Panel:
                 return {'output':lines[-3:]}
             if action=='annotate_session':
                 # 检测预览：板上对场次已导出的 RGB 视频跑所选模型画框，
-                # SFTP 取回放进本场次本地 exports/annotated/，媒体库直接可播
+                # SFTP 取回放进本场次本地 exports/annotated/，媒体库直接可播。
+                # 本机场次目录必须在最前面检查——否则要等板上跑完几分钟
+                # 才在取回时失败（2026-10-16 用户实测踩坑）。
                 sid=params.get('session_id');model_id=params.get('model_id')
                 if not isinstance(sid,str) or not re.fullmatch('[a-zA-Z0-9_-]{1,80}',sid):raise ValueError('场次无效')
                 if not isinstance(model_id,str) or not re.fullmatch('[0-9a-f]{64}',model_id):raise ValueError('模型无效')
+                try:folder=self.media.registry.folder(sid)
+                except (ValueError,KeyError):raise ValueError('本机还没有该场次的下载目录：请先下载一次整场 RGB 视频，再生成检测预览')
                 models=self.board.call('list_models')
                 if not any(m.get('model_id')==model_id for m in models):raise ValueError('所选模型不存在')
                 ready=self.board.call('ready_media',{'session_id':sid,'mode':'rgb_video'})
@@ -177,8 +181,6 @@ class Panel:
                     'python3 /home/uavlab/Jetson_ROS2_V0/perception_tools/annotate_session.py --session %s --model-id %s'%(sid,model_id),timeout=3600)
                 result=json.loads([line for line in out.splitlines() if line.strip()][-1])
                 if not result.get('ok'):raise ValueError('检测预览生成失败：'+str(result.get('error')))
-                try:folder=self.media.registry.folder(sid)
-                except (ValueError,KeyError):raise ValueError('本机没有该场次目录，请先下载一次整场 RGB 视频再生成检测预览')
                 target_dir=folder/'exports'/'annotated';target_dir.mkdir(parents=True,exist_ok=True)
                 board_output=result['output'];stem=pathlib.Path(board_output).stem
                 local=target_dir/(stem+'.view.mp4')

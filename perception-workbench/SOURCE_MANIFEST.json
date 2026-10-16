@@ -1,5 +1,5 @@
 {
-  "source_commit": "adcc0dc46ad72d39235755b79b42cc0e3a21ec63",
+  "source_commit": "201f98ce88cdd108126a1e8dbf53ce2baf6dd67c",
   "package": "perception-workbench",
   "source_only": true,
   "files": [
@@ -698,10 +698,10 @@
     },
     {
       "path": "panel/dashboard.py",
-      "git_blob": "32ee655706ac69ab24955b15ebda691e03551e90",
+      "git_blob": "3082ff5928ffd01d4a1a1469df26f04788e7df97",
       "git_mode": "100644",
-      "sha256": "8300b6770d0ced946a5337e4ee95792840dda4b8258b33026575d6564e3815b5",
-      "bytes": 23549
+      "sha256": "2b121f5a77f9732febf8316b15cd549ffb7ac75ea6311e4934fec930fc9b3008",
+      "bytes": 23745
     },
     {
       "path": "panel/frame_receiver.py",
