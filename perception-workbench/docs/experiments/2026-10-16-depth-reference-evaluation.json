@@ -1,0 +1,223 @@
+{
+  "user_confirmed_same_target_airframe": true,
+  "scope": "sky_only_stereo_reference_candidate_not_deployed",
+  "exclusions": [
+    {
+      "session_id": "session_c9c6d58c-5268-4eed-a12e-0ad1dd8c8b08",
+      "reason": "user excluded complete person/handheld scene"
+    },
+    {
+      "session_id": "session_b99666df-ec5d-4c5f-b820-ad900250b072",
+      "segment_id": 4,
+      "start_svo_position": 410,
+      "reason": "user screenshot samples28-33 and subsequent building-background interval"
+    }
+  ],
+  "current_model": {
+    "calibrated": false,
+    "applied_to_live_system": false,
+    "reference": "independent_recomputed_stereo",
+    "candidate_effective_size_m": 0.24695408418134013,
+    "selected_seconds": 43,
+    "model_ids": [
+      "817e1709350e806e7ab261a3fe4d62acfa4828b6c2062b581ac51e9eea3d7712"
+    ],
+    "binding": [
+      "817e1709350e806e7ab261a3fe4d62acfa4828b6c2062b581ac51e9eea3d7712",
+      52175314,
+      1920,
+      1080
+    ],
+    "depth_z_range_m": [
+      2.6566433906555176,
+      9.606141090393066
+    ],
+    "rejected_counts": {
+      "failed_depth_or_detection_quality": 31
+    },
+    "exclusions": [
+      {
+        "session_id": "session_c9c6d58c-5268-4eed-a12e-0ad1dd8c8b08",
+        "reason": "user excluded complete person/handheld scene"
+      },
+      {
+        "session_id": "session_b99666df-ec5d-4c5f-b820-ad900250b072",
+        "segment_id": 4,
+        "start_svo_position": 410,
+        "reason": "user screenshot samples28-33 and subsequent building-background interval"
+      }
+    ],
+    "limitations": [
+      "stereo_reference_is_not_external_ground_truth",
+      "not_validated_for_other_airframes_models_or_ranges"
+    ],
+    "leave_one_session_out": [
+      {
+        "session_id": "session_4a4c6531-74ec-42f4-996c-768dd2972bad",
+        "train_effective_size_m": 0.2371328218938621,
+        "seconds": 25,
+        "median_absolute_error_m": 0.3497423151876621,
+        "median_absolute_relative_error": 0.07649692560084387,
+        "p90_absolute_relative_error": 0.19304709630512107
+      },
+      {
+        "session_id": "session_b99666df-ec5d-4c5f-b820-ad900250b072",
+        "train_effective_size_m": 0.25677534646881817,
+        "seconds": 18,
+        "median_absolute_error_m": 0.5260975478423016,
+        "median_absolute_relative_error": 0.08443810517552719,
+        "p90_absolute_relative_error": 0.17865995756718775
+      }
+    ],
+    "by_session": {
+      "session_4a4c6531-74ec-42f4-996c-768dd2972bad": {
+        "reviewed_seconds": 25,
+        "median_effective_size_m": 0.25677534646881817,
+        "depth_z_range_m": [
+          2.6566433906555176,
+          9.355681419372559
+        ],
+        "baseline_0_30m": {
+          "seconds": 25,
+          "median_absolute_error_m": 0.612760414396014,
+          "median_absolute_relative_error": 0.16833646269242153,
+          "p90_absolute_relative_error": 0.2825977240080571
+        },
+        "candidate": {
+          "seconds": 25,
+          "median_absolute_error_m": 0.2850432007085228,
+          "median_absolute_relative_error": 0.062173637036717855,
+          "p90_absolute_relative_error": 0.15962575860275657
+        }
+      },
+      "session_b99666df-ec5d-4c5f-b820-ad900250b072": {
+        "reviewed_seconds": 18,
+        "median_effective_size_m": 0.2371328218938621,
+        "depth_z_range_m": [
+          3.68969464302063,
+          9.606141090393066
+        ],
+        "baseline_0_30m": {
+          "seconds": 18,
+          "median_absolute_error_m": 1.8669664070702505,
+          "median_absolute_relative_error": 0.2654398581421602,
+          "p90_absolute_relative_error": 0.3770714055412478
+        },
+        "candidate": {
+          "seconds": 18,
+          "median_absolute_error_m": 0.4562991826871435,
+          "median_absolute_relative_error": 0.0767547112116801,
+          "p90_absolute_relative_error": 0.13357802602583238
+        }
+      }
+    }
+  },
+  "historical_model": {
+    "calibrated": false,
+    "applied_to_live_system": false,
+    "reference": "independent_recomputed_stereo",
+    "candidate_effective_size_m": 0.25769902268101397,
+    "selected_seconds": 39,
+    "model_ids": [
+      "f5ca6203076e96531ac9eae0f04f1da16fc31cfa51cdc04532bf1ac815ea66a2"
+    ],
+    "binding": [
+      "f5ca6203076e96531ac9eae0f04f1da16fc31cfa51cdc04532bf1ac815ea66a2",
+      52175314,
+      1920,
+      1080
+    ],
+    "depth_z_range_m": [
+      2.6781561374664307,
+      9.870333671569824
+    ],
+    "rejected_counts": {
+      "failed_depth_or_detection_quality": 844,
+      "not_visually_confirmed_target": 71,
+      "user_exclusion": 146
+    },
+    "exclusions": [
+      {
+        "session_id": "session_c9c6d58c-5268-4eed-a12e-0ad1dd8c8b08",
+        "reason": "user excluded complete person/handheld scene"
+      },
+      {
+        "session_id": "session_b99666df-ec5d-4c5f-b820-ad900250b072",
+        "segment_id": 4,
+        "start_svo_position": 410,
+        "reason": "user screenshot samples28-33 and subsequent building-background interval"
+      }
+    ],
+    "limitations": [
+      "stereo_reference_is_not_external_ground_truth",
+      "not_validated_for_other_airframes_models_or_ranges"
+    ],
+    "leave_one_session_out": [
+      {
+        "session_id": "session_4a4c6531-74ec-42f4-996c-768dd2972bad",
+        "train_effective_size_m": 0.253608826365798,
+        "seconds": 20,
+        "median_absolute_error_m": 0.2873956031684558,
+        "median_absolute_relative_error": 0.06420334956610313,
+        "p90_absolute_relative_error": 0.17525795760799912
+      },
+      {
+        "session_id": "session_b99666df-ec5d-4c5f-b820-ad900250b072",
+        "train_effective_size_m": 0.26178921899623,
+        "seconds": 19,
+        "median_absolute_error_m": 0.5598159853240987,
+        "median_absolute_relative_error": 0.07501485461486357,
+        "p90_absolute_relative_error": 0.1385008588951094
+      }
+    ],
+    "by_session": {
+      "session_4a4c6531-74ec-42f4-996c-768dd2972bad": {
+        "reviewed_seconds": 20,
+        "median_effective_size_m": 0.26178921899623,
+        "depth_z_range_m": [
+          2.6781561374664307,
+          9.095982551574707
+        ],
+        "baseline_0_30m": {
+          "seconds": 20,
+          "median_absolute_error_m": 0.554799671434381,
+          "median_absolute_relative_error": 0.14598002904768714,
+          "p90_absolute_relative_error": 0.21590720414965114
+        },
+        "candidate": {
+          "seconds": 20,
+          "median_absolute_error_m": 0.310436177208264,
+          "median_absolute_relative_error": 0.06113815252119009,
+          "p90_absolute_relative_error": 0.16195654018047706
+        }
+      },
+      "session_b99666df-ec5d-4c5f-b820-ad900250b072": {
+        "reviewed_seconds": 19,
+        "median_effective_size_m": 0.253608826365798,
+        "depth_z_range_m": [
+          3.7469096183776855,
+          9.870333671569824
+        ],
+        "baseline_0_30m": {
+          "seconds": 19,
+          "median_absolute_error_m": 1.3580562196126793,
+          "median_absolute_relative_error": 0.18292412886012377,
+          "p90_absolute_relative_error": 0.3046765599367613
+        },
+        "candidate": {
+          "seconds": 19,
+          "median_absolute_error_m": 0.48663591904996445,
+          "median_absolute_relative_error": 0.0646443592298781,
+          "p90_absolute_relative_error": 0.12071291470176926
+        }
+      }
+    }
+  },
+  "artifact_sha256": {
+    "exclusions.json": "d96f9f1b8adea5b67a4b2c63601bb16060af43e7a0674abe7559d053049c0c61",
+    "current_model/session_4a4c6531-74ec-42f4-996c-768dd2972bad/samples.jsonl": "4a90c97e2e29a7d339a6a8dbb2228db8320bab9510fb1ef6de098e4b962b1a80",
+    "current_model/session_b99666df-ec5d-4c5f-b820-ad900250b072/samples.jsonl": "aaaf74986faa8aa18d4eaf2ac91c9ca18558ac604a4381bd0cf9abbb2ac9925b",
+    "current_model/visual_reviews.json": "fb9b405fd32088f7b309fe440e80871e24fe584b7584f6e5cf430963c5c96c80",
+    "current_model/selected_time_blocks.json": "2f5ce4486129ad4c889a6afc085668be8a3c557e3564437a798b633f03796808"
+  }
+}

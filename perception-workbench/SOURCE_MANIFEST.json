@@ -1,5 +1,5 @@
 {
-  "source_commit": "3aff8fc22ca5c565a176f6a796bef879df553830",
+  "source_commit": "dfd30e329afa8b7f24e8debf85f797ec43f97f1c",
   "package": "perception-workbench",
   "source_only": true,
   "hash_basis": "git_blob_bytes",
@@ -327,6 +327,13 @@
       "bytes": 8093
     },
     {
+      "path": "board/zed_tracking/tools/extract_depth_reference.cpp",
+      "git_blob": "8a28a28ba36bb03d32d0c253509788bc59986d48",
+      "git_mode": "100644",
+      "sha256": "d49321a98fd5834f1cb54c4655ee2385a47f2ab7d4fab115412b53cdb9d89f08",
+      "bytes": 12408
+    },
+    {
       "path": "board/zed_tracking/tools/hardware_health.py",
       "git_blob": "687f25d26a1a7b6ab66df8714416b8bef4654e84",
       "git_mode": "100644",
@@ -432,6 +439,13 @@
       "bytes": 2079
     },
     {
+      "path": "docs/experiments/2026-10-16-depth-reference-evaluation.json",
+      "git_blob": "03dc316570be76d7a09e9f755e4ee68835573168",
+      "git_mode": "100644",
+      "sha256": "5c323ead53cc1b242ba9dbcbd4b20ef8a392a9dc39b8d99b618e9bc6c9e95dce",
+      "bytes": 8001
+    },
+    {
       "path": "docs/experiments/2026-10-16-detection-screening.json",
       "git_blob": "485b12a68026f4a469d4ba1ce0501deb310e7a78",
       "git_mode": "100644",
@@ -528,6 +542,13 @@
       "git_mode": "100644",
       "sha256": "8bbedfa6c8b565d75846d06bdc4ac7d9d3a79d92321132a83c326477a4c4a2d3",
       "bytes": 6473
+    },
+    {
+      "path": "docs/superpowers/plans/2026-10-16-depth-reference-calibration.md",
+      "git_blob": "973e918b0c4f5a09db440a045819940dc6911d22",
+      "git_mode": "100644",
+      "sha256": "9fbc8711e1704e30ecb132f4eb0553174a59c4badf57d9c08b57e68c839ccac4",
+      "bytes": 1709
     },
     {
       "path": "docs/superpowers/plans/2026-10-16-saved-media-names.md",
@@ -633,6 +654,13 @@
       "git_mode": "100644",
       "sha256": "4d84d87243eb08d8e7b12bc6ac715fe3426ccc80f9e526c76215515d14d322da",
       "bytes": 4347
+    },
+    {
+      "path": "docs/纯天空数据集尺寸测距初标_2026-10-16.md",
+      "git_blob": "9cfd70e38174915e748b43389cc5b3b231b0fa69",
+      "git_mode": "100644",
+      "sha256": "d83593658d09794245a5636d40032279fa439d7f9f4bd2fc3c14b1efcb41cdb5",
+      "bytes": 6420
     },
     {
       "path": "docs/观测接口与设备状态.md",
@@ -859,6 +887,13 @@
       "bytes": 2698
     },
     {
+      "path": "scripts/evaluate_depth_reference.py",
+      "git_blob": "f94a27e8d3f55d7e20ef3838bbd7544a8936bb2d",
+      "git_mode": "100644",
+      "sha256": "1cc1671dad5bc16b27061ebd9088dfb3c2796141e31335dec52d4a5200f82273",
+      "bytes": 6263
+    },
+    {
       "path": "scripts/migrate_media_names.py",
       "git_blob": "92417a110ed41e8a74e31a2402e285b29194b164",
       "git_mode": "100644",
@@ -934,6 +969,13 @@
       "git_mode": "100644",
       "sha256": "4747020c983f0982c39fd3312b34beb891143ab46c0c76c2bc4107000a92d96d",
       "bytes": 2002
+    },
+    {
+      "path": "tests/test_depth_reference_evaluation.py",
+      "git_blob": "b5355f295eba5a2dd38c246a3e6256c241c9b8c3",
+      "git_mode": "100644",
+      "sha256": "d3e4f5be668aa374bb5e257b85246135c4c55e453eaf2b0f7a680d57d357731a",
+      "bytes": 3421
     },
     {
       "path": "tests/test_depth_video_cache.py",
