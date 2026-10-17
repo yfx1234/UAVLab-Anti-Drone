@@ -1,8 +1,22 @@
 #ifndef NETGUN_INTERCEPT__NETGUN_MODEL_HPP_
 #define NETGUN_INTERCEPT__NETGUN_MODEL_HPP_
 
+#include <cmath>
+
 namespace netgun_intercept
 {
+
+// R1-1：水平速度按矢量模限幅——逐轴 clamp 会让斜向速度达到 √2 倍上限
+//（10 m/s 参数实际飞出 14.1），倾角同样超限。
+inline void limit_horizontal_speed(double & vx, double & vy, double max_mps)
+{
+  const double m = std::hypot(vx, vy);
+  if (max_mps > 0.0 && m > max_mps) {
+    const double k = max_mps / m;
+    vx *= k;
+    vy *= k;
+  }
+}
 
 /// 网枪简单模型参数（单一真源，V5-C 档；详见 docs/双目8m网枪拦截方案.md §2）。
 /// 完整 V5 模型（RK4/时间基展开/Rician）后续可整体替换实现而不动调用方。

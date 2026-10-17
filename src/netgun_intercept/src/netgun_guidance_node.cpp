@@ -140,6 +140,17 @@ public:
     aim_cfg.muzzle_speed_mps = muzzle_speed_mps_;
     aim_cfg.deployment_time_s = deployment_time_s_;
     aim_model_ = NetgunModel(aim_cfg);
+    // R1-2：目标速度坐标系（relative=旧口径默认；absolute 切换前需 SITL
+    // 验证稳态间隙 ≥50% 改善）；R1-1：垂直加速度独立限幅；R2-4：机体
+    // 横向加速度上限（0=关）
+    target_velocity_frame_ =
+      declare_parameter<std::string>("target_velocity_frame", "relative");
+    yaw_course_bidirectional_ =
+      declare_parameter<bool>("yaw_course_bidirectional", false);
+    max_vertical_acc_ =
+      declare_parameter<double>("max_vertical_acc_mps2", max_acc_);
+    max_lateral_acc_ =
+      declare_parameter<double>("max_lateral_acc_mps2", 0.0);
     // task origin 收敛后锁定（清单§八-5）：boot 期 EKF 未收敛值曾偏 6.6m
     task_origin_wait_converged_ =
       declare_parameter<bool>("task_origin_wait_converged", true);
@@ -370,7 +381,12 @@ private:
     }
     px4_msgs::msg::OffboardControlMode ob;
     ob.timestamp = static_cast<std::uint64_t>(now().nanoseconds() / 1000);
-    ob.position = (phase_ == Phase::TRACK && hold_mode_);
+    // R1-3：OCM 标志与实际 setpoint 类型一致——SETTLE/SPIN/DONE 发的
+    // 也是位置设定点，position 标志必须同拍为 true（PX4 按标志决定
+    // 需要哪类有效估计与接受哪类设定点）
+    ob.position = (phase_ == Phase::TRACK && hold_mode_) ||
+      phase_ == Phase::SETTLE || phase_ == Phase::SPIN ||
+      phase_ == Phase::DONE;
     ob.velocity = true;
     ob.acceleration = (phase_ == Phase::AIM);  // AIM：加速度前馈通道（B 路线）
     ob_pub_->publish(ob);
@@ -550,6 +566,7 @@ private:
     // 估计状态：只看 valid+时效（镜像语义）。不逐帧要求
     // measurement_accepted——瞬态期 IMM 拒帧会闪烁，造成模式抖动。
     bool est_ok = false;
+    double tvx = 0.0, tvy = 0.0, tax = 0.0, tay = 0.0;
     if (est_ && est_->valid) {
       const double now_s = now().seconds();
       // R0-2：有符号年龄窗——时间戳在未来（时钟跳变）不再被当成新鲜数据
@@ -557,8 +574,17 @@ private:
         est_->header.stamp.nanosec * 1e-9;
       est_ok = est_age >= -0.05 && est_age <= est_timeout_;
     }
-    const double target_speed = est_ok ?
-      std::hypot(est_->velocity.x, est_->velocity.y) : 0.0;
+    if (est_ok) {
+      // R1-2：目标速度/加速度按参数选坐标系。absolute=相对量+本机量
+      //（目标真实速度，稳态前馈有效）；relative=估计原始（默认旧口径）
+      tvx = est_->velocity.x; tvy = est_->velocity.y;
+      tax = est_->acceleration.x; tay = est_->acceleration.y;
+      if (target_velocity_frame_ == "absolute" && lp_) {
+        tvx += lp_->vx; tvy += lp_->vy;
+        tax += lp_->ax; tay += lp_->ay;
+      }
+    }
+    const double target_speed = est_ok ? std::hypot(tvx, tvy) : 0.0;
 
     // 首次捕获闩锁（搜索自旋停转判据）
     if (est_ok && !ever_had_est_) {
@@ -585,8 +611,8 @@ private:
         integral_x_ = integral_y_ = 0.0;
         // 速度环种子 = 当前前馈（此时 IMM 已在运动目标上收敛；从零爬升
         // 会在起跑瞬态拉开 ~1m 间隙，甩出 ±2.5m 相机视场造成永久丢失）
-        last_vx_ = clampd(ff_ * est_->velocity.x, -max_spd_, max_spd_);
-        last_vy_ = clampd(ff_ * est_->velocity.y, -max_spd_, max_spd_);
+        last_vx_ = clampd(ff_ * tvx, -max_spd_, max_spd_);
+        last_vy_ = clampd(ff_ * tvy, -max_spd_, max_spd_);
         last_vz_ = 0.0;
         RCLCPP_INFO(
           get_logger(), "track → velocity mode (target %.2f m/s)", target_speed);
@@ -764,8 +790,16 @@ private:
       const double now_s3 = now().seconds();
       if (yaw_above_since_s_ < 0.0) { yaw_above_since_s_ = now_s3; }
       if (now_s3 - yaw_above_since_s_ >= 0.3) {
-        desired_yaw = std::atan2(est_->velocity.y, est_->velocity.x) +
-          yaw_course_offset_rad_;
+        // R1-2：航向用目标速度坐标系；bidirectional 时宽视场轴前后
+        // 对称——取当前航向更近的一侧，避免追过头时机头掉头 180°
+        double course = std::atan2(tvy, tvx) + yaw_course_offset_rad_;
+        if (yaw_course_bidirectional_) {
+          double d = course - yaw_sp_;
+          while (d > M_PI) { d -= 2.0 * M_PI; }
+          while (d < -M_PI) { d += 2.0 * M_PI; }
+          if (std::fabs(d) > M_PI / 2.0) { course += M_PI; }
+        }
+        desired_yaw = course;
         yaw_has_target = true;
       }
     } else {
@@ -903,17 +937,18 @@ private:
         pred_y *= max_pred_offset_m_ / pred_mag;
       }
       // 加速度前馈：起步/机动瞬态 IMM 速度滞后 ~0.4s（贡献 ~2m 间隙），
-      // 用 IMM 加速度估计超前补偿（2026-10-12 几何探针定位）
-      vx = gain_ * pred_x +
-        ff_ * (est_->velocity.x + est_->acceleration.x * accel_lead_s_);
-      vy = gain_ * pred_y +
-        ff_ * (est_->velocity.y + est_->acceleration.y * accel_lead_s_);
+      // 用 IMM 加速度估计超前补偿（2026-10-12 几何探针定位）。
+      // R1-2：前馈速度按 target_velocity_frame 选坐标系
+      vx = gain_ * pred_x + ff_ * (tvx + tax * accel_lead_s_);
+      vy = gain_ * pred_y + ff_ * (tvy + tay * accel_lead_s_);
       // 积分项：P+FF 无积分时稳态间隙 = v×(1/gain−horizon) ≈ 1-1.5m
       //（追踪机 lag 在目标后方，持续 5-8° 轴误差，2° 主门永远不开）。
       // 积分把间隙压回 0（正下方），kI=0.3、钳 ±0.8m/s 防风扰饱和。
       //（2026-10-14 摆动抑制：积分输入改低通估计，launch kI 0.3→0.1）
-      integral_x_ = clampd(integral_x_ + est_lp_[0] * integral_gain_ * 0.02, -0.8, 0.8);
-      integral_y_ = clampd(integral_y_ + est_lp_[1] * integral_gain_ * 0.02, -0.8, 0.8);
+      integral_x_ = clampd(
+        integral_x_ + est_lp_[0] * integral_gain_ / ctrl_hz_, -0.8, 0.8);
+      integral_y_ = clampd(
+        integral_y_ + est_lp_[1] * integral_gain_ / ctrl_hz_, -0.8, 0.8);
       vx += integral_x_;
       vy += integral_y_;
       // 方位伺服（清单§八-3 并入项）：瞄准线水平偏移死区外，加朝
@@ -936,17 +971,30 @@ private:
     // ~0.5s 内可信，追它会越飞越偏，2026-10-12 几何探针定位）
     double vz = vz_hold;
     if (alt < min_h_ && vz > 0) vz = 0;  // NED 正=下降；低于下限禁止下降
-    vx = clampd(vx, -max_spd_, max_spd_);
-    vy = clampd(vy, -max_spd_, max_spd_);
+    limit_horizontal_speed(vx, vy, max_spd_);  // R1-1：按矢量模限幅
     send_sp(vx, vy, vz, yaw_cmd);
   }
 
   void send_sp(double vx, double vy, double vz, double yaw)
   {
+    // R1-1：水平斜率按矢量模限幅（斜向加速度不超 max_acc），垂直独立
     const double max_dv = max_acc_ / ctrl_hz_;
-    vx = last_vx_ + clampd(vx - last_vx_, -max_dv, max_dv);
-    vy = last_vy_ + clampd(vy - last_vy_, -max_dv, max_dv);
-    vz = last_vz_ + clampd(vz - last_vz_, -max_dv, max_dv);
+    const double max_dvz = max_vertical_acc_ / ctrl_hz_;
+    double dvx = vx - last_vx_, dvy = vy - last_vy_;
+    limit_horizontal_speed(dvx, dvy, max_dv);
+    if (max_lateral_acc_ > 0.0) {
+      // R2-4（可选）：机体横向（窄视场轴）加速度分量限幅，默认关闭
+      const double c = std::cos(yaw), s = std::sin(yaw);
+      const double max_lat = max_lateral_acc_ / ctrl_hz_;
+      const double fwd = c * dvx + s * dvy;
+      double lat = -s * dvx + c * dvy;
+      lat = clampd(lat, -max_lat, max_lat);
+      dvx = c * fwd - s * lat;
+      dvy = s * fwd + c * lat;
+    }
+    vx = last_vx_ + dvx;
+    vy = last_vy_ + dvy;
+    vz = last_vz_ + clampd(vz - last_vz_, -max_dvz, max_dvz);
     last_vx_ = vx; last_vy_ = vy; last_vz_ = vz;
     px4_msgs::msg::TrajectorySetpoint sp;
     sp.timestamp = static_cast<std::uint64_t>(now().nanoseconds() / 1000);
@@ -970,9 +1018,22 @@ private:
     // 两位同开）。速度 slew 与 send_sp 同款——进入/退出 AIM 的指令斜坡
     // 自然衔接；加速度不经 slew（θ 指令本身已钳制在 aim_max_tilt 内）。
     const double max_dv = max_acc_ / ctrl_hz_;
-    vx = last_vx_ + clampd(vx - last_vx_, -max_dv, max_dv);
-    vy = last_vy_ + clampd(vy - last_vy_, -max_dv, max_dv);
-    vz = last_vz_ + clampd(vz - last_vz_, -max_dv, max_dv);
+    const double max_dvz = max_vertical_acc_ / ctrl_hz_;
+    double dvx = vx - last_vx_, dvy = vy - last_vy_;
+    limit_horizontal_speed(dvx, dvy, max_dv);
+    if (max_lateral_acc_ > 0.0) {
+      // R2-4（可选）：机体横向（窄视场轴）加速度分量限幅，默认关闭
+      const double c = std::cos(yaw), s = std::sin(yaw);
+      const double max_lat = max_lateral_acc_ / ctrl_hz_;
+      const double fwd = c * dvx + s * dvy;
+      double lat = -s * dvx + c * dvy;
+      lat = clampd(lat, -max_lat, max_lat);
+      dvx = c * fwd - s * lat;
+      dvy = s * fwd + c * lat;
+    }
+    vx = last_vx_ + dvx;
+    vy = last_vy_ + dvy;
+    vz = last_vz_ + clampd(vz - last_vz_, -max_dvz, max_dvz);
     last_vx_ = vx; last_vy_ = vy; last_vz_ = vz;
     dbg_ax_ = ax; dbg_ay_ = ay;  // 调试话题用（AIM 倾角指令）
     px4_msgs::msg::TrajectorySetpoint sp;
@@ -1143,6 +1204,10 @@ private:
   double muzzle_speed_mps_{55.0};
   double deployment_time_s_{0.055};
   NetgunModel aim_model_;
+  std::string target_velocity_frame_{"relative"};
+  bool yaw_course_bidirectional_{false};
+  double max_vertical_acc_{2.5};
+  double max_lateral_acc_{0.0};
   double lp_rx_s_{-1e9};
   double st_rx_s_{-1e9};
   double auth_rx_s_{-1e9};
