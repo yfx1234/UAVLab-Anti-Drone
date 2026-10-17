@@ -54,7 +54,8 @@ struct TargetDepthQuality {
   std::string reason{"no_depth"};
 };
 inline bool target_separates_from_background(const float* depth,const float* conf,int w,int h,
-    double x1,double y1,double x2,double y2,double target_z) {
+    double x1,double y1,double x2,double y2,double target_z,
+    double z_min=.3,double z_max=10.5,double confidence_max=80) {
   if(!depth||target_z<=0)return false;
   double bw=x2-x1,bh=y2-y1;std::vector<float> ring;
   int l=std::max(0,int(x1-bw*.25)),r=std::min(w-1,int(x2+bw*.25));
@@ -64,8 +65,8 @@ inline bool target_separates_from_background(const float* depth,const float* con
   for(int y=t;y<=b;y+=step)for(int x=l;x<=r;x+=step){
     if(x>=x1&&x<=x2&&y>=y1&&y<=y2)continue;
     float z=depth[y*w+x];
-    if(!std::isfinite(z)||z<=.3||z>10.5)continue;
-    if(conf&&(!std::isfinite(conf[y*w+x])||conf[y*w+x]>80))continue;
+    if(!std::isfinite(z)||z<=z_min||z>z_max)continue;
+    if(conf&&(!std::isfinite(conf[y*w+x])||conf[y*w+x]>confidence_max))continue;
     ring.push_back(z);
   }
   // Sky / distant background may have no measurable depth. That alone does
@@ -76,7 +77,8 @@ inline bool target_separates_from_background(const float* depth,const float* con
 }
 inline TargetDepthQuality assess_target_depth(const float* depth,const float* conf,
     int w,int h,double x1,double y1,double x2,double y2,double min_ratio=.10,
-    double max_relative_iqr=.15,double confidence_max=80) {
+    double max_relative_iqr=.15,double confidence_max=80,
+    double z_min=.3,double z_max=10.5) {
   TargetDepthQuality q;
   if(!depth || w<=0 || h<=0 || !std::isfinite(x1+y1+x2+y2) || x2<=x1 || y2<=y1)return q;
   double cx=(x1+x2)/2,cy=(y1+y2)/2;
@@ -88,7 +90,7 @@ inline TargetDepthQuality assess_target_depth(const float* depth,const float* co
   std::vector<float> values,center;
   for(int y=t;y<=b;++y)for(int x=l;x<=r;++x) {
     float z=depth[y*w+x];
-    if(!std::isfinite(z)||z<=.3||z>10.5)continue;
+    if(!std::isfinite(z)||z<=z_min||z>z_max)continue;
     if(conf && (!std::isfinite(conf[y*w+x])||conf[y*w+x]>confidence_max))continue;
     values.push_back(z);
     if(std::abs(x-cx)<=(x2-x1)*.1 && std::abs(y-cy)<=(y2-y1)*.1)center.push_back(z);

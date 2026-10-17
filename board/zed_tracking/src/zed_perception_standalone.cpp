@@ -445,6 +445,7 @@ class Perception final:public rclcpp::Node {
       try{finish_record(source,"camera_error");source.close();}catch(const std::exception& close_error){error("record_finalize",close_error.what());}}
     stop_=true;queue_cv_.notify_all();preview_.stop();publish_status();
   }
+  double depth_z_min_{.3},depth_z_max_{10.5},depth_conf_max_{80};
   std::vector<Detection> detect(const Frame& f,zed_tracking::TrtRunner& runner){
     int iw=runner.input_width(),ih=runner.input_height();cv::Mat src(f.h,f.w,CV_8UC4,const_cast<unsigned char*>(f.bgra.data()));
     auto lb=zed_tracking::make_letterbox(f.w,f.h,iw,ih);int sw=int(std::lround(f.w*lb.scale)),sh=int(std::lround(f.h*lb.scale));
@@ -494,7 +495,12 @@ class Perception final:public rclcpp::Node {
           const auto start=Steady::now();
           try{
             if(!runner||runner_model!=f->model){detector_state_=1;runner.reset();runner_model.clear();runner=std::make_unique<zed_tracking::TrtRunner>();std::string engine;
-              {std::lock_guard<std::mutex> l(state_mutex_);if(f->detector_generation!=detector_generation_)continue;engine=engine_;}runner->load(engine);runner_model=f->model;}
+              {std::lock_guard<std::mutex> l(state_mutex_);if(f->detector_generation!=detector_generation_)continue;engine=engine_;}runner->load(engine);runner_model=f->model;
+              // R2-2：启动打印引擎输入尺寸与 letterbox 缩放比——竖版引擎
+              // 处理 16:9 画面时缩放比仅 ~0.38（2.6 倍降采样），必须显形
+              const double lb_scale=std::min(double(runner->input_width())/f->w,double(runner->input_height())/f->h);
+              std::cout<<Json({{"event","engine_loaded"},{"input_nchw",runner->input_shape()},{"letterbox_scale",lb_scale}}).dump()<<std::endl;
+              if(lb_scale<0.6)std::cout<<Json({{"level","WARN"},{"message","letterbox scale < 0.6: engine input far below capture resolution"}}).dump()<<std::endl;}
             boxes=detect(*f,*runner);
             if(f->detector_generation==detector_generation_){detector_state_=2;set_status("loaded_model_id",runner_model);set_status("yolo_input_nchw",runner->input_shape());}
           }catch(const std::exception& e){runner.reset();runner_model.clear();set_status("loaded_model_id",nullptr);set_status("yolo_input_nchw",nullptr);
@@ -546,10 +552,10 @@ class Perception final:public rclcpp::Node {
           const std::string cid=input.generic_only?"generic_nominal_extent_prior":f->calibration_id;
           const bool calibrated=!input.generic_only&&f->calibrated;
           bool clipped=b.x1<=1||b.y1<=1||b.x2>=f->w-2||b.y2>=f->h-2;
-          auto q=zed_tracking::assess_target_depth(f->depth.empty()?nullptr:f->depth.data(),f->confidence.empty()?nullptr:f->confidence.data(),f->w,f->h,b.x1,b.y1,b.x2,b.y2);
+          auto q=zed_tracking::assess_target_depth(f->depth.empty()?nullptr:f->depth.data(),f->confidence.empty()?nullptr:f->confidence.data(),f->w,f->h,b.x1,b.y1,b.x2,b.y2,.10,.15,depth_conf_max_,depth_z_min_,depth_z_max_);
           auto estimate=zed_tracking::estimate_target_z(extent,intrinsics_.fx,intrinsics_.fy,b.x2-b.x1,b.y2-b.y1,clipped);
           bool consistent=!zed_tracking::depth_vetoed_by_size_prior(estimate.valid,calibrated,q.z,estimate.z);
-          bool separated=q.accepted&&zed_tracking::target_separates_from_background(f->depth.data(),f->confidence.data(),f->w,f->h,b.x1,b.y1,b.x2,b.y2,q.z);
+          bool separated=q.accepted&&zed_tracking::target_separates_from_background(f->depth.data(),f->confidence.data(),f->w,f->h,b.x1,b.y1,b.x2,b.y2,q.z,depth_z_min_,depth_z_max_,depth_conf_max_);
           const bool accepted=q.accepted&&!clipped&&consistent&&separated;
           bool measured=input.generic_only?sky_tracker.confirm_depth(input.id&0x7fffffffu,accepted):association.depth_ready(input.id,accepted);
           bool valid=measured||estimate.valid;double z=measured?q.z:(estimate.valid?estimate.z:0);
@@ -612,6 +618,11 @@ public:
     platform_consistent_=declare_parameter<bool>("platform_configuration_consistent",false);
     fast_recording_verified_=declare_parameter<bool>("fast_recording_verified",false);
     camera_resolution_=declare_parameter<std::string>("camera_resolution","HD1080");
+    // R2-2：深度质检阈值参数化（默认=原硬编码值；生效值入 status）
+    depth_z_min_=declare_parameter<double>("depth_z_min_m",0.3);
+    depth_z_max_=declare_parameter<double>("depth_z_max_m",10.5);
+    depth_conf_max_=declare_parameter<double>("depth_confidence_max",80.0);
+    set_status("depth_z_min_m",depth_z_min_);set_status("depth_z_max_m",depth_z_max_);set_status("depth_confidence_max",depth_conf_max_);
     if(!zed_tracking::camera_mode_supported(camera_resolution_,capture_fps_))throw std::runtime_error("unsupported ZED X Mini resolution/FPS pair");
     if(profile_!="rgb"&&profile_!="perception")throw std::runtime_error("invalid profile");
     fs::create_directories(root_);fs::create_directories(records_);
