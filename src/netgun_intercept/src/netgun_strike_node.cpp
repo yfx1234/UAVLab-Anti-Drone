@@ -137,6 +137,13 @@ public:
       declare_parameter<double>("stable_track_time_s", 2.0);
     // 授权门（方案 v4 §3）：armed ∧ offboard ∧ 高度 ≥ 下限 ∧ 任务授权延时耗尽。
     minimum_height_m_ = declare_parameter<double>("minimum_height_m", 1.5);
+    // R0-5：开火测量质量门参数（默认 0.25s/1.0m/0.30m，15Hz 下允许丢 2-3 帧）
+    fire_max_depth_age_s_ =
+      declare_parameter<double>("fire_max_depth_age_s", 0.25);
+    fire_max_range_sigma_m_ =
+      declare_parameter<double>("fire_max_range_sigma_m", 1.0);
+    fire_max_lateral_sigma_m_ =
+      declare_parameter<double>("fire_max_lateral_sigma_m", 0.30);
     // 飞控消息接收超时（姿态/状态/位置各自计时；断链关火，见 on_timer）
     fcu_timeout_s_ = declare_parameter<double>("fcu_timeout_s", 1.0);
     attack_enable_delay_s_ =
@@ -246,6 +253,32 @@ private:
     const double relative_y = latest_estimate_->position.y;
     const double relative_z = latest_estimate_->position.z;
     input.range_m = norm3(relative_x, relative_y, relative_z);
+    // R0-5：开火测量质量门——深度年龄（data_age 已回归深度本义）+
+    // 距离/横向 1σ（取自 full_covariance 位置块沿视线分解）。方位-only
+    // 或深度陈旧时 quality=false，三开门控全部闭锁。
+    {
+      const double r_inv = input.range_m > 1e-6 ? 1.0 / input.range_m : 0.0;
+      const double u[3] = {relative_x * r_inv, relative_y * r_inv,
+        relative_z * r_inv};
+      double sigma_range2 = 0.0;
+      for (int row = 0; row < 3; ++row) {
+        for (int col = 0; col < 3; ++col) {
+          sigma_range2 += u[row] * latest_estimate_->full_covariance[3 * row + col] *
+            u[col];
+        }
+      }
+      const double trace = latest_estimate_->full_covariance[0] +
+        latest_estimate_->full_covariance[3 * 1 + 1] +
+        latest_estimate_->full_covariance[3 * 2 + 2];
+      depth_age_s_ = latest_estimate_->data_age;
+      sigma_range_m_ = std::sqrt(std::max(0.0, sigma_range2));
+      sigma_lateral_m_ = std::sqrt(
+        std::max(0.0, (trace - sigma_range2) / 2.0));
+      input.measurement_quality_ok =
+        depth_age_s_ <= fire_max_depth_age_s_ &&
+        sigma_range_m_ <= fire_max_range_sigma_m_ &&
+        sigma_lateral_m_ <= fire_max_lateral_sigma_m_;
+    }
     const double range_rate_numerator =
       relative_x * latest_estimate_->velocity.x +
       relative_y * latest_estimate_->velocity.y +
@@ -324,7 +357,8 @@ private:
       ready_time_s_ > 0.0 &&
       now_s - ready_time_s_ >= attack_enable_delay_s_ &&
       est_valid_since_s_ > 0.0 &&
-      now_s - est_valid_since_s_ >= stable_track_time_s_;
+      now_s - est_valid_since_s_ >= stable_track_time_s_ &&
+      !fire_control_.latched();  // R0-5：开火后撤销授权，不再反复 AIM
     // 连续有效跟踪计时（授权门用；断流即清零重计）
     if (input.estimate_valid) {
       if (est_valid_since_s_ < 0.0) {est_valid_since_s_ = now_s;}
@@ -397,7 +431,8 @@ private:
         "netgun diag: est=%d(v=%d acc=%d est_age=%.2f) auth=%d "
         "fcu=%d arm=%d ob=%d h=%d "
         "[t_ready=%.1f t_delay=%.1f t_since_valid=%.1f t_stable=%.1f] "
-        "range=%.2f axis_err=%.2fdeg los_rate=%.3f shots=%d",
+        "range=%.2f axis_err=%.2fdeg los_rate=%.3f shots=%d "
+        "dage=%.2f sr=%.2f sl=%.2f mq=%d",
         static_cast<int>(input.estimate_valid),
         static_cast<int>(latest_estimate_->valid),
         static_cast<int>(latest_estimate_->measurement_accepted),
@@ -416,7 +451,10 @@ private:
         est_valid_since_s_ > 0.0 ? now_s - est_valid_since_s_ : -1.0,
         stable_track_time_s_,
         input.range_m, input.axis_error_rad * 57.29577951308232,
-        input.los_rate_rad_s, fire_control_.shot_count());
+        input.los_rate_rad_s, fire_control_.shot_count(),
+        depth_age_s_ <= 1e18 ? depth_age_s_ : -1.0,
+        sigma_range_m_, sigma_lateral_m_,
+        static_cast<int>(input.measurement_quality_ok));
     }
     if (decision.fire) {
       publish_shot(decision, shot_direction, predicted, lead_s, input.range_m);
@@ -469,6 +507,12 @@ private:
   double stable_track_time_s_{2.0};
   double minimum_height_m_ = 1.5;
   double fcu_timeout_s_ = 1.0;
+  double fire_max_depth_age_s_ = 0.25;
+  double fire_max_range_sigma_m_ = 1.0;
+  double fire_max_lateral_sigma_m_ = 0.30;
+  double depth_age_s_ = -1.0;
+  double sigma_range_m_ = 0.0;
+  double sigma_lateral_m_ = 0.0;
   double last_attitude_rx_s_{-1e9};
   double last_status_rx_s_{-1e9};
   double last_local_position_rx_s_{-1e9};

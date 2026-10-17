@@ -32,6 +32,7 @@ struct FireControlInput
 {
   double now_s = 0.0;
   bool estimate_valid = false;
+  bool measurement_quality_ok = true;     // R0-5：深度新鲜+距离/横向 σ 门
   double range_m = 0.0;
   double range_rate_mps = 0.0;            // 距离变化率（蒙射 A 支用）
   double axis_error_rad = 0.0;            // 机体光轴(射击基准轴)与预测射击方向夹角

@@ -298,6 +298,12 @@ private:
     if (last_measurement_accepted_) {
       ++diag_updates_accepted_;
       last_filter_update_s_ = now().seconds();
+      if (!bearing_only_msg) {
+        // R0-5：深度年龄只由"带深度的量测被接受"刷新——bearing-only
+        // 伪量测不再把 data_age 顶成新鲜（旧语义下游会把冻结的距离
+        // 当成可开火的实测距离）
+        last_depth_accept_s_ = now().seconds();
+      }
     } else {
       // 发散恢复：距上次有效更新超阈值（默认 1.5s）强制重置，下一条
       // 有效观测重新初始化（快速交叉下 IMM 速度爆掉后革新门死锁，
@@ -319,6 +325,7 @@ private:
       filter_.reset();
       ++diag_filter_resets_;
       last_filter_update_s_ = t;
+      last_depth_accept_s_ = -1.0;  // R0-5：重置后深度年龄回到"从未有"
       RCLCPP_WARN(
         get_logger(),
         "estimator diverged (no update for %.1fs) - filter reset",
@@ -348,18 +355,24 @@ private:
     out.innovation_mahalanobis = state.innovation_mahalanobis;
     out.normalized_innovation_squared = state.innovation_mahalanobis;
     out.model_probabilities = state.model_probabilities;
-    out.data_age = state.initialized ?
+    // R0-5（2026-10-17）：data_age 回归"深度年龄"本义——只有带深度的
+    // 量测被接受才刷新；bearing-only 伪量测计入 coast_time_s。深度丢失
+    // 后 data_age 立刻开始增长（下游火控据此关火），valid 仍按 coast
+    // 判定保持旧行为。
+    out.coast_time_s = state.initialized ?
       current_time.seconds() - state.last_accepted_measurement_seconds :
       std::numeric_limits<double>::infinity();
-    out.coast_time_s = out.data_age;
+    out.data_age = (state.initialized && last_depth_accept_s_ > 0.0) ?
+      current_time.seconds() - last_depth_accept_s_ :
+      std::numeric_limits<double>::infinity();
     double maximum_position_variance = 0.0;
     for (int axis = 0; axis < 3; ++axis) {
       maximum_position_variance = std::max(
         maximum_position_variance, state.full_covariance[9 * axis + axis]);
     }
     out.measurement_accepted = last_measurement_accepted_;
-    out.valid = state.initialized && out.data_age >= 0.0 &&
-      out.data_age <= max_data_age_s_ &&
+    out.valid = state.initialized && out.coast_time_s >= 0.0 &&
+      out.coast_time_s <= max_data_age_s_ &&
       maximum_position_variance <= max_position_variance_;
     estimate_pub_->publish(out);
     // 调试状态话题（实物外场检索/失败归因，2026-10-15）：计数器全景 +
@@ -372,11 +385,12 @@ private:
         std_msgs::msg::String msg;
         char buf[512];
         std::snprintf(buf, sizeof(buf),
-          "init=%d valid=%d age=%.2f obs=%llu inv=%llu att=%llu acc=%llu "
-          "bo=%llu rst=%llu | pos=%.2f,%.2f,%.2f vel=%.2f,%.2f,%.2f "
+          "init=%d valid=%d age=%.2f dage=%.2f obs=%llu inv=%llu att=%llu "
+          "acc=%llu bo=%llu rst=%llu | pos=%.2f,%.2f,%.2f vel=%.2f,%.2f,%.2f "
           "var=%.3f mp=%.2f,%.2f,%.2f",
           static_cast<int>(state.initialized), static_cast<int>(out.valid),
-          out.data_age,
+          out.coast_time_s,
+          out.data_age >= 1e18 ? -1.0 : out.data_age,
           static_cast<unsigned long long>(diag_obs_received_),
           static_cast<unsigned long long>(diag_rejected_invalid_),
           static_cast<unsigned long long>(diag_rejected_attitude_),
@@ -429,6 +443,7 @@ private:
   RelativeImmEkf filter_;
   rclcpp::Subscription<px4_msgs::msg::VehicleAttitude>::SharedPtr attitude_sub_;
   bool last_measurement_accepted_{false};
+  double last_depth_accept_s_{-1.0};  // R0-5：最近一条被接受的带深度量测时刻
   rclcpp::Subscription<anti_drone_interfaces::msg::DepthObservation>::SharedPtr observation_sub_;
   rclcpp::Publisher<px4_offboard_tracking::msg::RelativeEstimate>::SharedPtr estimate_pub_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr debug_pub_;
