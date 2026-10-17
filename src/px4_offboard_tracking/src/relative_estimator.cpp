@@ -218,6 +218,25 @@ private:
         !std::isfinite(msg.depth_z_m) ||
         msg.depth_z_m <= camera_intrinsics_.minimum_depth_m)))
     {
+      // R1-4：观测分辨率与参数内参分辨率不一致 → 拒收（分辨率一变内参
+      // 全错且无告警；launch camera_width/height 必须与感知输出一致）
+      if (msg.image_width != camera_intrinsics_.width ||
+        msg.image_height != camera_intrinsics_.height)
+      {
+        ++diag_rejected_size_;
+        if (diag_rejected_size_ == 1 ||
+          diag_rejected_size_ % 100 == 0)
+        {
+          RCLCPP_WARN(
+            get_logger(),
+            "observation size %ux%u != camera %dx%d - rejected (%llu total)",
+            msg.image_width, msg.image_height, camera_intrinsics_.width,
+            camera_intrinsics_.height,
+            static_cast<unsigned long long>(diag_rejected_size_));
+        }
+        consider_divergence_reset();
+        return;
+      }
       ++diag_rejected_invalid_;
       consider_divergence_reset();
       return;
@@ -450,6 +469,7 @@ private:
   rclcpp::TimerBase::SharedPtr timer_;
   std::uint64_t diag_obs_received_{0};
   std::uint64_t diag_rejected_invalid_{0};
+  std::uint64_t diag_rejected_size_{0};  // R1-4：分辨率不匹配拒收计数
   std::uint64_t diag_rejected_attitude_{0};
   std::uint64_t diag_updates_accepted_{0};
   std::uint64_t diag_bearing_only_{0};

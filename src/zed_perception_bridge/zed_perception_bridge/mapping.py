@@ -24,8 +24,9 @@ header.stamp 必须是图像曝光时刻、frame 必须是标准 optical 系 +X�
   targets[i].position_camera        -> position_optical（同一相机光学系，仅
                                        depth_valid 时填充，否则零向量）
 
-感知侧 covariance_valid 恒 false，协方差使用下方默认常数填充（估计器噪声由其
-自身参数决定，此处只保证字段形态合法）。
+协方差为常数近似（横向 5cm、深度 30cm，不随距离变化）：估计器在协方差
+有限且对角为正时会直接采用该值（relative_estimator
+measurement_covariance_ned），精确噪声模型待外场标定（R1-4 备注）。
 """
 
 import math
@@ -101,11 +102,15 @@ def frame_is_fresh(frame):
         bool(frame.get("detector_enabled"))
 
 
-def select_target(targets, policy="confidence", allow_generic=False):
+def select_target(targets, policy="confidence", allow_generic=False,
+                  previous=None):
     """按策略从 targets 选出唯一目标。
 
     返回 (target, reason)：target 为 None 时 reason 说明原因。
     默认排除 generic 轨道（class_confirmed=False），只认 YOLO 类别确认目标。
+    previous（R1-4 sticky）：上一帧转发的 {"track_id","u","v","age_s"}——
+    同 ID 直接续选；0.3s 内像素距离 ≤150px 的目标视为同一目标，防止双
+    目标/误检在场时逐帧跳变把估计打断。
     """
     candidates = [t for t in targets if isinstance(t, dict) and _target_valid(t)]
     if not allow_generic:
@@ -116,6 +121,29 @@ def select_target(targets, policy="confidence", allow_generic=False):
         if candidates:
             return None, "no_class_confirmed_target"
         return None, "no_valid_target"
+    # R1-4 sticky：先续上一帧目标，再做策略排序
+    if previous is not None:
+        prev_id = previous.get("track_id")
+        if prev_id is not None:
+            for t in confirmed:
+                if (int(t.get("track_id", 0)) & 0x7FFFFFFF) == prev_id:
+                    return t, None
+        age = previous.get("age_s")
+        pu, pv = previous.get("u"), previous.get("v")
+        if age is not None and 0.0 <= age <= 0.3 and \
+            pu is not None and pv is not None:
+            near = []
+            for t in confirmed:
+                u = _finite_or_none(t.get("pixel_u"))
+                v = _finite_or_none(t.get("pixel_v"))
+                if u is None or v is None:
+                    continue
+                d = math.hypot(u - pu, v - pv)
+                if d <= 150.0:
+                    near.append((d, t))
+            if near:
+                near.sort(key=lambda item: item[0])
+                return near[0][1], None
     if policy == "nearest":
         ranged = [
             t for t in confirmed
@@ -170,12 +198,24 @@ def build_observation(frame, target):
         depth_valid = False
 
     position = [0.0, 0.0, 0.0]
+    depth_inconsistent = False
     if depth_valid:
         raw = target.get("position_camera")
+        values = None
         if isinstance(raw, (list, tuple)) and len(raw) == 3:
             values = [_finite_or_none(x) for x in raw]
-            if all(v is not None for v in values):
-                position = values
+        if values is None or not all(v is not None for v in values):
+            # R1-4：深度有效但相机系位置缺失 → 同样不信深度（旧实现会
+            # 发零向量位置，估计器把 (0,0,0) 当成真量测）
+            depth_valid = False
+            depth_inconsistent = True
+        else:
+            position = values
+            if abs(position[2] - depth_z) > 0.05 + 0.05 * abs(depth_z):
+                depth_valid = False
+                depth_inconsistent = True
+        if not depth_valid:
+            position = [0.0, 0.0, 0.0]
 
     track_id = target.get("track_id", 0)
     if not isinstance(track_id, int):
@@ -204,5 +244,6 @@ def build_observation(frame, target):
         "depth_z_m": depth_z if depth_valid else 0.0,
         "range_m": distance if depth_valid else 0.0,
         "position_optical": position,
+        "depth_inconsistent": depth_inconsistent,
         "position_covariance": list(DEFAULT_POSITION_COVARIANCE),
     }
