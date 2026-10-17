@@ -125,6 +125,10 @@ public:
         "engage_mode=auto 需要显式 allow_auto_engage:=true（实机禁止）");
       throw std::runtime_error("auto engage not enabled");
     }
+    // 飞控数据/武器授权新鲜度（R0-2）：断链停发心跳与指令，PX4 失效保护接管
+    fcu_timeout_s_ = declare_parameter<double>("fcu_timeout_s", 0.5);
+    weapon_auth_timeout_s_ =
+      declare_parameter<double>("weapon_auth_timeout_s", 0.5);
     // task origin 收敛后锁定（清单§八-5）：boot 期 EKF 未收敛值曾偏 6.6m
     task_origin_wait_converged_ =
       declare_parameter<bool>("task_origin_wait_converged", true);
@@ -192,12 +196,17 @@ public:
       declare_parameter<std::string>("local_position_topic", "/px4_1/fmu/out/vehicle_local_position"),
       px4_qos,
       [this](px4_msgs::msg::VehicleLocalPosition::ConstSharedPtr m) {
-        if (m->xy_valid && m->z_valid) { lp_ = m; }
+        lp_rx_s_ = now().seconds();
+        lp_valid_ = m->xy_valid && m->z_valid;
+        lp_ = m;
       });
     st_sub_ = create_subscription<px4_msgs::msg::VehicleStatus>(
       declare_parameter<std::string>("status_topic", "/px4_1/fmu/out/vehicle_status"),
       px4_qos,
-      [this](px4_msgs::msg::VehicleStatus::ConstSharedPtr m) { st_ = m; });
+      [this](px4_msgs::msg::VehicleStatus::ConstSharedPtr m) {
+        st_rx_s_ = now().seconds();
+        st_ = m;
+      });
 
     ob_pub_ = create_publisher<px4_msgs::msg::OffboardControlMode>(
       "/px4_1/fmu/in/offboard_control_mode", 10);
@@ -247,7 +256,10 @@ public:
       declare_parameter<std::string>(
         "weapon_authorization_topic", "/tracking/weapon_authorization"),
       rclcpp::QoS(1).transient_local(),
-      [this](std_msgs::msg::Bool::ConstSharedPtr msg) { weapon_auth_ = msg->data; });
+      [this](std_msgs::msg::Bool::ConstSharedPtr msg) {
+        auth_rx_s_ = now().seconds();
+        weapon_auth_ = msg->data;
+      });
     ready_pub_ = create_publisher<std_msgs::msg::Bool>(
       declare_parameter<std::string>(
         "takeoff_ready_topic", "/simulation/pursuer_takeoff_ready"),
@@ -270,8 +282,46 @@ public:
   }
 
 private:
+  // R0-2（2026-10-17）：飞控数据/武器授权新鲜度。数据断链（或 PX4 位置
+  // 失效）时停发心跳与一切指令，让 PX4 按 offboard 丢失失效保护接管、
+  // 飞手可立即夺回。注意这改变了旧语义"心跳永远在发"——心跳停滞现在是
+  // "飞控数据断"的显式信号（面板/interceptor_status.py 已同步该语义）。
+  bool fcu_inputs_fresh(double now_s) const
+  {
+    const bool lp_ok = lp_ && lp_valid_ && now_s - lp_rx_s_ <= fcu_timeout_s_;
+    const bool st_ok = st_ && now_s - st_rx_s_ <= fcu_timeout_s_;
+    return lp_ok && st_ok;
+  }
+  bool auth_effective(double now_s) const
+  {
+    return weapon_auth_ && now_s - auth_rx_s_ <= weapon_auth_timeout_s_;
+  }
+  // 交战状态复位（rc_gated 切出 / 飞控数据过期共用；R0-3 提交扩展其覆盖面）
+  void reset_engagement_state(const char* reason)
+  {
+    const bool was_active = phase_ != Phase::WAITING || bearing_hold_;
+    phase_ = Phase::WAITING;
+    hold_mode_ = true;
+    bearing_hold_ = false;
+    shot_seen_ = false;
+    aim_stable_since_s_ = -1.0;
+    aim_seeded_ = false;
+    spin_accum_rad_ = 0.0;
+    settle_ok_since_s_ = -1.0;
+    ever_had_est_ = false;      // 重新搜索（自旋至再捕获）
+    search_spin_logged_ = false;
+    if (was_active && now().seconds() - last_reset_log_s_ >= 1.0) {
+      last_reset_log_s_ = now().seconds();
+      RCLCPP_WARN(get_logger(), "engagement reset (%s) → standby", reason);
+    }
+  }
   void tick()
   {
+    const double t_gate = now().seconds();
+    if (!fcu_inputs_fresh(t_gate)) {
+      reset_engagement_state("fcu data stale");
+      return;
+    }
     px4_msgs::msg::OffboardControlMode ob;
     ob.timestamp = static_cast<std::uint64_t>(now().nanoseconds() / 1000);
     ob.position = (phase_ == Phase::TRACK && hold_mode_);
@@ -281,8 +331,8 @@ private:
     ++ob_sent_;
 
     // 心跳/指令计数 5s 节流行（2026-10-15）：PC 面板据此显示当前阶段、
-    // 心跳连续性（ob_sent 增长）与指令流（sp_sent）。必须在早退之前打印
-    // ——无飞控数据时心跳仍在发，面板要能看到。
+    // 心跳连续性（ob_sent 增长）与指令流（sp_sent）。飞控数据过期时本行
+    // 不执行（R0-2：心跳停发即"飞控数据断"信号）。
     const double alive_t = now().seconds();
     if (alive_t - last_alive_log_s_ >= 5.0) {
       last_alive_log_s_ = alive_t;
@@ -302,21 +352,7 @@ private:
         // 未获遥控器授权：零 setpoint 发布（用户实测 1.15.4 上非
         // offboard 态发 setpoint 会与遥控器竞争）。offboard_control_mode
         // 心跳照常（顶部已发），保证飞手拨杆时 PX4 能接受切换
-        if (phase_ != Phase::WAITING) {
-          phase_ = Phase::WAITING;
-          hold_mode_ = true;
-          bearing_hold_ = false;
-          shot_seen_ = false;
-          aim_stable_since_s_ = -1.0;
-          aim_seeded_ = false;
-          spin_accum_rad_ = 0.0;
-          settle_ok_since_s_ = -1.0;
-          ever_had_est_ = false;      // 重新搜索（自旋至再捕获）
-          search_spin_logged_ = false;
-          RCLCPP_INFO(
-            get_logger(),
-            "offboard exited → standby (setpoints STOPPED, RC authority)");
-        }
+        reset_engagement_state("offboard exited (RC authority)");
       } else {
         send_sp(0, 0, 0, 0.0);
       }
@@ -469,9 +505,10 @@ private:
     bool est_ok = false;
     if (est_ && est_->valid) {
       const double now_s = now().seconds();
-      const double est_age = std::abs(now_s - est_->header.stamp.sec -
-        est_->header.stamp.nanosec * 1e-9);
-      est_ok = est_age <= est_timeout_;
+      // R0-2：有符号年龄窗——时间戳在未来（时钟跳变）不再被当成新鲜数据
+      const double est_age = now_s - est_->header.stamp.sec -
+        est_->header.stamp.nanosec * 1e-9;
+      est_ok = est_age >= -0.05 && est_age <= est_timeout_;
     }
     const double target_speed = est_ok ?
       std::hypot(est_->velocity.x, est_->velocity.y) : 0.0;
@@ -711,7 +748,7 @@ private:
     // 恒卡 5-6°无法瞄准）。BEARING_HOLD/估计失效/授权未到重置稳定计时；
     // 本拍照常发跟踪指令，AIM 控制自下一拍起。
     if (phase_ == Phase::TRACK && aim_mode_enabled_ && !bearing_hold_) {
-      const bool aim_ready = est_ok && weapon_auth_ &&
+      const bool aim_ready = est_ok && auth_effective(now().seconds()) &&
         target_speed <= aim_max_target_speed_mps_;
       const double now_s6 = now().seconds();
       if (aim_ready) {
@@ -954,12 +991,13 @@ private:
   {
     if (!lp_) {return;}
     const double t = now().seconds();
+    const bool fcu_ok = fcu_inputs_fresh(t);
     bool est_ok = false;
     double tspd = 0.0;
     if (est_ && est_->valid) {
-      const double age = std::abs(
-        t - est_->header.stamp.sec - est_->header.stamp.nanosec * 1e-9);
-      est_ok = age <= est_timeout_;
+      const double age = t -
+        est_->header.stamp.sec - est_->header.stamp.nanosec * 1e-9;
+      est_ok = age >= -0.05 && age <= est_timeout_;
       if (est_ok) {
         tspd = std::hypot(est_->velocity.x, est_->velocity.y);
       }
@@ -970,11 +1008,11 @@ private:
       "phase=%s hold=%d bh=%d aim=%d auth=%d est=%d tspd=%.2f "
       "stab=%.1f aim_t=%.2f | pos=%.2f,%.2f,%.2f vel=%.2f,%.2f "
       "yaw=%.1f tgt=%.2f,%.2f,%.2f | spv=%.2f,%.2f spa=%.2f,%.2f "
-      "spin=%.2f srch=%d to=%d",
+      "spin=%.2f srch=%d to=%d fcu=%d lpms=%.0f stms=%.0f authms=%.0f",
       phase_name(phase_), static_cast<int>(hold_mode_),
       static_cast<int>(bearing_hold_ && !hold_mode_),
       static_cast<int>(phase_ == Phase::AIM),
-      static_cast<int>(weapon_auth_), static_cast<int>(est_ok), tspd,
+      static_cast<int>(auth_effective(t)), static_cast<int>(est_ok), tspd,
       aim_stable_since_s_ > 0.0 ? t - aim_stable_since_s_ : -1.0,
       phase_ == Phase::AIM ? t - aim_since_s_ : -1.0,
       lp_->x, lp_->y, lp_->z, lp_->vx, lp_->vy,
@@ -984,7 +1022,11 @@ private:
       spin_accum_rad_,
       static_cast<int>(search_spin_enabled_ && !ever_had_est_ &&
         phase_ == Phase::TRACK),
-      static_cast<int>(to_pub_done_));
+      static_cast<int>(to_pub_done_),
+      static_cast<int>(fcu_ok),
+      lp_ ? (t - lp_rx_s_) * 1000.0 : -1.0,
+      st_ ? (t - st_rx_s_) * 1000.0 : -1.0,
+      (t - auth_rx_s_) * 1000.0);
     msg.data = buf;
     debug_pub_->publish(msg);
   }
@@ -1035,6 +1077,13 @@ private:
   std::string engage_mode_{"auto"};
   bool allow_auto_engage_{false};
   int vehicle_command_target_system_{2};
+  double fcu_timeout_s_{0.5};
+  double weapon_auth_timeout_s_{0.5};
+  double lp_rx_s_{-1e9};
+  double st_rx_s_{-1e9};
+  double auth_rx_s_{-1e9};
+  bool lp_valid_{false};
+  double last_reset_log_s_{-1e9};
   bool task_origin_wait_converged_{true};
   double task_origin_settle_s_{2.0};
   double task_origin_drift_max_m_{0.3};
