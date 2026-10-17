@@ -3,8 +3,13 @@
 The deployment starts the serial Micro XRCE-DDS Agent and a ROS 2 CLI discovery
 daemon with one shared environment. It does not start an Offboard controller,
 publish a setpoint, arm the vehicle, or change PX4 mode. It sets
-`ROS_DOMAIN_ID=0` and `ROS_LOCALHOST_ONLY=1`, so the PX4 ROS graph is not
-advertised to other computers on the LAN. QGC/MAVLink is unaffected.
+`ROS_DOMAIN_ID=0`. Whether the PX4 ROS graph is limited to the onboard
+computer is decided by the flight-controller parameter `UXRCE_DDS_PTCFG`
+(0 = all interfaces, 1 = localhost only); the Agent itself does not read
+`ROS_LOCALHOST_ONLY`. Verify connectivity from the interceptor stack logs
+(`attmiss` not tracking `obs`, `fcu=1` in `netgun diag`) — not from a login
+shell's `ros2 topic hz`, which may run with a different
+`ROS_LOCALHOST_ONLY` value. QGC/MAVLink is unaffected.
 
 Install on the Jetson:
 

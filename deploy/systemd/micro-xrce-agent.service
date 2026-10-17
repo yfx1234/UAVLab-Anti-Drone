@@ -13,7 +13,10 @@ SupplementaryGroups=dialout
 WorkingDirectory=/home/uavlab/Jetson_ROS2_V0
 Environment=ROS_DOMAIN_ID=0
 # Flight default: keep ROS 2 discovery on the Jetson. QGC/MAVLink is unaffected.
-Environment=ROS_LOCALHOST_ONLY=1
+# N-1（2026-10-17）：Agent 与自带 Fast DDS 不读 ROS_LOCALHOST_ONLY（仅
+# XRCE_DOMAIN_ID_OVERRIDE 例外），此行保留仅作记录、实际无效。是否只走
+# 本机由飞控 UXRCE_DDS_PTCFG 决定，与板上各进程统一即可。
+# Environment=ROS_LOCALHOST_ONLY=1
 Environment=AGENT_DEVICE=/dev/ttyTHS1
 Environment=AGENT_BAUD=921600
 Environment=AGENT_VERBOSITY=3

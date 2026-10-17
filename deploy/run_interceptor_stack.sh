@@ -7,6 +7,10 @@
 #   ./run_interceptor_stack.sh status                   # 进程 + 最近日志
 #   ./run_interceptor_stack.sh log                      # 跟踪最新日志
 #
+# 上电顺序（N-2，2026-10-17）：面板对时 → 启动感知+YOLO → 启动拦截链
+# → 飞控控制台 uxrce_dds_client status 确认 connected/timesync converged
+# → 日志 attmiss 不随 obs 增长、netgun diag fcu=1。拦截链启动后若再对时，
+# 必须 stop/start 重启拦截链（时钟跳变影响全部计时）。
 # 启动内容：netgun_real.launch.py 四节点
 #   zed_perception_bridge + relative_estimator + netgun_guidance_node + netgun_strike_node
 # 感知（zed_perception_standalone）不归本脚本管，由感知平台（PC 8767 面板/
@@ -44,6 +48,10 @@ env_setup() {
   # 这里必须保持一致否则 DDS 互相不可见（2026-10-15 板上实测）
   export ROS_DOMAIN_ID=0
   unset ROS_LOCALHOST_ONLY
+  # N-1（2026-10-17）：打印实际生效配置——DDS 发现必须四方一致
+  #（飞控 PTCFG/本脚本/感知/agent），登录 shell 可能是 LOCALHOST_ONLY=1，
+  # 在里面 ros2 topic hz /fmu/out 看到数据不代表拦截链也看得到
+  echo "拦截链环境：ROS_DOMAIN_ID=$ROS_DOMAIN_ID ROS_LOCALHOST_ONLY=${ROS_LOCALHOST_ONLY:-未设置(=0)}"
 }
 
 running_pid() {
@@ -83,6 +91,19 @@ cmd_start() {
     exit 1
   fi
   echo "已启动 pid $pid，日志 $log_file"
+  # N-1：15s 后检查估计器是否收到飞控姿态——attmiss 随 obs 增长即
+  # DDS 发现不通（PTCFG/ROS_LOCALHOST_ONLY/域不一致），只 WARN 不退出
+  (
+    sleep 15
+    if grep -q "guidance alive" "$log_file" 2>/dev/null || kill -0 "$pid" 2>/dev/null; then
+      line=$(grep "estimator diag" "$log_file" 2>/dev/null | tail -1)
+      obs=$(echo "$line" | grep -o "obs=[0-9]*" | cut -d= -f2)
+      miss=$(echo "$line" | grep -o "attmiss=[0-9]*" | cut -d= -f2)
+      if [ -n "$obs" ] && [ -n "$miss" ] && [ "$obs" -gt 30 ] && [ "$miss" -eq "$obs" ]; then
+        echo "WARN：拦截链未收到飞控姿态（attmiss=obs=$miss）——检查 UXRCE_DDS_PTCFG/UXRCE_DDS_DOM_ID 与本机 ROS_LOCALHOST_ONLY 是否一致"
+      fi
+    fi
+  ) >/dev/null 2>&1 &
 }
 
 cmd_stop() {

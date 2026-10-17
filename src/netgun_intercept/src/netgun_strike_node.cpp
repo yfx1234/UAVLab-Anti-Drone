@@ -116,7 +116,7 @@ public:
     fire_control_(read_fire_control_config(*this))
   {
     const std::string estimate_topic = declare_parameter<std::string>(
-      "relative_estimate_topic", "/tracking/relative_estimate");
+      "relative_estimate_topic", "/tracking/relative/estimate");
     const std::string attitude_topic = declare_parameter<std::string>(
       "attitude_topic", "/fmu/out/vehicle_attitude");
     const std::string status_topic = declare_parameter<std::string>(
