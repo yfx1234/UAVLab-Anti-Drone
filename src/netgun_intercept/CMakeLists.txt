@@ -41,6 +41,9 @@ target_link_libraries(netgun_strike_node netgun_model netgun_fire_control)
 
 # ---- 制导节点（架构 v2：三状态 + 前馈 + auto-engage） ----
 add_executable(netgun_guidance_node src/netgun_guidance_node.cpp)
+target_include_directories(netgun_guidance_node PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(netgun_guidance_node netgun_model)
 target_compile_features(netgun_guidance_node PUBLIC cxx_std_17)
 ament_target_dependencies(netgun_guidance_node
   rclcpp geometry_msgs px4_msgs px4_offboard_tracking

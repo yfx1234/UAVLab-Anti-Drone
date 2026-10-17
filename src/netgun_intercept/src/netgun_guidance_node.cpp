@@ -1196,6 +1196,7 @@ private:
   double bearing_servo_deadband_m_{0.15};
   double est_lp_tau_{0.0};
   double est_lp_[3]{0.0, 0.0, 0.0};
+  bool est_lp_seeded_{false};  // R0-3：低通种子标志（第一条有效估计直赋）
   std::string engage_mode_{"auto"};
   bool allow_auto_engage_{false};
   int vehicle_command_target_system_{2};
