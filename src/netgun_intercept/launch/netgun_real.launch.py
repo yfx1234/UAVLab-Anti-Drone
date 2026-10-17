@@ -111,14 +111,17 @@ def generate_launch_description():
                 name="netgun_guidance_node",
                 output="screen",
                 # 输出话题在节点内硬编码为仿真命名空间 /px4_1/fmu/in/*（实机
-                # 交接文档预留的 remap 方案），实机 PX4 走 /fmu/in/*
+                # 交接文档预留的 remap 方案），实机 PX4 走 /fmu/in/*。
+                # vehicle_command 重映射到无订阅者的阻塞话题（R0-1，实机
+                # "VehicleCommand 永久拦截"红线）：rc_gated 下本就不发，
+                # 这里物理隔离兜底参数写错/回归的场景。
                 remappings=[
                     ("/px4_1/fmu/in/offboard_control_mode",
                      "/fmu/in/offboard_control_mode"),
                     ("/px4_1/fmu/in/trajectory_setpoint",
                      "/fmu/in/trajectory_setpoint"),
                     ("/px4_1/fmu/in/vehicle_command",
-                     "/fmu/in/vehicle_command"),
+                     "/netgun/blocked/vehicle_command"),
                 ],
                 parameters=[
                     {

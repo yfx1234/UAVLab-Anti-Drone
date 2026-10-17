@@ -2,6 +2,7 @@
 #include <cmath>
 #include <cstdio>
 #include <limits>
+#include <stdexcept>
 #include <string>
 
 #include <geometry_msgs/msg/point_stamped.hpp>
@@ -104,7 +105,26 @@ public:
     // 绝不发 VehicleCommand、未进 offboard 绝不发任何 setpoint、
     // 切出 offboard 立即停发 setpoint（仅保留 offboard_control_mode
     // 心跳——它是模式声明不是设定点，PX4 接受切换的前提）
-    engage_mode_ = declare_parameter<std::string>("engage_mode", "auto");
+    // 实机安全（R0-1，2026-10-17）：默认 rc_gated；engage_mode 只认
+    // rc_gated/auto 两个值，auto 还需显式 allow_auto_engage——参数写错
+    // （如 rc-gated）绝不能静默退化成"每 3s 给真飞控发解锁指令"。
+    engage_mode_ = declare_parameter<std::string>("engage_mode", "rc_gated");
+    allow_auto_engage_ =
+      declare_parameter<bool>("allow_auto_engage", false);
+    vehicle_command_target_system_ =
+      declare_parameter<int>("vehicle_command_target_system", 2);
+    if (engage_mode_ != "rc_gated" && engage_mode_ != "auto") {
+      RCLCPP_FATAL(
+        get_logger(), "engage_mode '%s' 不合法（只接受 rc_gated / auto）",
+        engage_mode_.c_str());
+      throw std::runtime_error("invalid engage_mode");
+    }
+    if (engage_mode_ == "auto" && !allow_auto_engage_) {
+      RCLCPP_FATAL(
+        get_logger(),
+        "engage_mode=auto 需要显式 allow_auto_engage:=true（实机禁止）");
+      throw std::runtime_error("auto engage not enabled");
+    }
     // task origin 收敛后锁定（清单§八-5）：boot 期 EKF 未收敛值曾偏 6.6m
     task_origin_wait_converged_ =
       declare_parameter<bool>("task_origin_wait_converged", true);
@@ -892,7 +912,7 @@ private:
     px4_msgs::msg::VehicleCommand c;
     c.timestamp = static_cast<std::uint64_t>(now().nanoseconds() / 1000);
     c.param1 = p1; c.param2 = p2; c.command = cmd;
-    c.target_system = 2; c.target_component = 1;
+    c.target_system = vehicle_command_target_system_; c.target_component = 1;
     c.source_system = 2; c.source_component = 1;
     c.from_external = true;
     cmd_pub_->publish(c);
@@ -1013,6 +1033,8 @@ private:
   double est_lp_tau_{0.0};
   double est_lp_[3]{0.0, 0.0, 0.0};
   std::string engage_mode_{"auto"};
+  bool allow_auto_engage_{false};
+  int vehicle_command_target_system_{2};
   bool task_origin_wait_converged_{true};
   double task_origin_settle_s_{2.0};
   double task_origin_drift_max_m_{0.3};
