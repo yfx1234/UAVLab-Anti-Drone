@@ -1,0 +1,12 @@
+std_msgs/Header header
+uint32 sequence
+bool calibration_ok
+bool target_fresh
+bool covariance_ok
+bool innovation_ok
+bool px4_state_ok
+bool command_finite
+bool tracking_quality_passed
+bool severe_fault
+bool output_allowed
+string reason

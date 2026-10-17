@@ -1,0 +1,107 @@
+# =============================================================================
+# 2虚1实 混合仿真配置（hybrid_2v1）
+#   实机 P1 = 原项目 14 m/s 统一拦截方案（PX4 SITL + Gazebo，代码不改动）；
+#   两架算法层虚拟僚机 P2/P3 = 目标真值引导 + PX4 SITL/Gazebo 实控；
+#   目标 = 原项目 x500 真机（8 m/s 正常版本）。
+#   僚机可直接获取所有飞机真值（理想信息假设）；相机参数保持不变。
+# =============================================================================
+
+simulation:
+  rate_hz: 50.0
+  dt: 0.02
+  frame_id: "map_ned"
+  engage_delay_s: 12.0     # 僚机接战延迟（等实机 P1 起飞搜索后启动包抄）
+  guide_min_target_altitude_m: 20.0  # 目标未升到该高度前不开始水平包围
+  wingman_altitude_tolerance_m: 1.5
+  wingman_altitude_hold_s: 1.0       # 僚机高度稳定后再进入水平引导
+  duration_s: 55.0         # 记录时长（秒）
+  target_state_topic: "/tracking/target/state"
+  relative_truth_topic: "/evaluation/relative_truth"
+
+pursuer:
+  max_speed: 16.0          # 僚机统一最大速度
+  max_thrust_accel_mps2: 20.0
+  max_command_accel_mps2: 12.0
+  max_tilt_rad: 0.7
+  max_body_rate_rad_s: 3.0
+  attitude_tau_s: 0.35
+  se3_position_gain: 2.0
+  se3_velocity_gain: 1.5
+  se3_attitude_gain: 2.5
+
+# P2/P3 动态近似等边三角形包围。控制与消息始终为 NED；z 越大表示越低。
+formation:
+  entry_p1_range_m: 35.0
+  radius_min_m: 18.0
+  radius_max_m: 25.0
+  vertical_sep_min_m: 15.0
+  vertical_sep_max_m: 25.0
+  vertical_filter_tau_s: 1.2
+  vertical_speed_limit_mps: 2.0
+  vertical_accel_limit_mps2: 1.0
+  horizontal_filter_tau_s: 0.5
+  horizontal_speed_limit_mps: 14.0
+  horizontal_accel_limit_mps2: 8.0
+  entry_blend_rate_per_s: 0.60
+  exit_blend_rate_per_s: 0.50
+  p1_bearing_rate_limit_deg_s: 40.0
+  safety_min_inter_pursuer_m: 15.0
+  safety_slow_inter_pursuer_m: 17.5
+  safety_prediction_horizon_s: 2.0
+  safety_prediction_distance_m: 23.0
+  safety_avoid_distance_m: 28.0
+  safety_min_target_range_m: 15.0
+  safety_retreat_range_m: 20.0
+
+# 僚机初始/过渡参数；guide 阶段的位置由 formation 动态生成。
+roles:
+  p1:
+    # 占位（P1 为实机，由原项目 14 m/s 方案控制，本段不被使用）
+    behind_offset_m: 20.0
+    lateral_offset_m: 0.0
+    z_m: -4.0
+  p2:
+    z_m: -6.5                 # 安全起飞过渡高度（map_ned）
+    min_standoff_m: 15.0
+  p3:
+    z_m: -6.5                 # 安全起飞过渡高度（map_ned）
+    min_standoff_m: 15.0
+
+# 射击参数仅供共用 metrics 构造；hybrid 模式的僚机不射击
+shooting:
+  projectile_speed_mps: 400.0
+  minimum_range_m: 15.0
+  maximum_range_m: 35.0
+  hit_radius_m: 0.4
+  fire_interval_s: 0.5
+  cooldown_after_hit_s: 3.0
+  required_hits: 2
+
+score:
+  escape_half_cone_rad: 1.5707963267948966
+  range_ref_m: 20.0
+  range_tolerance_m: 8.0
+  coverage_weight: 0.6
+  range_weight: 0.4
+  formation_threshold: 0.50
+  formation_hold_s: 2.0
+
+# 成功判据：P1两发完成 + P2/P3三维20~40 m包围趋势 + 高度/安全门控
+success:
+  minimum_strikers: 2
+  # 三维距离范围：水平半径18~25 m与垂直间距15~25 m的合成量。
+  encircle_min_range_m: 20.0
+  encircle_max_range_m: 40.0
+  hold_s: 1.0
+  wing_hold_s: 1.0
+  # P1由原单机闭环控制，质心/±120°仅作质量指标，不作为硬门槛。
+  minimum_wing_angular_spread_deg: 60.0
+  vertical_tolerance_m: 2.5
+
+metrics:
+  entry_range_m: 25.0
+
+# 僚机初始位置（NED，相对公共 map_ned；实机 P1 起飞点约 (0,0)）
+initial:
+  p2: {x: -40.0, y: 30.0, z: -6.5}
+  p3: {x: -40.0, y: -30.0, z: -6.5}

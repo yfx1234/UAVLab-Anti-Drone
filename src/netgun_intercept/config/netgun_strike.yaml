@@ -1,0 +1,41 @@
+# netgun_intercept 打击链参数（方案 v4 定稿值；真值隔离链路，勿加真值话题）
+netgun_strike_node:
+  ros__parameters:
+    # ---- 网枪简单模型（V5-C 档，单一真源） ----
+    muzzle_speed_mps: 55.0
+    coverage_half_extent_m: 1.5      # 3×3 m 覆盖面（正方形）
+    deployment_time_s: 0.15
+    effective_range_min_m: 6.0
+    effective_range_max_m: 10.0
+
+    # ---- 择时火控 ----
+    primary_axis_error_rad: 0.017453292519943295   # 1°：主支即打
+    window_axis_error_rad: 0.03490658503988659     # 2°：判窗
+    window_hold_s: 0.2                             # 兜底支保持（无 0.04s 去抖）
+    maximum_los_rate_rad_s: 0.5
+
+    # ---- 蒙射支（默认关闭，仅预留接口） ----
+    blind_shot_enabled: false
+    blind_shot_max_axis_error_rad: 0.13962634015954636  # 8°
+    blind_shot_exit_margin_s: 0.25
+
+    # ---- 接口（按实际链路 remap） ----
+    relative_estimate_topic: /tracking/relative_estimate
+    attitude_topic: /fmu/out/vehicle_attitude
+    status_topic: /fmu/out/vehicle_status
+    local_position_topic: /fmu/out/vehicle_local_position
+    shot_topic: /tracking/virtual_shot_event
+    frame_id: pursuer_local_ned
+    estimate_timeout_s: 0.45
+    control_rate_hz: 50.0
+
+    # ---- 授权门（armed ∧ offboard ∧ 高度 ∧ 任务授权延时） ----
+    minimum_height_m: 1.5
+    attack_enable_delay_s: 0.0
+    engagement_timeout_s: 0.0   # 蒙射 B 支接口，0=不启用
+
+# 网枪链配套的上游参数（在对应节点/launch 中设置，此处仅作单一真源记录）：
+#   px4_offboard_tracking/pure_interceptor_controller: enable_native_fire=false
+#   virtual_interception_referee: instant_coverage_mode=true
+#   logical_camera_simulator: depth_camera_maximum_depth_m=10.0
+#   px4sim 初始布置：PURSUER_POSE="0,-12,0.01"（目标机原点，水平 12m）

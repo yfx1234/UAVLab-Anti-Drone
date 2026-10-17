@@ -1,0 +1,13 @@
+std_msgs/Header header
+bool passed
+bool estimate_ok
+bool covariance_ok
+bool innovation_ok
+bool visibility_ok
+bool timestamp_ok
+bool attitude_ok
+bool alignment_ok
+float64 maximum_position_variance
+float64 innovation_mahalanobis
+float64 observation_age
+float64 estimate_age

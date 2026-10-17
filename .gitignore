@@ -20,6 +20,9 @@ log*/
 *.mkv
 *.avi
 *.pid
+*.bag
+nohup.out
+/core.*
 .venv/
 .env
 .env.*
@@ -32,3 +35,9 @@ id_rsa*
 id_ed25519*
 *.pem
 *.key
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+weights/*
+!weights/README.md

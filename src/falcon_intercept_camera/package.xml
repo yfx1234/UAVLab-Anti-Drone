@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>falcon_intercept_camera</name>
+  <version>0.1.0</version>
+  <description>Jetson Argus/NVMM camera publishers for the Falcon intercept pipeline.</description>
+  <maintainer email="user@example.com">falcon team</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>sensor_msgs</depend>
+  <build_depend>pkg-config</build_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

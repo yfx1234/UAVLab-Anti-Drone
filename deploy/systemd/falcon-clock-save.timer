@@ -1,0 +1,11 @@
+[Unit]
+Description=Persist the Jetson wall clock every five minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+AccuracySec=15s
+Unit=falcon-clock-save.service
+
+[Install]
+WantedBy=timers.target

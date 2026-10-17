@@ -1,0 +1,16 @@
+std_msgs/Header header
+bool abort_requested
+bool recovery_complete
+bool local_state_ok
+bool attitude_ok
+bool range_ok
+bool tilt_ok
+bool speed_ok
+bool altitude_ok
+bool recovery_instantaneous_pass
+float64 range
+float64 tilt
+float64 speed
+float64 altitude_error
+float64 recovery_elapsed
+string reason

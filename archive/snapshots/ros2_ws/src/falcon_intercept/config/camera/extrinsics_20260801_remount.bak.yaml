@@ -1,0 +1,48 @@
+# SolidWorks assembled estimate converted from camera_frames_solidworks_raw.csv.
+#
+# Runtime geometry uses x-forward, y-right, z-up.  The common parent below is
+# therefore named rig_body_fru; it is only used to compose camera-to-camera
+# transforms and must not be confused with PX4 body FRD.
+calibration_status: solidworks_assembled_estimate
+source: solidworks_mathtransform_arraydata
+parent_frame: rig_body_fru
+sensor_mapping:
+  CAM0: stereo_right_camera
+  CAM1: stereo_left_camera
+  USB: search_camera
+
+search_camera:
+  parent: rig_body_fru
+  translation_m: [0.138694077480174, -0.005741031332310, 0.0]
+  # SolidWorks camera-frame -10 deg axis is the rig z/yaw component after
+  # conversion to x-forward, y-right, z-up.  The former roll interpretation
+  # projected the 2026-07-27 field target outside the stereo image.
+  rpy_deg: [0.0, 0.129143675827220, -10.0]
+
+rtk_antenna:
+  calibration_status: cad_final_20260731
+  parent: rig_body_fru
+  translation_m: [-0.009, -0.05, -0.0462]
+  # RTK antenna phase center, derived from the final CAD lever arm:
+  #   lever(RTK -> stereo_left_camera) = [+0.133, 0.0, +0.0462] m
+  #   (FLU: X 机头, Y 左, Z 上; |lever| = 0.1408 m)
+  #   PX4 body FRD (X fwd, Y right, Z down): [+0.133, 0.0, -0.0462] m
+  # RTK field tools convert this to ENU at setup time via
+  # --lever-body + --rig-yaw-deg (rtk_truth_core.body_lever_to_enu).
+
+stereo_left_camera:
+  parent: rig_body_fru
+  translation_m: [0.124, -0.05, 0.0]
+  rpy_deg: [0.0, 0.0, 0.0]
+
+stereo_right_camera:
+  parent: rig_body_fru
+  translation_m: [0.124, 0.05, 0.0]
+  rpy_deg: [0.0, 0.0, 0.0]
+
+tracking_camera_to_body:
+  source_camera: stereo_left_camera
+  camera_translation_body_frd_m: [0.124, -0.05, 0.0]
+  camera_translation_body_flu_m: [0.124, 0.05, 0.0]
+  # Forward-mounted REP-103 optical frame; retained as an assembled estimate.
+  q_body_flu_to_optical_wxyz: [0.5, 0.5, -0.5, 0.5]

@@ -1,0 +1,115 @@
+offboard_route_offset:
+  ros__parameters:
+    trajectory_type: "line_reciprocating"
+    # Formal trajectory backend: velocity_path (recommended) or position_feedforward.
+    trajectory_control_backend: "velocity_path"
+    # OffboardControlMode and TrajectorySetpoint update rate [Hz], valid (2, 200].
+    trajectory_setpoint_rate_hz: 50.0
+
+    mission_start_altitude_m: 5.0
+    mission_start_east_offset_m: 3.0
+    mission_start_yaw_deg: 0.0
+
+    approach_horizontal_speed_mps: 1.0
+    approach_vertical_speed_mps: 0.5
+    approach_arrival_tolerance_m: 0.20
+    approach_yaw_tolerance_deg: 5.0
+    approach_settle_time_s: 0.5
+    approach_yaw_rate_dps: 45.0
+
+    line_distance_m: 10.0
+    line_speed_mps: 2.0
+    line_reciprocation_count: 3
+    line_endpoint_hold_time_s: 0.0
+    line_endpoint_arrival_tolerance_m: 0.25
+    line_endpoint_velocity_tolerance_mps: 0.25
+    line_turn_yaw_rate_dps: 30.0
+    line_turn_yaw_tolerance_deg: 5.0
+    line_turn_settle_time_s: 0.2
+    # Deprecated compatibility parameter. Horizontal trajectory direction now uses mission_start_yaw_deg.
+    line_direction_yaw_deg: 0.0
+
+    line_length: 3.0
+    circle_radius: 1.5
+    circle_turns: 1.0
+    circle_direction: "cw"
+    continuous_trajectory: false
+    square_side: 3.0
+    sine_length: 4.0
+    sine_amplitude: 1.0
+    sine_cycles: 1.0
+    z_width: 4.0
+    z_height: 2.0
+    z_repeats: 1
+    curve_samples_per_meter: 8.0
+
+    accel_time_s: 0.5
+    decel_time_s: 0.5
+
+    # Closed-loop path progress and jerk-limited speed planning.
+    max_acceleration_mps2: 1.5
+    max_deceleration_mps2: 1.8
+    max_jerk_mps3: 4.0
+    lookahead_time_s: 0.25
+    min_lookahead_distance_m: 0.10
+    max_lookahead_distance_m: 0.35
+    max_reference_lead_distance_m: 0.50
+    response_delay_s: 0.40
+    stopping_safety_margin_m: 0.15
+    endpoint_position_tolerance_m: 0.12
+    endpoint_speed_tolerance_mps: 0.20
+    endpoint_settle_time_s: 0.50
+    # Horizontal-path completion uses separate vertical tolerances so altitude estimator motion
+    # does not indefinitely reset a horizontal endpoint settle timer.
+    endpoint_altitude_tolerance_m: 0.25
+    endpoint_vertical_speed_tolerance_mps: 0.30
+
+    # Curve and square-corner limits (used by their optimized planners).
+    max_safe_lateral_acceleration_mps2: 1.5
+    # Frenet cross-track controller: gain [1/s], absolute speed [m/s], and
+    # fraction of the jerk-planned horizontal speed reserved for normal correction.
+    cross_track_gain: 0.5
+    max_cross_track_correction_speed_mps: 0.30
+    cross_track_speed_ratio: 0.40
+    # Smooth slowdown interval based on |cross-track error| [m].
+    cross_track_slowdown_start_m: 0.60
+    cross_track_stop_error_m: 1.50
+    # Local projection low-pass time constant [s] and along-path search window [m].
+    projection_filter_time_constant_s: 0.15
+    projection_search_window_m: 2.0
+    # Low-speed endpoint convergence; distance [m], gain [1/s], speed [m/s].
+    terminal_capture_enabled: true
+    terminal_capture_distance_m: 0.50
+    terminal_gain: 0.5
+    terminal_max_speed_mps: 0.15
+    # NED-z outer loop: gain [1/s], speed [m/s], acceleration [m/s^2], jerk [m/s^3].
+    altitude_velocity_gain: 0.8
+    max_vertical_speed_mps: 0.4
+    max_vertical_acceleration_mps2: 0.5
+    max_vertical_jerk_mps3: 1.0
+    max_altitude_error_m: 2.0
+    # Validated in Gazebo Sim; set false to repeat the pure velocity-control comparison.
+    velocity_path_acceleration_feedforward_enabled: true
+    # rounded is continuous; stop_turn retains the exact legacy position-control corner stop.
+    square_corner_mode: "rounded"
+    square_corner_radius_m: 1.0
+    # stop_reverse is physically exact; racetrack connects the legs with semicircles.
+    line_turnaround_mode: "stop_reverse"
+    line_turn_radius_m: 2.0
+    # fixed is the safe default; tangent explicitly follows the path direction.
+    yaw_mode: "fixed"
+    yaw_rate_feedforward_enabled: true
+    max_yaw_rate_dps: 45.0
+    max_yaw_acceleration_dps2: 90.0
+    vertex_yaw_rate_dps: 30.0
+    vertex_position_tolerance_m: 0.20
+    vertex_speed_tolerance_mps: 0.20
+    vertex_yaw_tolerance_deg: 5.0
+    vertex_yaw_settle_time_s: 0.30
+
+    # Deprecated compatibility parameter; the active timer uses trajectory_setpoint_rate_hz.
+    publish_rate_hz: 50.0
+    local_position_timeout_s: 1.0
+    prestream_after_exit_delay_s: 1.0
+    minimum_start_altitude_m: 0.5
+    takeoff_reference_candidate_timeout_s: 3.0

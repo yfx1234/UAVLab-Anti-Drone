@@ -1,0 +1,20 @@
+# 真值隔离控制器发布的虚拟预测射击事件，不包含实物执行接口。
+# 所有向量均在 header.frame_id 指定的 NED 坐标系中；当前为 pursuer_local_ned。
+uint16 INTERFACE_VERSION_V1=1
+uint16 interface_version
+std_msgs/Header header
+uint64 shot_id
+float64 projectile_speed_mps
+float64 predicted_time_of_flight_s
+geometry_msgs/Vector3 shot_direction_ned
+geometry_msgs/Point pursuer_position_ned
+geometry_msgs/Vector3 pursuer_velocity_ned
+geometry_msgs/Point estimated_target_position_ned
+geometry_msgs/Vector3 estimated_target_velocity_ned
+geometry_msgs/Vector3 estimated_target_acceleration_ned
+geometry_msgs/Point predicted_intercept_point_ned
+float64 estimated_range_m
+float64 actual_attack_axis_error_rad
+float64 predicted_lateral_sigma_m
+float64 maximum_position_variance_m2
+bool solution_valid

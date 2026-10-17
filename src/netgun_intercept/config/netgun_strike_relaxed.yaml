@@ -1,0 +1,34 @@
+# netgun_intercept 放宽角度测试档（用户 2026-10-11 指定：2° 优选 / 4° 硬门）
+# 用法：launch 参数文件换成本文件即可与 1°/2° 档做 A/B 对比测试。
+# 其余参数与 netgun_strike.yaml 保持一致（单一真源记录见该文件末尾）。
+netgun_strike_node:
+  ros__parameters:
+    muzzle_speed_mps: 55.0
+    coverage_half_extent_m: 1.5
+    deployment_time_s: 0.15
+    effective_range_min_m: 6.0
+    effective_range_max_m: 10.0
+
+    # 放宽档：主支 2° 即打；1.5°–4° 需持续 0.2s（兜底）
+    primary_axis_error_rad: 0.03490658503988659     # 2°
+    window_axis_error_rad: 0.06981317007977318      # 4°
+    window_hold_s: 0.2
+    maximum_los_rate_rad_s: 0.5
+
+    blind_shot_enabled: false
+    blind_shot_max_axis_error_rad: 0.13962634015954636  # 8°（覆盖半角留余量）
+    blind_shot_exit_margin_s: 0.25
+
+    relative_estimate_topic: /tracking/relative_estimate
+    attitude_topic: /fmu/out/vehicle_attitude
+    status_topic: /fmu/out/vehicle_status
+    local_position_topic: /fmu/out/vehicle_local_position
+    shot_topic: /tracking/virtual_shot_event
+    frame_id: pursuer_local_ned
+    estimate_timeout_s: 0.45
+    control_rate_hz: 50.0
+
+    minimum_height_m: 1.5
+    attack_enable_delay_s: 0.0
+    engagement_timeout_s: 0.0
+    pursuer_velocity_compensation: true

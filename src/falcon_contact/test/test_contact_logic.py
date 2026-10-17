@@ -1,0 +1,336 @@
+import json
+import math
+
+import pytest
+
+from falcon_contact.contact_logic import (
+    guidance_phase,
+    lead_pursuit_direction,
+    predict_world_line_of_sight,
+    range_from_bbox_fraction,
+    slerp_quaternion,
+    time_to_contact_s,
+    validate_speed_profile,
+)
+from falcon_contact.search_contact_node import frame_key, parse_detection_frame
+
+
+def _norm(vector):
+    return math.sqrt(sum(value * value for value in vector))
+
+
+def test_lead_is_identity_for_static_target() -> None:
+    aim, info = lead_pursuit_direction(
+        los_unit_ned=(0.6, 0.0, -0.8),
+        azimuth_rate_rad_s=0.0,
+        elevation_rate_rad_s=0.0,
+        range_m=3.0,
+        expansion_rate_s=0.0,
+        closing_speed_mps=3.5,
+    )
+    assert aim == pytest.approx((0.6, 0.0, -0.8))
+    assert info["lead_distance_m"] == pytest.approx(0.0)
+
+
+def test_lead_pursues_crossing_mover_toward_target_motion() -> None:
+    # 2 m/s tangential crossing at 3 m range: azimuth rate = 2/3 rad/s
+    aim, info = lead_pursuit_direction(
+        los_unit_ned=(1.0, 0.0, 0.0),
+        azimuth_rate_rad_s=2.0 / 3.0,
+        elevation_rate_rad_s=0.0,
+        range_m=3.0,
+        expansion_rate_s=0.0,
+        closing_speed_mps=3.5,
+    )
+    assert _norm(aim) == pytest.approx(1.0)
+    assert info["target_speed_mps"] == pytest.approx(2.0, abs=0.01)
+    # needed displacement 2*(3/3.5)=1.71 m exceeds 1.0 m cap -> limited
+    assert info["limited"] is True
+    assert info["lead_distance_m"] == pytest.approx(1.0, abs=0.01)
+    # aim rotated toward the target motion (+north side here)
+    assert aim[0] > 1.0 * 0.9
+    assert math.atan2(info["lead_distance_m"], 3.0) == pytest.approx(
+        math.acos(max(-1.0, min(1.0, aim[0]))), abs=0.01
+    )
+
+
+def test_lead_required_displacement_is_preserved_when_under_cap() -> None:
+    # 1 m/s crossing at 3 m, closing 3.5:指令沿瞄准方向飞行,径向闭合按
+    # cos(提前角) 投影,闭合时间有闭式解 t = r/sqrt(V^2-v_lat^2) =
+    # 3/sqrt(12.25-1)=0.894 m < cap（旧算法忽略投影,给 0.857）。
+    aim, info = lead_pursuit_direction(
+        los_unit_ned=(0.0, 1.0, 0.0),
+        azimuth_rate_rad_s=-1.0 / 3.0,
+        elevation_rate_rad_s=0.0,
+        range_m=3.0,
+        expansion_rate_s=0.0,
+        closing_speed_mps=3.5,
+    )
+    assert info["limited"] is False
+    assert info["lead_distance_m"] == pytest.approx(0.894, abs=0.005)
+    assert aim[2] == pytest.approx(0.0, abs=1e-9)
+
+
+def test_lead_ignores_radial_motion_and_deadband() -> None:
+    # pure radial closing: expansion > 0, no rates -> no lateral lead
+    aim, info = lead_pursuit_direction(
+        los_unit_ned=(0.0, 0.0, -1.0),
+        azimuth_rate_rad_s=0.0,
+        elevation_rate_rad_s=0.0,
+        range_m=3.0,
+        expansion_rate_s=0.6,
+        closing_speed_mps=3.5,
+    )
+    assert aim == pytest.approx((0.0, 0.0, -1.0))
+    assert info["lead_distance_m"] == pytest.approx(0.0)
+    # below deadband
+    aim2, info2 = lead_pursuit_direction(
+        los_unit_ned=(1.0, 0.0, 0.0),
+        azimuth_rate_rad_s=0.1 / 3.0,
+        elevation_rate_rad_s=0.0,
+        range_m=3.0,
+        expansion_rate_s=0.0,
+        closing_speed_mps=3.5,
+    )
+    assert aim2 == pytest.approx((1.0, 0.0, 0.0))
+    assert info2["lead_distance_m"] == pytest.approx(0.0)
+
+
+def test_lead_caps_excessive_target_speed() -> None:
+    aim, info = lead_pursuit_direction(
+        los_unit_ned=(1.0, 0.0, 0.0),
+        azimuth_rate_rad_s=5.0 / 3.0,
+        elevation_rate_rad_s=0.0,
+        range_m=3.0,
+        expansion_rate_s=0.0,
+        closing_speed_mps=3.5,
+        maximum_target_speed_mps=2.5,
+    )
+    assert info["target_speed_mps"] == pytest.approx(2.5, abs=0.01)
+    assert info["limited"] is True
+    assert _norm(aim) == pytest.approx(1.0)
+
+
+def test_lead_compensates_interceptor_lateral_motion() -> None:
+    # 静止目标 + 本机横向 1.5 m/s：相对角速率 -0.5 rad/s，补偿后不应产生
+    # 虚假提前量（2026-09-10 审查问题 2）。
+    aim, info = lead_pursuit_direction(
+        los_unit_ned=(1.0, 0.0, 0.0),
+        azimuth_rate_rad_s=-1.5 / 3.0,
+        elevation_rate_rad_s=0.0,
+        range_m=3.0,
+        expansion_rate_s=0.0,
+        closing_speed_mps=3.5,
+        interceptor_velocity_ned=(0.0, 1.5, 0.0),
+    )
+    assert aim == pytest.approx((1.0, 0.0, 0.0))
+    assert info["lateral_speed_mps"] == pytest.approx(0.0, abs=1e-6)
+    assert info["lead_distance_m"] == pytest.approx(0.0)
+
+
+def test_lead_estimates_true_target_speed_when_chasing() -> None:
+    # 目标 2 m/s 东向 + 本机 1 m/s 东向尾随：估计目标速度应为 2.0，
+    # 而不是相对值 1.0（2026-09-10 审查问题 2）。
+    aim, info = lead_pursuit_direction(
+        los_unit_ned=(1.0, 0.0, 0.0),
+        azimuth_rate_rad_s=1.0 / 3.0,
+        elevation_rate_rad_s=0.0,
+        range_m=3.0,
+        expansion_rate_s=0.0,
+        closing_speed_mps=3.5,
+        interceptor_velocity_ned=(0.0, 1.0, 0.0),
+    )
+    assert info["lateral_speed_mps"] == pytest.approx(2.0, abs=0.01)
+    assert info["target_speed_mps"] == pytest.approx(2.0, abs=0.01)
+
+
+def test_lead_own_closing_does_not_suppress_lateral() -> None:
+    # 本机沿视线 3.5 m/s 接近 + 目标 2 m/s 横向：径向分量扣除后不得再挤占
+    # 2.5 m/s 限幅额度，横向速度保持 2.0（2026-09-10 审查问题 3；旧算法
+    # 会把它压到约 1.24）。
+    aim, info = lead_pursuit_direction(
+        los_unit_ned=(1.0, 0.0, 0.0),
+        azimuth_rate_rad_s=2.0 / 3.0,
+        elevation_rate_rad_s=0.0,
+        range_m=3.0,
+        expansion_rate_s=3.5 / 3.0,
+        closing_speed_mps=3.5,
+        interceptor_velocity_ned=(3.5, 0.0, 0.0),
+    )
+    assert info["lateral_speed_mps"] == pytest.approx(2.0, abs=0.01)
+    assert info["target_radial_mps"] == pytest.approx(0.0, abs=0.01)
+    assert _norm(aim) == pytest.approx(1.0)
+
+
+def test_lead_time_accounts_for_target_radial_recession() -> None:
+    # 2026-09-10 审查问题 A：目标沿视线 1 m/s 远离 + 横向 1 m/s，接触时间
+    # 扣除目标远离速度，且指令速度按瞄准角投影（定点迭代收敛值 0.917s，
+    # 旧算法分别给 0.571s / 0.800s）。
+    aim, info = lead_pursuit_direction(
+        los_unit_ned=(1.0, 0.0, 0.0),
+        azimuth_rate_rad_s=0.5,
+        elevation_rate_rad_s=0.0,
+        range_m=2.0,
+        expansion_rate_s=1.25,
+        closing_speed_mps=3.5,
+        interceptor_velocity_ned=(3.5, 0.0, 0.0),
+    )
+    assert info["lead_time_s"] == pytest.approx(0.917, abs=0.01)
+    assert info["lead_distance_m"] == pytest.approx(0.917, abs=0.01)
+    assert info["closing_radial_mps"] == pytest.approx(2.18, abs=0.02)
+    assert _norm(aim) == pytest.approx(1.0)
+
+
+def test_lead_time_increases_when_target_approaches() -> None:
+    # 目标沿视线朝本机飞（target_radial < 0）：闭合更快，提前时间更短。
+    # 投影修正后收敛值 0.453s（纯几何近似 2/4.5=0.444s）。
+    aim, info = lead_pursuit_direction(
+        los_unit_ned=(1.0, 0.0, 0.0),
+        azimuth_rate_rad_s=0.5,
+        elevation_rate_rad_s=0.0,
+        range_m=2.0,
+        expansion_rate_s=2.25,   # closure 4.5 m/s => target_radial = -1.0
+        closing_speed_mps=3.5,
+        interceptor_velocity_ned=(3.5, 0.0, 0.0),
+    )
+    assert info["target_radial_mps"] == pytest.approx(-1.0, abs=0.01)
+    assert info["lead_time_s"] == pytest.approx(0.453, abs=0.01)
+
+
+def test_lead_limit_rescales_radial_component() -> None:
+    # 2026-09-10 提前量几何一致性：目标径向 2.0 + 横向 2.0 合成 2.83 超
+    # 2.5 m/s 限幅，缩放后记录的径向分量必须同步变为 1.77（旧算法保留
+    # 2.0，导致闭合速度按 1.5 而非 1.73 计算）。
+    aim, info = lead_pursuit_direction(
+        los_unit_ned=(1.0, 0.0, 0.0),
+        azimuth_rate_rad_s=1.0,
+        elevation_rate_rad_s=0.0,
+        range_m=2.0,
+        expansion_rate_s=0.75,
+        closing_speed_mps=3.5,
+        interceptor_velocity_ned=(3.5, 0.0, 0.0),
+    )
+    assert info["limited"] is True
+    assert info["target_speed_mps"] == pytest.approx(2.5, abs=0.01)
+    expected_radial = 2.0 * 2.5 / math.hypot(2.0, 2.0)
+    assert info["target_radial_mps"] == pytest.approx(expected_radial, abs=0.01)
+    # 提前时间顶到 1s 上限、距离顶到 1m 限幅，闭合速度与限幅后向量自洽
+    assert info["lead_time_s"] == pytest.approx(1.0, abs=0.01)
+    assert info["lead_distance_m"] == pytest.approx(1.0, abs=0.01)
+    cosine = 2.0 / math.hypot(2.0, 1.0)
+    assert info["closing_radial_mps"] == pytest.approx(
+        3.5 * cosine - expected_radial, abs=0.01
+    )
+
+
+def test_lead_time_matches_projected_closure_closed_form() -> None:
+    # 无径向分量时定点迭代有闭式解 t = r/sqrt(V^2-v_lat^2)：
+    # 横向 0.5 m/s @ 3 m，V=3.5 -> t = 3/sqrt(12.25-0.25) = 0.866s。
+    aim, info = lead_pursuit_direction(
+        los_unit_ned=(1.0, 0.0, 0.0),
+        azimuth_rate_rad_s=0.5 / 3.0,
+        elevation_rate_rad_s=0.0,
+        range_m=3.0,
+        expansion_rate_s=0.0,
+        closing_speed_mps=3.5,
+    )
+    expected = 3.0 / math.sqrt(3.5**2 - 0.5**2)
+    assert info["lead_time_s"] == pytest.approx(expected, abs=1e-3)
+    assert info["lead_distance_m"] == pytest.approx(0.5 * expected, abs=1e-3)
+    assert _norm(aim) == pytest.approx(1.0)
+
+
+def test_sprint_speed_profile_accepts_increasing_order() -> None:
+    validate_speed_profile(1.0, 1.0, 1.0)
+    validate_speed_profile(1.0, 1.8, 3.0)
+    validate_speed_profile(0.5, 1.8, 4.5)
+    validate_speed_profile(1.8, 1.8, 3.0)
+
+
+def test_sprint_speed_profile_rejects_decreasing_order() -> None:
+    with pytest.raises(ValueError):
+        validate_speed_profile(1.0, 0.5, 0.3)
+    with pytest.raises(ValueError):
+        validate_speed_profile(1.8, 3.0, 1.0)
+    with pytest.raises(ValueError):
+        validate_speed_profile(1.0, 1.8, 0.0)
+
+
+def test_sprint_speed_profile_rejects_non_finite() -> None:
+    with pytest.raises(ValueError):
+        validate_speed_profile(1.0, float("nan"), 3.0)
+    with pytest.raises(ValueError):
+        validate_speed_profile(float("inf"), 1.8, 3.0)
+
+
+def test_range_uses_bbox_fraction() -> None:
+    assert range_from_bbox_fraction(55.0 / 2560.0, 10.0, 55.0, 2560.0) == pytest.approx(10.0)
+    assert range_from_bbox_fraction(110.0 / 2560.0, 10.0, 55.0, 2560.0) == pytest.approx(5.0)
+
+
+def test_time_to_contact_requires_positive_expansion() -> None:
+    assert time_to_contact_s(0.5) == pytest.approx(2.0)
+    assert time_to_contact_s(0.01) is None
+    assert time_to_contact_s(-1.0) is None
+
+
+def test_prediction_is_bounded() -> None:
+    prediction = predict_world_line_of_sight(
+        azimuth_rad=0.0,
+        elevation_rad=0.0,
+        azimuth_rate_rad_s=4.0,
+        elevation_rate_rad_s=3.0,
+        measurement_age_s=0.4,
+        response_delay_s=0.1,
+        guidance_lead_s=0.2,
+        maximum_horizon_s=0.45,
+        maximum_rate_rad_s=0.7,
+        maximum_offset_rad=0.12,
+    )
+    assert prediction.horizon_s == pytest.approx(0.45)
+    assert prediction.angular_offset_rad <= 0.1200001
+    assert prediction.limited
+    assert math.sqrt(sum(value * value for value in prediction.unit_ned)) == pytest.approx(1.0)
+
+
+def test_phase_is_conservative() -> None:
+    common = dict(
+        terminal_range_m=3.0,
+        terminal_ttc_s=1.5,
+        contact_range_m=1.0,
+        contact_ttc_s=0.45,
+        contact_bbox_fraction=0.30,
+    )
+    assert guidance_phase(range_m=8.0, ttc_s=None, bbox_fraction=0.03, **common) == "APPROACH"
+    assert guidance_phase(range_m=2.5, ttc_s=None, bbox_fraction=0.08, **common) == "TERMINAL"
+    assert guidance_phase(range_m=4.0, ttc_s=0.4, bbox_fraction=0.10, **common) == "CONTACT_WINDOW"
+
+
+def test_quaternion_interpolation_keeps_unit_norm() -> None:
+    result = slerp_quaternion((1.0, 0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 1.0), 0.5)
+    assert math.sqrt(sum(value * value for value in result)) == pytest.approx(1.0)
+
+
+def test_detection_parser_preserves_sequence_and_scale() -> None:
+    payload = {
+        "header": {"stamp": {"sec": 100, "nanosec": 500000000}},
+        "sequence": 42,
+        "image_width": 2560,
+        "image_height": 1440,
+        "detections": [
+            {"confidence": 0.9, "bbox_xyxy": [100, 200, 356, 344]},
+        ],
+    }
+    parsed = parse_detection_frame(json.dumps(payload), 0.55)
+    assert parsed is not None
+    assert parsed.key == frame_key(42, 100.5)
+    assert parsed.bbox_fraction == pytest.approx(0.1)
+
+
+def test_detection_parser_rejects_low_confidence() -> None:
+    payload = {
+        "header": {"stamp": {"sec": 100, "nanosec": 0}},
+        "sequence": 9,
+        "detections": [{"confidence": 0.2, "bbox_xyxy": [0, 0, 100, 100]}],
+    }
+    assert parse_detection_frame(json.dumps(payload), 0.55) is None

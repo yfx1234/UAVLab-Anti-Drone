@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>netgun_intercept</name>
+  <version>0.1.0</version>
+  <description>单双目 8m 网枪打击拦截链（骨架）：网枪简单模型、择时火控、打击节点。方案见 docs/双目8m网枪拦截方案.md。</description>
+  <maintainer email="user@example.com">falcon team</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>px4_msgs</depend>
+  <depend>anti_drone_interfaces</depend>
+  <depend>virtual_interception_interfaces</depend>
+  <depend>px4_offboard_tracking</depend>
+
+  <exec_depend>zed_perception_bridge</exec_depend>
+
+  <test_depend>ament_cmake_gtest</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

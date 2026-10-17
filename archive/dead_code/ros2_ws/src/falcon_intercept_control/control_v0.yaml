@@ -1,0 +1,63 @@
+# Real-flight V0 defaults. Live output is deliberately locked.
+search_controller_node:
+  ros__parameters:
+    scan_yaw_rate_flu_rps: 0.20
+    settle_time_s: 0.50
+    search_timeout_s: 120.0
+    cue_gain: 0.004
+    maximum_cue_yaw_rate_rps: 0.20
+    search_image_width: 2560.0
+    minimum_confidence: 0.50
+    cue_timeout_s: 0.50
+
+intercept_fsm_node:
+  ros__parameters:
+    auto_start_after_offboard: true
+    minimum_track_hits: 5
+    alignment_gate_rad: 0.034906585
+    alignment_hold_s: 0.15
+    maximum_reprojection_error_px: 3.0
+    minimum_geometry_score: 0.10
+    maximum_baseline_motion_ratio: 0.10
+
+guidance_node:
+  ros__parameters:
+    position_gain_forward: 0.25
+    position_gain_lateral: 0.30
+    position_gain_vertical: 0.25
+    velocity_feedforward: 0.35
+    desired_distance_m: 1.7
+    maximum_forward_speed_mps: 0.30
+    maximum_lateral_speed_mps: 0.15
+    maximum_vertical_speed_mps: 0.10
+    maximum_yaw_rate_rps: 0.20
+    maximum_acceleration_mps2: 0.30
+    # Forward optical rotation retained as an assembled estimate from SolidWorks.
+    camera_q_body_flu_to_optical_w: 0.5
+    camera_q_body_flu_to_optical_x: 0.5
+    camera_q_body_flu_to_optical_y: -0.5
+    camera_q_body_flu_to_optical_z: 0.5
+    # CAM0 / stereo-left optical centre from the SolidWorks assembled estimate.
+    camera_translation_body_flu_x_m: 0.124
+    camera_translation_body_flu_y_m: 0.050
+    camera_translation_body_flu_z_m: 0.0
+
+safety_node:
+  ros__parameters:
+    calibration_ready: false
+    command_valid_for_s: 0.25
+
+px4_velocity_adapter:
+  ros__parameters:
+    mode: shadow
+    rate_hz: 20.0
+    command_timeout_s: 0.25
+    zero_hold_s: 0.50
+    attitude_timeout_s: 0.25
+    # PX4 Commander publishes VehicleStatus at 2 Hz; tolerate three periods.
+    status_timeout_s: 1.50
+    land_retry_interval_s: 1.0
+    allow_live_control: false
+    calibration_ready: false
+    expected_frame_id: pursuer_base_flu
+    px4_namespace: /fmu

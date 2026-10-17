@@ -1,0 +1,102 @@
+# Field-refined assembled estimate for the final V0 camera modes.
+#
+# The stereo prior uses the IMX477 16 mm lens and 1.55 um pixel pitch:
+#   f_px = 16 mm / 0.00155 mm = 10322.580645 px.
+# The production Argus path selects sensor mode 0 at 3840x2160; this is treated
+# as a centred 1:1 crop, not as an application-level resize from 4056x3040.
+# Two known-distance field points refine stereo fx and horizontal disparity
+# alignment.  fy, principal points and zero distortion remain vendor estimates.
+calibration_status: field_refined_assembled_estimate
+calibration_method: vendor_intrinsics_solidworks_extrinsics_and_two_distance_field_fit
+
+search:
+  calibration_status: vendor_locked_assembled_estimate
+  calibration_method: vendor_nominal_fov
+  image_width: 2560
+  image_height: 1440
+  # Vendor nominal horizontal/vertical FOV: 60/35 degrees.
+  fx: 2217.025033689
+  fy: 2283.984079750
+  cx: 1279.5
+  cy: 719.5
+  distortion: [0.0, 0.0, 0.0, 0.0, 0.0]
+
+stereo_left:
+  calibration_status: field_refined_fx_vendor_remaining_intrinsics
+  calibration_method: two_distance_fx_fit_plus_vendor_intrinsics
+  image_width: 3840
+  image_height: 2160
+  # Two-distance field estimate from 4.74 m and 2.33 m target placements.
+  fx: 10238.013493164
+  fy: 10322.580645161
+  cx: 1919.5
+  cy: 1079.5
+  distortion: [0.0, 0.0, 0.0, 0.0, 0.0]
+
+stereo_right:
+  calibration_status: field_refined_fx_vendor_remaining_intrinsics
+  calibration_method: two_distance_fx_fit_plus_vendor_intrinsics
+  image_width: 3840
+  image_height: 2160
+  fx: 10238.013493164
+  fy: 10322.580645161
+  cx: 1919.5
+  cy: 1079.5
+  distortion: [0.0, 0.0, 0.0, 0.0, 0.0]
+
+stereo_pair:
+  calibration_status: mapping_corrected_provisional_pending_checkerboard
+  frame_convention: x_forward_y_right_z_up
+  left_sensor: CAM1
+  right_sensor: CAM0
+  rotation_left_to_right:
+    - [1.0, 0.0, 0.0]
+    - [0.0, 1.0, 0.0]
+    - [0.0, 0.0, 1.0]
+  translation_left_to_right_m: [0.0, 0.1, 0.0]
+  baseline_m: 0.1
+  field_alignment:
+    calibration_status: transferred_after_physical_left_right_mapping_correction
+    measurement_session: rtk-field15-20260731-reinterpreted-20260801
+    mapping_provenance: physical_occlusion_verified_sensor1_left_sensor0_right
+    # The 2026-07-31 evidence bag topics were produced under the old, incorrect
+    # sensor0=left/sensor1=right names.  On 2026-08-01 they were reinterpreted as
+    # old right topic=physical left and old left topic=physical right.  A robust
+    # 6005-inlier refit transfers the old RTK-anchored metric disparity into the
+    # corrected physical-left/physical-right convention.  This is provisional
+    # until the 6x8-inner-corner, 0.025 m checkerboard calibration is completed.
+    # 2026-07-31 机架改为朝天后现场重估（原 07-27 水平机架值已备份为
+    # stereo_calib_20260727_horizontal_rig.bak.yaml）：
+    #   垂直：rosbag 6466 对左右同时检测拟合（residual std 5.21 px, p90 7.67 px）；
+    #   水平 zero：2457 个 RTK 真值锚定解（median, std 8.26 px）；
+    #   验证：新 zero 下 15 m 悬停段距离中位 14.42 m，与 RTK 差分一致。
+    # Runtime correction for the locked machining/assembly error.
+    # dv = v_left - v_right ~= offset + slope * (u_right - reference_u).
+    vertical_offset_left_minus_right_px: -50.421808192
+    vertical_slope_left_minus_right: -0.025377902666
+    vertical_reference_u_px: 1919.5
+    relative_roll_estimate_deg: -1.453734682
+    transferred_pair_samples: 6008
+    fitted_inliers: 6005
+    fitted_abs_residual_p90_px: 6.299496358
+    # Field range model:
+    #   d_observed = u_left - u_right_after_roll
+    #   d_metric = sign * (d_observed - horizontal_zero)
+    #   range = fx * baseline / d_metric
+    # Corrected physical convention: left is sensor 1 and right is sensor 0.
+    # The zero below transfers the old RTK-anchored metric disparity with
+    # 0.980 px P90 / 2.495 px max transfer residual over the fit inliers.
+    horizontal_zero_disparity_offset_px: -365.544120787
+    horizontal_disparity_sign: 1.0
+    horizontal_range_calibration:
+      calibration_status: legacy_rtk_metric_transferred_to_corrected_mapping
+      legacy_stream_mapping: topic_left_was_physical_right_topic_right_was_physical_left
+      measurement_sessions:
+        - verify-20260727-144103
+        - verify-20260727-155949
+      reference_ranges_m: [4.74, 2.33]
+      corrected_observed_disparities_px: [128.240012956, -95.167861933]
+      fitted_fx_times_baseline_abs_px_m: 1023.801349316
+      fitted_fx_px: 10238.013493164
+      vendor_fx_px: 10322.580645161
+      difference_from_vendor_percent: -0.819244285

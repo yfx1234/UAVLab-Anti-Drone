@@ -1,0 +1,89 @@
+# Field-refined assembled estimate for the final V0 camera modes.
+#
+# The stereo prior uses the IMX477 16 mm lens and 1.55 um pixel pitch:
+#   f_px = 16 mm / 0.00155 mm = 10322.580645 px.
+# The production Argus path selects sensor mode 0 at 3840x2160; this is treated
+# as a centred 1:1 crop, not as an application-level resize from 4056x3040.
+# Two known-distance field points refine stereo fx and horizontal disparity
+# alignment.  fy, principal points and zero distortion remain vendor estimates.
+calibration_status: field_refined_assembled_estimate
+calibration_method: vendor_intrinsics_solidworks_extrinsics_and_two_distance_field_fit
+
+search:
+  calibration_status: vendor_locked_assembled_estimate
+  calibration_method: vendor_nominal_fov
+  image_width: 2560
+  image_height: 1440
+  # Vendor nominal horizontal/vertical FOV: 60/35 degrees.
+  fx: 2217.025033689
+  fy: 2283.984079750
+  cx: 1279.5
+  cy: 719.5
+  distortion: [0.0, 0.0, 0.0, 0.0, 0.0]
+
+stereo_left:
+  calibration_status: field_refined_fx_vendor_remaining_intrinsics
+  calibration_method: two_distance_fx_fit_plus_vendor_intrinsics
+  image_width: 3840
+  image_height: 2160
+  # Two-distance field estimate from 4.74 m and 2.33 m target placements.
+  fx: 10238.013493164
+  fy: 10322.580645161
+  cx: 1919.5
+  cy: 1079.5
+  distortion: [0.0, 0.0, 0.0, 0.0, 0.0]
+
+stereo_right:
+  calibration_status: field_refined_fx_vendor_remaining_intrinsics
+  calibration_method: two_distance_fx_fit_plus_vendor_intrinsics
+  image_width: 3840
+  image_height: 2160
+  fx: 10238.013493164
+  fy: 10322.580645161
+  cx: 1919.5
+  cy: 1079.5
+  distortion: [0.0, 0.0, 0.0, 0.0, 0.0]
+
+stereo_pair:
+  calibration_status: solidworks_with_measured_field_alignment
+  frame_convention: x_forward_y_right_z_up
+  left_sensor: CAM0
+  right_sensor: CAM1
+  rotation_left_to_right:
+    - [1.0, 0.0, 0.0]
+    - [0.0, 1.0, 0.0]
+    - [0.0, 0.0, 1.0]
+  translation_left_to_right_m: [0.0, 0.1, 0.0]
+  baseline_m: 0.1
+  field_alignment:
+    calibration_status: measured_fixed_rig_quick_check
+    measurement_session: verify-20260727-142828
+    # Runtime correction for the locked machining/assembly error.
+    # dv = v_left - v_right ~= offset + slope * (u_right - reference_u).
+    vertical_offset_left_minus_right_px: 157.525168574
+    vertical_slope_left_minus_right: 0.028807764872
+    vertical_reference_u_px: 1919.5
+    relative_roll_estimate_deg: 1.650106978
+    ransac_feature_inliers: 257
+    fitted_inliers: 255
+    fitted_abs_residual_p90_px: 2.747768530
+    positive_disparity_fraction: 1.0
+    # Field range model:
+    #   d_observed = u_left - u_right_after_roll
+    #   d_metric = sign * (d_observed - horizontal_zero)
+    #   range = fx * baseline / d_metric
+    # The negative sign is an assembled-rig/image-axis convention, not a
+    # CAM0/CAM1 port swap.  CAM0 remains left and CAM1 remains right.
+    horizontal_zero_disparity_offset_px: 344.231858804
+    horizontal_disparity_sign: -1.0
+    horizontal_range_calibration:
+      calibration_status: measured_two_distance_field_estimate
+      measurement_sessions:
+        - verify-20260727-144103
+        - verify-20260727-155949
+      reference_ranges_m: [4.74, 2.33]
+      corrected_observed_disparities_px: [128.240012956, -95.167861933]
+      fitted_fx_times_baseline_abs_px_m: 1023.801349316
+      fitted_fx_px: 10238.013493164
+      vendor_fx_px: 10322.580645161
+      difference_from_vendor_percent: -0.819244285

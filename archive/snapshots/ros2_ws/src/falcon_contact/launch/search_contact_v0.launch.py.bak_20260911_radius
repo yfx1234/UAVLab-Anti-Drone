@@ -1,0 +1,123 @@
+"""独立的单目软靶直接接触链路；原 falcon_intercept 软件包不变。"""
+
+from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument, LogInfo, OpaqueFunction, SetEnvironmentVariable
+from launch.substitutions import LaunchConfiguration
+from launch_ros.parameter_descriptions import ParameterValue
+from launch_ros.actions import Node
+
+
+def _truth(value: str) -> bool:
+    return str(value).strip().lower() in {"true", "1", "yes"}
+
+
+def _contact_actions(context):
+    adapter_mode = LaunchConfiguration("adapter_mode").perform(context).strip().lower()
+    if adapter_mode not in {"shadow", "live"}:
+        raise RuntimeError("adapter_mode must be shadow or live")
+    contact_authorized = _truth(LaunchConfiguration("contact_authorized").perform(context))
+    allow_live = _truth(LaunchConfiguration("allow_live_control").perform(context))
+    calibration_ready = _truth(LaunchConfiguration("calibration_ready").perform(context))
+    if adapter_mode == "live":
+        acknowledgements = {
+            "field_authorized": _truth(LaunchConfiguration("field_authorized").perform(context)),
+            "contact_authorized": contact_authorized,
+            "allow_live_control": allow_live,
+            "calibration_ready": calibration_ready,
+            "contact_hardware_ready": _truth(LaunchConfiguration("contact_hardware_ready").perform(context)),
+            "residual_process_check_passed": _truth(LaunchConfiguration("residual_process_check_passed").perform(context)),
+        }
+        missing = [name for name, accepted in acknowledgements.items() if not accepted]
+        if missing:
+            raise RuntimeError("LIVE CONTACT REFUSED: missing acknowledgements: " + ", ".join(missing))
+
+    common_parameters = {
+        "contact_enabled": contact_authorized,
+        "approach_speed_mps": LaunchConfiguration("approach_speed_mps"),
+        "terminal_speed_mps": LaunchConfiguration("terminal_speed_mps"),
+        "contact_speed_mps": LaunchConfiguration("contact_speed_mps"),
+        "maximum_horizontal_mps": LaunchConfiguration("maximum_horizontal_mps"),
+        "maximum_vertical_mps": LaunchConfiguration("maximum_vertical_mps"),
+        "minimum_height_m": LaunchConfiguration("minimum_height_m"),
+        "maximum_height_m": LaunchConfiguration("maximum_height_m"),
+        "maximum_origin_radius_m": LaunchConfiguration("maximum_origin_radius_m"),
+        "prediction_control_delay_s": LaunchConfiguration("prediction_control_delay_s"),
+        "prediction_guidance_lead_s": LaunchConfiguration("prediction_guidance_lead_s"),
+        "prediction_maximum_horizon_s": LaunchConfiguration("prediction_maximum_horizon_s"),
+        "lead_pursuit_enabled": ParameterValue(
+            LaunchConfiguration("lead_pursuit_enabled"), value_type=bool
+        ),
+        "lead_maximum_target_speed_mps": LaunchConfiguration("lead_maximum_target_speed_mps"),
+        "lead_maximum_distance_m": LaunchConfiguration("lead_maximum_distance_m"),
+        "lead_maximum_time_s": LaunchConfiguration("lead_maximum_time_s"),
+        "lead_deadband_mps": LaunchConfiguration("lead_deadband_mps"),
+        "reference_range_m": LaunchConfiguration("reference_range_m"),
+        "reference_bbox_px": LaunchConfiguration("reference_bbox_px"),
+    }
+    nodes = [
+        Node(package="falcon_intercept", executable="search_bearing_node", name="search_bearing_node", output="screen"),
+        Node(
+            package="falcon_intercept",
+            executable="perception_bridge_node",
+            name="perception_bridge_node",
+            output="screen",
+            parameters=[{"search_canonical_tilt_deg": 0.0}],
+        ),
+        Node(
+            package="falcon_contact",
+            executable="search_contact_node",
+            name="search_contact_node",
+            output="screen",
+            parameters=[common_parameters],
+        ),
+        Node(package="falcon_intercept", executable="upstream_gate_node", name="upstream_gate_node", output="screen"),
+        Node(
+            package="falcon_intercept",
+            executable="px4_upstream_adapter_node",
+            name="px4_upstream_adapter",
+            output="screen",
+            parameters=[
+                {
+                    "mode": adapter_mode,
+                    "allow_live_control": allow_live,
+                    "calibration_ready": calibration_ready,
+                    "rate_hz": 50.0,
+                }
+            ],
+        ),
+    ]
+    return [LogInfo(msg="SEARCH CONTACT CHAIN: adapter=%s contact_enabled=%s" % (adapter_mode, contact_authorized))] + nodes
+
+
+def generate_launch_description():
+    return LaunchDescription(
+        [
+            DeclareLaunchArgument("adapter_mode", default_value="shadow"),
+            DeclareLaunchArgument("field_authorized", default_value="false"),
+            DeclareLaunchArgument("contact_authorized", default_value="false"),
+            DeclareLaunchArgument("allow_live_control", default_value="false"),
+            DeclareLaunchArgument("calibration_ready", default_value="false"),
+            DeclareLaunchArgument("contact_hardware_ready", default_value="false"),
+            DeclareLaunchArgument("residual_process_check_passed", default_value="false"),
+            DeclareLaunchArgument("approach_speed_mps", default_value="1.5"),
+            DeclareLaunchArgument("terminal_speed_mps", default_value="2.2"),
+            DeclareLaunchArgument("contact_speed_mps", default_value="3.5"),
+            DeclareLaunchArgument("maximum_horizontal_mps", default_value="4.5"),
+            DeclareLaunchArgument("maximum_vertical_mps", default_value="3.5"),
+            DeclareLaunchArgument("minimum_height_m", default_value="3.0"),
+            DeclareLaunchArgument("maximum_height_m", default_value="30.0"),
+            DeclareLaunchArgument("maximum_origin_radius_m", default_value="20.0"),
+            DeclareLaunchArgument("prediction_control_delay_s", default_value="0.08"),
+            DeclareLaunchArgument("prediction_guidance_lead_s", default_value="0.12"),
+            DeclareLaunchArgument("prediction_maximum_horizon_s", default_value="0.45"),
+            DeclareLaunchArgument("lead_pursuit_enabled", default_value="true"),
+            DeclareLaunchArgument("lead_maximum_target_speed_mps", default_value="2.5"),
+            DeclareLaunchArgument("lead_maximum_distance_m", default_value="1.0"),
+            DeclareLaunchArgument("lead_maximum_time_s", default_value="1.0"),
+            DeclareLaunchArgument("lead_deadband_mps", default_value="0.25"),
+            DeclareLaunchArgument("reference_range_m", default_value="10.0"),
+            DeclareLaunchArgument("reference_bbox_px", default_value="38.0"),
+            SetEnvironmentVariable("ROS_LOCALHOST_ONLY", "1"),
+            OpaqueFunction(function=_contact_actions),
+        ]
+    )

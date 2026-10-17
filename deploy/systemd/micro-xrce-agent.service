@@ -1,0 +1,29 @@
+[Unit]
+Description=Micro XRCE-DDS Agent for PX4 on ttyTHS1
+Documentation=file:/home/uavlab/Jetson_ROS2_V0/deploy/MICRO_XRCE_AGENT_SERVICE.md
+After=dev-ttyTHS1.device
+Requires=dev-ttyTHS1.device
+StartLimitIntervalSec=30
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=uavlab
+SupplementaryGroups=dialout
+WorkingDirectory=/home/uavlab/Jetson_ROS2_V0
+Environment=ROS_DOMAIN_ID=0
+# Flight default: keep ROS 2 discovery on the Jetson. QGC/MAVLink is unaffected.
+Environment=ROS_LOCALHOST_ONLY=1
+Environment=AGENT_DEVICE=/dev/ttyTHS1
+Environment=AGENT_BAUD=921600
+Environment=AGENT_VERBOSITY=3
+ExecStart=/bin/bash /home/uavlab/Jetson_ROS2_V0/deploy/start_micro_xrce_agent.sh
+Restart=on-failure
+RestartSec=2
+KillSignal=SIGINT
+TimeoutStopSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

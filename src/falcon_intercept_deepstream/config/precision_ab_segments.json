@@ -1,0 +1,38 @@
+{
+  "time_base": "seconds from original recording; clip_time_sec = original_time_sec - 180",
+  "sampling_fps": 15.0,
+  "selected_original_intervals": [
+    {"start": 180, "end": 210, "note": "near takeoff, climbs and recedes"},
+    {"start": 210, "end": 240, "note": "high and far"},
+    {"start": 240, "end": 265, "note": "descends and approaches slightly"},
+    {"start": 265, "end": 290, "note": "climbs again and hovers"},
+    {"start": 296, "end": 306, "note": "flies toward cameras"},
+    {"start": 325, "end": 340, "note": "csi1 loses target; csi0 reacquires around 330"},
+    {"start": 360, "end": 420, "note": "mostly out of stereo views, occasional corner appearance"},
+    {"start": 432, "end": 442, "note": "csi1 observes landing; csi0 remains lost"},
+    {"start": 445, "end": 480, "note": "target no longer appears"}
+  ],
+  "visibility_intervals_clip_sec": {
+    "left": {
+      "positive": [[0, 15], [60, 85], [85, 110], [116, 126], [150, 160]],
+      "negative": [[30, 50], [252, 262], [265, 300]],
+      "ignore": [[15, 30], [50, 60], [145, 150], [180, 240]]
+    },
+    "right": {
+      "positive": [[0, 30], [30, 60], [60, 85], [85, 110], [116, 126], [145, 150], [252, 262]],
+      "negative": [[265, 300]],
+      "ignore": [[150, 160], [180, 240]]
+    },
+    "search": {
+      "positive": [[0, 30], [30, 60], [60, 85], [85, 110], [116, 126], [145, 160], [180, 240], [252, 262]],
+      "negative": [[265, 300]],
+      "ignore": []
+    }
+  },
+  "annotation_policy": {
+    "positive": "user states target remains in view for this camera and interval",
+    "negative": "user states target is outside this camera view",
+    "ignore": "transition, severe shake, occasional corner appearance, or approximate boundary",
+    "limitation": "frame-level visibility labels, not manually drawn bounding-box ground truth"
+  }
+}

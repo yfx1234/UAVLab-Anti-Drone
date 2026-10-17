@@ -1,0 +1,12 @@
+std_msgs/Header header
+string camera_id
+uint32 sequence
+int64 host_receive_ns
+float64 timestamp_sigma_s
+float64 exposure_time_s
+float64 frame_readout_time_s
+float64 pixel_u
+float64 pixel_v
+float64[4] pixel_covariance
+float32 confidence
+bool valid

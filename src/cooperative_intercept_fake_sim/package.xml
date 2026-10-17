@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>cooperative_intercept_fake_sim</name>
+  <version>0.1.0</version>
+  <description>
+    Synthetic 3-vs-1 cooperative interception simulation (virtual demo only).
+    3 架拦截机（追踪/预测截击/封堵）协同拦截 1 架 8 m/s 高速目标的简化虚拟仿真，
+    含简化 SE(3) 控制链路、协同指标与可视化。结果不代表真实飞行器实测性能。
+  </description>
+  <maintainer email="user@example.com">hw</maintainer>
+  <license>MIT</license>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>nav_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-matplotlib</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <!-- 2虚1实：读取实机状态机（PureInterceptorStatus）与 PX4 僚机状态 -->
+  <exec_depend>px4_offboard_tracking</exec_depend>
+  <exec_depend>px4_msgs</exec_depend>
+  <exec_depend>virtual_interception_interfaces</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+set -eo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/field_terminal_common.sh"
+
+OUTPUT_ROOT="${FALCON_RECORD_ROOT:-/home/uavlab/Jetson_ROS2_V0/flight_yolo_records}"
+RUN_ID="flight-yolo-field-$(date +%Y%m%d-%H%M%S)"
+OUTPUT_DIR="${OUTPUT_ROOT}/${RUN_ID}"
+mkdir -p "${OUTPUT_DIR}"
+export FALCON_RECORD_OUTPUT_DIR="${OUTPUT_DIR}"
+
+# Stereo raw recording (front/back): record only, NO detection. The deepstream
+# chain runs search-only inference (source_mode:=search), so the CSI sensors
+# are free for these two detached recorders. 2026-09-10 field review.
+gst-launch-1.0 -e nvarguscamerasrc sensor-id=1 !   'video/x-raw(memory:NVMM),width=1920,height=1080,framerate=30/1' !   nvvidconv ! 'video/x-raw,format=I420,width=1280,height=720' !   x264enc tune=zerolatency speed-preset=ultrafast bitrate=4000 key-int-max=30 !   h264parse ! mp4mux !   filesink location="${OUTPUT_DIR}/stereo_front_raw.mp4"   > "${OUTPUT_DIR}/stereo_front_raw.log" 2>&1 &
+FRONT_REC_PID=$!
+gst-launch-1.0 -e nvarguscamerasrc sensor-id=0 !   'video/x-raw(memory:NVMM),width=1920,height=1080,framerate=30/1' !   nvvidconv ! 'video/x-raw,format=I420,width=1280,height=720' !   x264enc tune=zerolatency speed-preset=ultrafast bitrate=4000 key-int-max=30 !   h264parse ! mp4mux !   filesink location="${OUTPUT_DIR}/stereo_back_raw.mp4"   > "${OUTPUT_DIR}/stereo_back_raw.log" 2>&1 &
+BACK_REC_PID=$!
+echo "stereo raw recorders started: front=$FRONT_REC_PID back=$BACK_REC_PID"
+
+set +e
+# 看门狗（2026-09-10 外场）：单个 USB 坏帧曾让检测节点以致命错误退出且
+# 无人重启，飞机只能盲飞。检测节点对致命推理故障约定退出码 2，只有这种
+# 退出才自动重启；人为 Ctrl-C 与 flight.sh stop 走退出码 0，不重启。
+# 重启通过 FALCON_RECORD_SEGMENT_PREFIX 段号万位偏移接续录像，不覆盖
+# 上一轮分段。
+attempt=0
+max_restarts="${FALCON_RECORD_RESTARTS:-3}"
+while true; do
+  ros2 launch falcon_intercept field_terminal_1_record.launch.py
+  LAUNCH_STATUS=$?
+  if [ "$LAUNCH_STATUS" -ne 2 ] || [ "$attempt" -ge "$max_restarts" ]; then
+    break
+  fi
+  attempt=$((attempt + 1))
+  echo "record chain fatal exit (status=2), restarting $attempt/$max_restarts (segment prefix $attempt)"
+  export FALCON_RECORD_SEGMENT_PREFIX="$attempt"
+  sleep 2
+done
+set -e
+
+# Finalize stereo raw recordings with EOS so the mp4 muxers close cleanly.
+kill -INT $FRONT_REC_PID $BACK_REC_PID 2>/dev/null || true
+sleep 3
+kill -0 $FRONT_REC_PID 2>/dev/null && kill -9 $FRONT_REC_PID 2>/dev/null || true
+kill -0 $BACK_REC_PID 2>/dev/null && kill -9 $BACK_REC_PID 2>/dev/null || true
+
+STITCHER="${SCRIPT_DIR}/field_terminal_stitch_recording.py"
+for _ in $(seq 1 10); do
+  if find "${OUTPUT_DIR}" -maxdepth 1 -type f -name '*_yolo_*.mkv' -size +0c | grep -q .; then
+    sleep 2
+    break
+  fi
+  sleep 1
+done
+# Stitch detached from this terminal: the re-encode takes a few minutes per
+# camera with no visible output, and a second Ctrl-C or a closed window used
+# to kill it mid-run (leaving 0-byte *_full.mkv). nohup + & survives both;
+# progress goes to stitch.log and the script exits immediately.
+nohup python3 "${STITCHER}" --input-dir "${OUTPUT_DIR}" --output-dir "${OUTPUT_DIR}" \
+  > "${OUTPUT_DIR}/stitch.log" 2>&1 &
+disown
+echo "stitching running in background (survives Ctrl-C / window close):"
+echo "  progress: tail -f ${OUTPUT_DIR}/stitch.log"
+echo "  done when three STITCH_OK lines appear (about 1-2 min per camera)"
+exit 0

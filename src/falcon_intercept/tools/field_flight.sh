@@ -1,0 +1,254 @@
+#!/usr/bin/env bash
+# -*- coding: utf-8 -*-
+# 一键飞行链路管理：check / start / status / stop
+#
+# 用法：
+#   bash field_flight.sh check   # 飞前检查（服务/残留/飞控链路/模型文件）
+#   bash field_flight.sh start   # 一键启动：相机+检测+录像、双目录像、证据、接触链路(live)
+#   bash field_flight.sh status  # 查看各组件运行状态与接触链路最近日志
+#   bash field_flight.sh stop    # 按安全顺序停止全部链路
+#
+# 安全约定：
+#   - start 内含全部飞前检查，任一失败即拒绝启动
+#   - start 启动的接触链路为 live 模式，但仍需飞手手动解锁/起飞/切 Offboard
+#   - 本脚本运行即代表现场负责人已授权（field_authorized）
+#   - 停止顺序：接触链路 -> 证据 -> 录像（与手工流程一致）
+
+WS=/home/uavlab/Jetson_ROS2_V0/ros2_ws
+TOOLS=$WS/src/falcon_intercept/tools
+WEIGHT_ENGINE=/home/uavlab/Jetson_ROS2_V0/weights/candidates/platform_exp_20260909/exp_opt3.engine
+RUNROOT=${FALCON_RUN_ROOT:-/tmp/falcon_flight}
+CMD=${1:-help}
+
+env_setup() {
+  source /opt/ros/humble/setup.bash
+  source "$WS/install/setup.bash"
+  export ROS_LOCALHOST_ONLY=1
+}
+
+do_check() {
+  local fail=0
+  echo "== [1/4] 系统服务"
+  local s st
+  for s in micro-xrce-agent nvargus-daemon falcon-clock-guard; do
+    st=$(systemctl is-active "$s")
+    echo "  $s: $st"
+    [ "$st" = active ] || fail=1
+  done
+  echo "== [2/4] 残留进程"
+  local res
+  res=$(pgrep -af 'deepstream_three_camera_node|real_strike|pure_interceptor|search_servo|search_contact|search_bearing_node|perception_bridge_node|upstream_gate_node|px4_upstream_adapter|ros2 bag record|gst-launch-1.0' || true)
+  if [ -n "$res" ]; then echo "$res"; fail=1; else echo "  无残留"; fi
+  echo "== [3/4] 飞控数据链路 (/fmu/out/vehicle_attitude)"
+  env_setup
+  local hz
+  hz=$(timeout 6 ros2 topic hz /fmu/out/vehicle_attitude 2>/dev/null | grep -oE 'average rate: [0-9.]+' | head -1)
+  if [ -n "$hz" ]; then
+    echo "  $hz"
+    if [ "${FALCON_CHECK_SKIP_FC:-0}" = "1" ]; then echo "  (台架模式：跳过硬性判定)"; fi
+  else
+    echo "  无输出 —— 飞控链路不通"
+    if [ "${FALCON_CHECK_SKIP_FC:-0}" != "1" ]; then fail=1; fi
+  fi
+  echo "== [4/4] 模型引擎文件"
+  if [ -s "$WEIGHT_ENGINE" ]; then echo "  OK: $WEIGHT_ENGINE"; else echo "  缺失: $WEIGHT_ENGINE"; fail=1; fi
+  if [ "$fail" -eq 0 ]; then
+    echo "== 检查结果：全部通过，可以起飞"
+    return 0
+  fi
+  echo "== 检查结果：存在失败项，禁止起飞"
+  return 1
+}
+
+launch_contact() {
+  (setsid nohup ros2 launch falcon_contact search_contact_v0.launch.py \
+      adapter_mode:=live field_authorized:=true contact_authorized:=true \
+      allow_live_control:=true calibration_ready:=true \
+      contact_hardware_ready:=true residual_process_check_passed:=true \
+      > "$RUNDIR/contact.log" 2>&1 &)
+  local ok=0 i
+  for i in $(seq 1 20); do
+    if grep -q 'contact node ready' "$RUNDIR/contact.log" 2>/dev/null; then ok=1; break; fi
+    if grep -qE 'Traceback|REFUSED' "$RUNDIR/contact.log" 2>/dev/null; then break; fi
+    sleep 2
+  done
+  if grep -q 'contact node ready' "$RUNDIR/contact.log" 2>/dev/null; then
+    grep 'contact node ready' "$RUNDIR/contact.log" | sed 's/^/  /'
+    echo "  接触链路就绪。等待飞手切 Offboard。"
+    return 0
+  fi
+  echo "== 接触链路启动失败："
+  tail -5 "$RUNDIR/contact.log"
+  return 1
+}
+
+stop_contact() {
+  pkill -INT -f 'ros2 launch falcon_contact search_contact_v0' 2>/dev/null
+  pkill -INT -f 'search_contact_node|upstream_gate_node|px4_upstream_adapter|search_bearing_node|perception_bridge_node' 2>/dev/null
+  local i
+  for i in $(seq 1 15); do
+    if ! pgrep -f 'search_contact_node|upstream_gate_node|px4_upstream_adapter|search_bearing_node|perception_bridge_node' >/dev/null 2>&1; then
+      return 0
+    fi
+    if [ "$i" -eq 6 ]; then
+      pkill -TERM -f 'ros2 launch falcon_contact search_contact_v0' 2>/dev/null
+      pkill -TERM -f 'search_contact_node|upstream_gate_node|px4_upstream_adapter|search_bearing_node|perception_bridge_node' 2>/dev/null
+    fi
+    sleep 1
+  done
+}
+
+do_next() {
+  local d
+  d=$(cat "$RUNROOT/latest" 2>/dev/null || true)
+  if [ -z "$d" ]; then echo "还没有启动记录，请先 start"; exit 1; fi
+  RUNDIR="$d"
+  echo "== 重启接触链路（录像/证据继续，不受影响）"
+  stop_contact
+  if launch_contact; then
+    echo "== 下一回合就绪：飞手切 Offboard 即开始"
+  else
+    do_stop_quiet
+    exit 1
+  fi
+}
+
+do_monitor() {
+  local d
+  d=$(cat "$RUNROOT/latest" 2>/dev/null || true)
+  [ -z "$d" ] && { echo "还没有启动记录，请先 start"; exit 1; }
+  echo "连续滚动接触链路日志，Ctrl-C 只退出查看、不影响飞行链路："
+  tail -f "$d/contact.log"
+}
+
+do_start() {
+  echo "== 飞前检查"
+  do_check || { echo "启动中止：先解决上方失败项"; exit 1; }
+  local ts rundir
+  ts=$(date +%Y%m%d_%H%M%S)
+  rundir="$RUNROOT/$ts"
+  mkdir -p "$rundir"
+  echo "$rundir" > "$RUNROOT/latest"
+  RUNDIR="$rundir"
+
+  echo "== [1/4] 重启相机服务（如提示请输入密码）"
+  if [ "${FALCON_SKIP_NVARGUS:-0}" = "1" ]; then
+    echo "  (FALCON_SKIP_NVARGUS=1：跳过重启)"
+  else
+    sudo -n systemctl restart nvargus-daemon 2>/dev/null || sudo systemctl restart nvargus-daemon
+    sleep 5
+  fi
+
+  echo "== [2/4] 启动相机+检测+录像（搜索检测15Hz + 双目原始录像）"
+  (setsid nohup bash "$TOOLS/field_terminal_1_record.sh" > "$RUNDIR/record.log" 2>&1 &)
+  # 就绪判据（2026-09-10 外场修订）：至少两条 stats 且最新 search_fps 达
+  # 到阈值——启动首条 stats 可能只有 7.5 fps，旧判据直接放行会让锁定链
+  # 路饿死。阈值可用 FALCON_MIN_SEARCH_FPS 覆盖，默认 12。
+  local ok=0 i fps min_fps="${FALCON_MIN_SEARCH_FPS:-12.0}" stats_count
+  for i in $(seq 1 45); do
+    stats_count=$(grep -c 'deepstream stats' "$RUNDIR/record.log" 2>/dev/null || true)
+    if [ "${stats_count:-0}" -ge 2 ]; then
+      fps=$(sed -n 's/.*search_fps=\([0-9.]*\).*/\1/p' "$RUNDIR/record.log" | tail -1)
+      if [ -n "$fps" ] && awk -v v="$fps" -v m="$min_fps" 'BEGIN{exit !(v+0>=m+0)}'; then
+        ok=1
+        break
+      fi
+    fi
+    sleep 2
+  done
+  if [ "$ok" -ne 1 ]; then
+    echo "  检测流未就绪（需连续两条 stats 且 search_fps>=$min_fps），查看 $RUNDIR/record.log"
+    do_stop_quiet; exit 1
+  fi
+  grep -E 'deepstream stats' "$RUNDIR/record.log" | tail -1 | sed 's/^/  /'
+  grep -oE 'search_fps=[0-9.]+' "$RUNDIR/record.log" | tail -1 | sed 's/^/  /'
+
+  echo "== [3/4] 启动证据记录"
+  (setsid nohup bash "$TOOLS/field_terminal_2_evidence.sh" > "$RUNDIR/evidence.log" 2>&1 &)
+  sleep 3
+
+  echo "== [4/4] 启动接触链路（live，等待飞手切 Offboard）"
+  if ! launch_contact; then
+    do_stop_quiet
+    exit 1
+  fi
+
+  echo "== 全链路就绪。会话/日志目录：$RUNDIR"
+  echo "  监控状态：bash $0 status   （或 tail -f $RUNDIR/contact.log）"
+  echo "  停止链路：bash $0 stop"
+}
+
+do_stop_quiet() {
+  pkill -INT -f 'ros2 launch falcon_contact search_contact_v0' 2>/dev/null
+  sleep 5
+  pkill -INT -f 'search_contact_node|upstream_gate_node|px4_upstream_adapter|search_bearing_node|perception_bridge_node' 2>/dev/null
+  sleep 3
+  pkill -INT -f 'ros2 launch falcon_intercept field_terminal_2_evidence' 2>/dev/null
+  # ros2 bag record 对单进程 SIGINT 偶尔不退出，升级 TERM（rosbag2 收到
+  # TERM 同样正常落盘收尾）
+  pkill -INT -f 'ros2 bag record' 2>/dev/null
+  sleep 4
+  if pgrep -f 'ros2 bag record' >/dev/null 2>&1; then
+    pkill -TERM -f 'ros2 bag record' 2>/dev/null
+    sleep 2
+  fi
+  pkill -INT -f 'ros2 launch falcon_intercept field_terminal_1_record' 2>/dev/null
+  sleep 8
+  pkill -TERM -f 'deepstream_three_camera_node' 2>/dev/null
+  pkill -TERM -f 'gst-launch-1.0' 2>/dev/null
+  sleep 2
+  return 0
+}
+
+do_stop() {
+  echo "== 停止顺序：接触链路 -> 证据 -> 录像（双目录像随录像脚本自动收尾）"
+  do_stop_quiet
+  local res
+  res=$(pgrep -af 'deepstream_three_camera_node|search_contact_node|upstream_gate_node|px4_upstream_adapter|search_bearing_node|perception_bridge_node|ros2 bag|gst-launch-1.0' || true)
+  if [ -n "$res" ]; then
+    echo "== 仍有残留："; echo "$res"
+  else
+    echo "== 全部停止"
+  fi
+  local d
+  d=$(ls -dt /home/uavlab/Jetson_ROS2_V0/flight_yolo_records/*/ 2>/dev/null | head -1)
+  if [ -n "$d" ]; then
+    echo "== 本次录像会话：$d"
+    echo "   双目原始视频：$d/stereo_front_raw.mp4 / stereo_back_raw.mp4"
+    echo "   合成进度：tail -f ${d}stitch.log （search 出现 STITCH_OK 即完成；"
+    echo "             front/back 显示 STITCH_FAIL 属预期——双目只录原始视频不检测）"
+  fi
+  d=$(ls -dt /home/uavlab/Jetson_ROS2_V0/ros2_ws/bags/*/ 2>/dev/null | head -1)
+  [ -n "$d" ] && echo "== 本次证据 bag：$d"
+}
+
+do_status() {
+  echo "== 组件状态："
+  local pat
+  for pat in 'deepstream_three_camera_node' 'search_contact_node' 'gst-launch-1.0' 'ros2 bag'; do
+    if pgrep -f "$pat" >/dev/null 2>&1; then echo "  $pat: 运行中"; else echo "  $pat: 停止"; fi
+  done
+  local d
+  d=$(cat "$RUNROOT/latest" 2>/dev/null || true)
+  if [ -n "$d" ] && [ -f "$d/contact.log" ]; then
+    echo "== 接触链路最近日志（$d/contact.log）："
+    tail -6 "$d/contact.log"
+  fi
+}
+
+case "$CMD" in
+  check)  env_setup; do_check ;;
+  start)  env_setup; do_start ;;
+  status)  do_status ;;
+  monitor) env_setup; do_monitor ;;
+  next)    env_setup; do_next ;;
+  stop)    do_stop ;;
+  *) echo "用法: bash $0 check|start|status|monitor|next|stop"
+     echo "  check   飞前检查（服务/残留/飞控链路/模型文件）"
+     echo "  start   一键启动全部链路"
+     echo "  status  查看组件状态与接触链路最近日志"
+     echo "  monitor 连续滚动接触链路日志（Ctrl-C 只退出查看）"
+     echo "  next    回间重启接触链路（录像/证据继续）"
+     echo "  stop    按安全顺序停止全部链路（收工用）" ;;
+  *) echo "用法: bash $0 check|start|status|stop" ;;
+esac

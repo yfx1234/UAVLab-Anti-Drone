@@ -1,0 +1,170 @@
+# P7 速度阶梯。只能在上一档完成规定场景、双次打击和安全验收后进入下一档。
+# 所有档位统一使用 15~35 m 理想打击窗口。初始斜距随档位逐步增大，但保持在
+# 搜索相机可交接的几何范围内；不再使用固定 5 m 高度或固定 30 m 正下方走廊。
+capture_window:
+  minimum_range_m: 15.0
+  maximum_range_m: 35.0
+  preferred_range_m: 25.0
+  egress_distance_m: 5.0
+  egress_speed_mps: 1.0
+
+encounters:
+  stationary:
+    target_scenario: stationary
+    target_speed_scale: 0.0
+    target_heading_rad: 0.0
+  escape:
+    target_scenario: straight
+    target_speed_scale: 1.0
+    target_heading_rad: 1.5707963267948966
+  head_on:
+    target_scenario: straight
+    target_speed_scale: 1.0
+    target_heading_rad: -1.5707963267948966
+  cross:
+    target_scenario: straight
+    target_speed_scale: 1.0
+    target_heading_rad: 0.0
+  straight:
+    target_scenario: straight
+    target_speed_scale: 1.0
+    # Same-direction straight flight is the sustained visual-tracking case.
+    # The separate head_on encounter remains available for short crossing tests.
+    target_heading_rad: 1.5707963267948966
+    target_radius_m: 20.0
+    target_path_length_m: 40.0
+    target_path_width_m: 12.0
+    initial_horizontal_offset_m: 3.5
+    first_attack_tracking_hold_s: 1.0
+    egress_distance_m: 2.0
+    egress_speed_mps: 0.5
+    depth_fov_constraint_rad: 0.11344640137963143
+  circle:
+    target_scenario: circle
+    target_speed_scale: 1.0
+    target_heading_rad: 0.0
+    # At 5 m/s, 7.5 m radius gives 3.33 m/s² target acceleration while keeping
+    # the full orbit inside the bearing-only search camera's reacquisition cone.
+    target_radius_m: 7.5
+    target_path_length_m: 40.0
+    target_path_width_m: 12.0
+    initial_horizontal_offset_m: 3.5
+    first_attack_tracking_hold_s: 1.0
+    egress_distance_m: 2.0
+    egress_speed_mps: 0.5
+  s_curve:
+    target_scenario: s_curve
+    target_speed_scale: 1.0
+    target_heading_rad: -1.5707963267948966
+    target_radius_m: 20.0
+    target_path_length_m: 60.0
+    target_path_width_m: 6.0
+    initial_horizontal_offset_m: 3.5
+    first_attack_tracking_hold_s: 1.0
+    egress_distance_m: 2.0
+    egress_speed_mps: 0.5
+  figure_eight:
+    target_scenario: figure_eight
+    target_speed_scale: 1.0
+    target_heading_rad: 1.5707963267948966
+    target_radius_m: 20.0
+    # Bounded 20x10 m pattern: no forced corridor, but it remains observable
+    # during a complete yaw search after a short depth-camera dropout.
+    target_path_length_m: 20.0
+    target_path_width_m: 10.0
+    initial_horizontal_offset_m: 3.5
+    first_attack_tracking_hold_s: 1.0
+    egress_distance_m: 2.0
+    egress_speed_mps: 0.5
+
+profiles:
+  v0:
+    scenarios: [stationary, escape, cross, straight, circle, s_curve, figure_eight]
+    target_speed_mps: 2.0
+    pursuer_command_speed_mps: 5.0
+    pursuer_safety_speed_mps: 6.0
+    capture_maximum_approach_speed_mps: 4.0
+    capture_gate_maximum_closing_speed_mps: 6.0
+    maximum_acceleration_mps2: 3.0
+    maximum_tilt_rad: 0.52
+    initial_range_m: 25.0
+    initial_horizontal_offset_m: 8.55
+    target_height_m: 28.49
+    pursuer_takeoff_height_m: 5.0
+    first_attack_tracking_hold_s: 3.0
+  v1:
+    scenarios: [escape, cross, straight, circle, s_curve, figure_eight]
+    target_speed_mps: 5.0
+    pursuer_command_speed_mps: 12.0
+    pursuer_safety_speed_mps: 14.0
+    capture_maximum_approach_speed_mps: 6.0
+    capture_gate_maximum_closing_speed_mps: 7.0
+    maximum_acceleration_mps2: 5.0
+    command_overspeed_braking_gain: 4.0
+    command_maximum_braking_acceleration_mps2: 4.0
+    maximum_tilt_rad: 0.55
+    depth_fov_constraint_rad: 0.11344640137963143
+    # The relative-state process also contains the pursuer's own jerk-limited
+    # maneuver (up to 8 m/s³), not only the target's circular acceleration.
+    estimator_process_jerk_stddev_mps3: 8.0
+    initial_range_m: 27.0
+    initial_horizontal_offset_m: 9.23
+    target_height_m: 30.37
+    pursuer_takeoff_height_m: 5.0
+    first_attack_tracking_hold_s: 3.0
+  v2:
+    scenarios: [escape, head_on, cross]
+    target_speed_mps: 8.0
+    pursuer_command_speed_mps: 12.0
+    pursuer_safety_speed_mps: 13.0
+    capture_maximum_approach_speed_mps: 8.0
+    capture_gate_maximum_closing_speed_mps: 9.0
+    maximum_acceleration_mps2: 5.0
+    maximum_tilt_rad: 0.60
+    initial_range_m: 29.0
+    initial_horizontal_offset_m: 9.92
+    target_height_m: 32.25
+    pursuer_takeoff_height_m: 5.0
+    first_attack_tracking_hold_s: 5.0
+  v3:
+    scenarios: [escape, head_on, cross]
+    target_speed_mps: 12.0
+    pursuer_command_speed_mps: 18.0
+    pursuer_safety_speed_mps: 19.0
+    capture_maximum_approach_speed_mps: 10.0
+    capture_gate_maximum_closing_speed_mps: 12.0
+    maximum_acceleration_mps2: 6.0
+    maximum_tilt_rad: 0.65
+    initial_range_m: 31.0
+    initial_horizontal_offset_m: 10.60
+    target_height_m: 34.13
+    pursuer_takeoff_height_m: 5.0
+    first_attack_tracking_hold_s: 5.0
+  v4:
+    scenarios: [escape, head_on, cross]
+    target_speed_mps: 16.0
+    pursuer_command_speed_mps: 24.0
+    pursuer_safety_speed_mps: 25.0
+    capture_maximum_approach_speed_mps: 12.0
+    capture_gate_maximum_closing_speed_mps: 15.0
+    maximum_acceleration_mps2: 7.0
+    maximum_tilt_rad: 0.70
+    initial_range_m: 33.0
+    initial_horizontal_offset_m: 11.29
+    target_height_m: 36.01
+    pursuer_takeoff_height_m: 5.0
+    first_attack_tracking_hold_s: 5.0
+  v5:
+    scenarios: [escape, head_on, cross]
+    target_speed_mps: 20.0
+    pursuer_command_speed_mps: 30.0
+    pursuer_safety_speed_mps: 31.0
+    capture_maximum_approach_speed_mps: 15.0
+    capture_gate_maximum_closing_speed_mps: 18.0
+    maximum_acceleration_mps2: 8.0
+    maximum_tilt_rad: 0.75
+    initial_range_m: 35.0
+    initial_horizontal_offset_m: 11.97
+    target_height_m: 37.89
+    pursuer_takeoff_height_m: 5.0
+    first_attack_tracking_hold_s: 5.0

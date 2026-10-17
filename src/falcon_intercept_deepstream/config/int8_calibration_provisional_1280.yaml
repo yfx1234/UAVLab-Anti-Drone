@@ -1,0 +1,5 @@
+path: /home/uavlab/Jetson_ROS2_V0/weights/int8_calibration_provisional_1280
+train: .
+val: .
+names:
+  0: drone
