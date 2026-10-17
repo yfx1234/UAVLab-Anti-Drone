@@ -1,0 +1,514 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-16T07:11:24.249651Z",
+  "title": "Design System: UAVLab 感知与采集工作台",
+  "extensions": {
+    "colorMeta": {
+      "primary": {
+        "role": "primary",
+        "displayName": "石墨操作色",
+        "tonalRamp": [
+          "oklch(15.00% 0.00531 286.09)",
+          "oklch(26.43% 0.00531 286.09)",
+          "oklch(37.86% 0.00531 286.09)",
+          "oklch(49.29% 0.00531 286.09)",
+          "oklch(60.71% 0.00531 286.09)",
+          "oklch(72.14% 0.00531 286.09)",
+          "oklch(83.57% 0.00531 286.09)",
+          "oklch(95.00% 0.00531 286.09)"
+        ]
+      },
+      "primary-hover": {
+        "role": "primary",
+        "displayName": "深石墨悬停色",
+        "tonalRamp": [
+          "oklch(15.00% 0.00392 286.05)",
+          "oklch(26.43% 0.00392 286.05)",
+          "oklch(37.86% 0.00392 286.05)",
+          "oklch(49.29% 0.00392 286.05)",
+          "oklch(60.71% 0.00392 286.05)",
+          "oklch(72.14% 0.00392 286.05)",
+          "oklch(83.57% 0.00392 286.05)",
+          "oklch(95.00% 0.00392 286.05)"
+        ]
+      },
+      "background": {
+        "role": "neutral",
+        "displayName": "工作台底色",
+        "tonalRamp": [
+          "oklch(15.00% 0.00265 286.35)",
+          "oklch(26.43% 0.00265 286.35)",
+          "oklch(37.86% 0.00265 286.35)",
+          "oklch(49.29% 0.00265 286.35)",
+          "oklch(60.71% 0.00265 286.35)",
+          "oklch(72.14% 0.00265 286.35)",
+          "oklch(83.57% 0.00265 286.35)",
+          "oklch(95.00% 0.00265 286.35)"
+        ]
+      },
+      "paper": {
+        "role": "neutral",
+        "displayName": "白色内容面",
+        "tonalRamp": [
+          "oklch(15.00% 0.00000 0.00)",
+          "oklch(26.43% 0.00000 0.00)",
+          "oklch(37.86% 0.00000 0.00)",
+          "oklch(49.29% 0.00000 0.00)",
+          "oklch(60.71% 0.00000 0.00)",
+          "oklch(72.14% 0.00000 0.00)",
+          "oklch(83.57% 0.00000 0.00)",
+          "oklch(95.00% 0.00000 0.00)"
+        ]
+      },
+      "rail": {
+        "role": "neutral",
+        "displayName": "浅灰工具面",
+        "tonalRamp": [
+          "oklch(15.00% 0.00265 286.35)",
+          "oklch(26.43% 0.00265 286.35)",
+          "oklch(37.86% 0.00265 286.35)",
+          "oklch(49.29% 0.00265 286.35)",
+          "oklch(60.71% 0.00265 286.35)",
+          "oklch(72.14% 0.00265 286.35)",
+          "oklch(83.57% 0.00265 286.35)",
+          "oklch(95.00% 0.00265 286.35)"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "墨色",
+        "tonalRamp": [
+          "oklch(15.00% 0.00184 286.27)",
+          "oklch(26.43% 0.00184 286.27)",
+          "oklch(37.86% 0.00184 286.27)",
+          "oklch(49.29% 0.00184 286.27)",
+          "oklch(60.71% 0.00184 286.27)",
+          "oklch(72.14% 0.00184 286.27)",
+          "oklch(83.57% 0.00184 286.27)",
+          "oklch(95.00% 0.00184 286.27)"
+        ]
+      },
+      "muted": {
+        "role": "neutral",
+        "displayName": "辅助灰",
+        "tonalRamp": [
+          "oklch(15.00% 0.00628 286.17)",
+          "oklch(26.43% 0.00628 286.17)",
+          "oklch(37.86% 0.00628 286.17)",
+          "oklch(49.29% 0.00628 286.17)",
+          "oklch(60.71% 0.00628 286.17)",
+          "oklch(72.14% 0.00628 286.17)",
+          "oklch(83.57% 0.00628 286.17)",
+          "oklch(95.00% 0.00628 286.17)"
+        ]
+      },
+      "control-fill": {
+        "role": "neutral",
+        "displayName": "控件浅灰",
+        "tonalRamp": [
+          "oklch(15.00% 0.00400 286.32)",
+          "oklch(26.43% 0.00400 286.32)",
+          "oklch(37.86% 0.00400 286.32)",
+          "oklch(49.29% 0.00400 286.32)",
+          "oklch(60.71% 0.00400 286.32)",
+          "oklch(72.14% 0.00400 286.32)",
+          "oklch(83.57% 0.00400 286.32)",
+          "oklch(95.00% 0.00400 286.32)"
+        ]
+      },
+      "placeholder": {
+        "role": "neutral",
+        "displayName": "占位文字灰",
+        "tonalRamp": [
+          "oklch(15.00% 0.00940 286.06)",
+          "oklch(26.43% 0.00940 286.06)",
+          "oklch(37.86% 0.00940 286.06)",
+          "oklch(49.29% 0.00940 286.06)",
+          "oklch(60.71% 0.00940 286.06)",
+          "oklch(72.14% 0.00940 286.06)",
+          "oklch(83.57% 0.00940 286.06)",
+          "oklch(95.00% 0.00940 286.06)"
+        ]
+      },
+      "image": {
+        "role": "neutral",
+        "displayName": "图像石墨",
+        "tonalRamp": [
+          "oklch(15.00% 0.00585 271.18)",
+          "oklch(26.43% 0.00585 271.18)",
+          "oklch(37.86% 0.00585 271.18)",
+          "oklch(49.29% 0.00585 271.18)",
+          "oklch(60.71% 0.00585 271.18)",
+          "oklch(72.14% 0.00585 271.18)",
+          "oklch(83.57% 0.00585 271.18)",
+          "oklch(95.00% 0.00585 271.18)"
+        ]
+      },
+      "success": {
+        "role": "semantic",
+        "displayName": "运行绿",
+        "tonalRamp": [
+          "oklch(15.00% 0.08782 163.83)",
+          "oklch(26.43% 0.08782 163.83)",
+          "oklch(37.86% 0.08782 163.83)",
+          "oklch(49.29% 0.08782 163.83)",
+          "oklch(60.71% 0.08782 163.83)",
+          "oklch(72.14% 0.08782 163.83)",
+          "oklch(83.57% 0.08782 163.83)",
+          "oklch(95.00% 0.08782 163.83)"
+        ]
+      },
+      "danger": {
+        "role": "semantic",
+        "displayName": "故障红",
+        "tonalRamp": [
+          "oklch(15.00% 0.14410 21.04)",
+          "oklch(26.43% 0.14410 21.04)",
+          "oklch(37.86% 0.14410 21.04)",
+          "oklch(49.29% 0.14410 21.04)",
+          "oklch(60.71% 0.14410 21.04)",
+          "oklch(72.14% 0.14410 21.04)",
+          "oklch(83.57% 0.14410 21.04)",
+          "oklch(95.00% 0.14410 21.04)"
+        ]
+      },
+      "warning": {
+        "role": "semantic",
+        "displayName": "警示棕",
+        "tonalRamp": [
+          "oklch(15.00% 0.09236 77.35)",
+          "oklch(26.43% 0.09236 77.35)",
+          "oklch(37.86% 0.09236 77.35)",
+          "oklch(49.29% 0.09236 77.35)",
+          "oklch(60.71% 0.09236 77.35)",
+          "oklch(72.14% 0.09236 77.35)",
+          "oklch(83.57% 0.09236 77.35)",
+          "oklch(95.00% 0.09236 77.35)"
+        ]
+      },
+      "hover": {
+        "role": "neutral",
+        "displayName": "悬停灰",
+        "tonalRamp": [
+          "oklch(15.00% 0.00673 286.27)",
+          "oklch(26.43% 0.00673 286.27)",
+          "oklch(37.86% 0.00673 286.27)",
+          "oklch(49.29% 0.00673 286.27)",
+          "oklch(60.71% 0.00673 286.27)",
+          "oklch(72.14% 0.00673 286.27)",
+          "oklch(83.57% 0.00673 286.27)",
+          "oklch(95.00% 0.00673 286.27)"
+        ]
+      },
+      "pressed": {
+        "role": "neutral",
+        "displayName": "按下灰",
+        "tonalRamp": [
+          "oklch(15.00% 0.00815 286.23)",
+          "oklch(26.43% 0.00815 286.23)",
+          "oklch(37.86% 0.00815 286.23)",
+          "oklch(49.29% 0.00815 286.23)",
+          "oklch(60.71% 0.00815 286.23)",
+          "oklch(72.14% 0.00815 286.23)",
+          "oklch(83.57% 0.00815 286.23)",
+          "oklch(95.00% 0.00815 286.23)"
+        ]
+      },
+      "danger-surface": {
+        "role": "semantic",
+        "displayName": "危险浅红",
+        "tonalRamp": [
+          "oklch(15.00% 0.01650 8.17)",
+          "oklch(26.43% 0.01650 8.17)",
+          "oklch(37.86% 0.01650 8.17)",
+          "oklch(49.29% 0.01650 8.17)",
+          "oklch(60.71% 0.01650 8.17)",
+          "oklch(72.14% 0.01650 8.17)",
+          "oklch(83.57% 0.01650 8.17)",
+          "oklch(95.00% 0.01650 8.17)"
+        ]
+      },
+      "danger-hover": {
+        "role": "semantic",
+        "displayName": "危险悬停浅红",
+        "tonalRamp": [
+          "oklch(15.00% 0.02479 5.13)",
+          "oklch(26.43% 0.02479 5.13)",
+          "oklch(37.86% 0.02479 5.13)",
+          "oklch(49.29% 0.02479 5.13)",
+          "oklch(60.71% 0.02479 5.13)",
+          "oklch(72.14% 0.02479 5.13)",
+          "oklch(83.57% 0.02479 5.13)",
+          "oklch(95.00% 0.02479 5.13)"
+        ]
+      },
+      "disabled-surface": {
+        "role": "neutral",
+        "displayName": "禁用底色",
+        "tonalRamp": [
+          "oklch(15.00% 0.00400 286.32)",
+          "oklch(26.43% 0.00400 286.32)",
+          "oklch(37.86% 0.00400 286.32)",
+          "oklch(49.29% 0.00400 286.32)",
+          "oklch(60.71% 0.00400 286.32)",
+          "oklch(72.14% 0.00400 286.32)",
+          "oklch(83.57% 0.00400 286.32)",
+          "oklch(95.00% 0.00400 286.32)"
+        ]
+      },
+      "disabled-text": {
+        "role": "neutral",
+        "displayName": "禁用文字",
+        "tonalRamp": [
+          "oklch(15.00% 0.00594 286.22)",
+          "oklch(26.43% 0.00594 286.22)",
+          "oklch(37.86% 0.00594 286.22)",
+          "oklch(49.29% 0.00594 286.22)",
+          "oklch(60.71% 0.00594 286.22)",
+          "oklch(72.14% 0.00594 286.22)",
+          "oklch(83.57% 0.00594 286.22)",
+          "oklch(95.00% 0.00594 286.22)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "brand": {
+        "displayName": "产品名称",
+        "purpose": "UAVLab 名称；功能身份而非装饰 display。"
+      },
+      "headline": {
+        "displayName": "内容标题",
+        "purpose": "实时画面、目标区和本机视频标题。"
+      },
+      "control-title": {
+        "displayName": "控制组标题",
+        "purpose": "连接、采集和录像操作组。"
+      },
+      "body": {
+        "displayName": "正文",
+        "purpose": "基础正文与字段；--font-ui 系统 UI 栈，Windows 中文以已安装 Noto Sans SC 回退。"
+      },
+      "control": {
+        "displayName": "紧凑控件",
+        "purpose": "控制栏与工作区导航。"
+      },
+      "label": {
+        "displayName": "标签",
+        "purpose": "状态、标签与测量内容。"
+      },
+      "supporting": {
+        "displayName": "辅助文字",
+        "purpose": "规格、路径、单位与低频状态；不替代主要控制。"
+      }
+    },
+    "shadows": [
+      {
+        "name": "surface",
+        "value": "0 2px 5px #20212404,0 12px 32px #20212408",
+        "purpose": "控制栏、来源栏与白色内容容器共用的轻浮起环境阴影。"
+      },
+      {
+        "name": "selected-workspace",
+        "value": "0 2px 6px #2021240a",
+        "purpose": "选中的白色工作区胶囊。"
+      },
+      {
+        "name": "selected-segment",
+        "value": "0 2px 5px #20212412",
+        "purpose": "选中图像分段胶囊。"
+      },
+      {
+        "name": "device-health",
+        "value": "0 -4px 24px #20212408",
+        "purpose": "固定底部设备健康栏的向上分离阴影。"
+      },
+      {
+        "name": "feedback",
+        "value": "0 8px 24px #20212420",
+        "purpose": "固定反馈浮层。"
+      },
+      {
+        "name": "modal",
+        "value": "0 8px 30px #00000029",
+        "purpose": "永久删除确认 dialog。"
+      }
+    ],
+    "motion": [
+      {
+        "name": "control-state",
+        "value": "background .15s ease-out, box-shadow .15s ease-out",
+        "purpose": "按钮状态反馈。"
+      },
+      {
+        "name": "disclosure",
+        "value": "transform .16s ease-out",
+        "purpose": "设备健康展开箭头。"
+      },
+      {
+        "name": "reduced-motion",
+        "value": "transition: none !important; scroll-behavior: auto !important",
+        "purpose": "prefers-reduced-motion: reduce。"
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "wide-controls",
+        "value": "1500px"
+      },
+      {
+        "name": "collapsed-controls",
+        "value": "1100px"
+      },
+      {
+        "name": "stacked-library",
+        "value": "800px"
+      },
+      {
+        "name": "compact",
+        "value": "599px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary download",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "紧凑整场下载胶囊；图标与文字组整体居中，参数行保留实际规格。",
+      "html": "<button class=\"ds-primary\" type=\"button\"><svg class=\"ds-download-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M12 4v11m-4-4 4 4 4-4M5 17v3h14v-3\"/></svg><span class=\"ds-button-copy\"><strong>下载整场 RGB 视频</strong><small>1920 × 1080 · MP4</small></span></button>",
+      "css": ".ds-primary{display:inline-flex;align-items:center;justify-content:center;gap:7px;font:500 13px/1.5 var(--font-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",\"Noto Sans SC\",\"PingFang SC\",\"Hiragino Sans GB\",Arial,sans-serif);min-height:50px;border:0;border-radius:999px;padding:9px 14px;cursor:pointer;transition:background .15s ease-out,box-shadow .15s ease-out}.ds-primary:focus-visible{outline:2px solid #788795;outline-offset:3px}.ds-primary:disabled{color:#858589;background:#eeeef1;cursor:default}@media(prefers-reduced-motion:reduce){.ds-primary{transition:none}}.ds-primary{background:var(--blue,#303033);color:#fff}.ds-primary:active:not(:disabled){background:#d9d9df}.ds-primary:hover:not(:disabled){background:#171719} .ds-primary{width:100%;text-align:left}.ds-download-icon{width:18px;height:18px;stroke:currentColor;stroke-width:1.75;fill:none;stroke-linecap:round;stroke-linejoin:round;flex:none;margin:0;justify-self:center}.ds-button-copy{display:block}.ds-button-copy strong{display:block;font-size:13px;font-weight:600}.ds-button-copy small{display:block;font-size:11px;font-weight:400;color:#e4f3ee;margin-top:3px}.ds-primary:disabled small{color:#76868a}@media(max-width:800px){.ds-primary{padding:9px 12px}.ds-download-icon{display:block}}@media(max-width:599px){.ds-download-icon{display:block}}.ds-primary{display:grid;grid-template-columns:20px minmax(0,148px);gap:12px;justify-content:center}"
+    },
+    {
+      "name": "Secondary control",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "控制栏的次级与可恢复操作；浅灰无边框胶囊。",
+      "html": "<button class=\"ds-secondary\" type=\"button\">开启 YOLO</button>",
+      "css": ".ds-secondary{display:inline-flex;align-items:center;justify-content:center;gap:7px;font:500 13px/1.5 var(--font-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",\"Noto Sans SC\",\"PingFang SC\",\"Hiragino Sans GB\",Arial,sans-serif);min-height:36px;border:0;border-radius:999px;padding:7px 8px;cursor:pointer;transition:background .15s ease-out,box-shadow .15s ease-out}.ds-secondary:focus-visible{outline:2px solid #788795;outline-offset:3px}.ds-secondary:disabled{color:#858589;background:#eeeef1;cursor:default}@media(prefers-reduced-motion:reduce){.ds-secondary{transition:none}}.ds-secondary{background:var(--control-fill,#ededf0);color:var(--ink,#252526)}.ds-secondary:hover:not(:disabled){background:#e2e2e7}.ds-secondary:active:not(:disabled){background:#d9d9df}"
+    },
+    {
+      "name": "Danger control",
+      "kind": "button",
+      "refersTo": "button-danger",
+      "description": "停止相机；浅红底红字的无边框胶囊。",
+      "html": "<button class=\"ds-danger\" type=\"button\">停止相机</button>",
+      "css": ".ds-danger{display:inline-flex;align-items:center;justify-content:center;gap:7px;font:500 13px/1.5 var(--font-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",\"Noto Sans SC\",\"PingFang SC\",\"Hiragino Sans GB\",Arial,sans-serif);min-height:36px;border:0;border-radius:999px;padding:7px 8px;cursor:pointer;transition:background .15s ease-out,box-shadow .15s ease-out}.ds-danger:focus-visible{outline:2px solid #788795;outline-offset:3px}.ds-danger:disabled{color:#858589;background:#eeeef1;cursor:default}@media(prefers-reduced-motion:reduce){.ds-danger{transition:none}}.ds-danger{background:#f8e9eb;color:var(--red,#ac3e43)}.ds-danger:active:not(:disabled){background:#d9d9df}.ds-danger:hover:not(:disabled){background:#f2dce0}"
+    },
+    {
+      "name": "Quiet utility",
+      "kind": "button",
+      "description": "素材来源栏低频刷新。",
+      "html": "<button class=\"ds-quiet\" type=\"button\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M20 7a8 8 0 1 0 1 7M20 3v5h-5\"/></svg>刷新</button>",
+      "css": ".ds-quiet{display:inline-flex;align-items:center;justify-content:center;gap:7px;font:500 13px/1.5 var(--font-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",\"Noto Sans SC\",\"PingFang SC\",\"Hiragino Sans GB\",Arial,sans-serif);min-height:36px;border:0;border-radius:999px;padding:7px 8px;cursor:pointer;transition:background .15s ease-out,box-shadow .15s ease-out}.ds-quiet:focus-visible{outline:2px solid #788795;outline-offset:3px}.ds-quiet:disabled{color:#858589;background:#eeeef1;cursor:default}@media(prefers-reduced-motion:reduce){.ds-quiet{transition:none}}.ds-quiet{font-size:12px;min-height:30px;padding:5px 7px;background:none;color:var(--ink,#252526)}.ds-quiet:hover:not(:disabled){background:#e8e8ed}.ds-quiet:active:not(:disabled){background:#d9d9df}.ds-quiet:disabled{background:none}.ds-icon{width:18px;height:18px;stroke:currentColor;stroke-width:1.6;fill:none;stroke-linecap:round;stroke-linejoin:round;flex:none}"
+    },
+    {
+      "name": "Text field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "浅灰无边框备注字段；占位文字可读，保留原生行为与焦点。",
+      "html": "<label class=\"ds-label\" for=\"ds-note\">备注</label><input class=\"ds-input\" id=\"ds-note\" placeholder=\"采集备注\" maxlength=\"100\">",
+      "css": ".ds-label{display:block;color:var(--muted,#626266);font:400 12px/1.5 var(--font-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",\"Noto Sans SC\",\"PingFang SC\",\"Hiragino Sans GB\",Arial,sans-serif);margin:12px 0 6px}.ds-input{width:100%;min-width:0;min-height:36px;background:var(--control-fill,#ededf0);color:var(--ink,#252526);font:400 14px/1.5 var(--font-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",\"Noto Sans SC\",\"PingFang SC\",\"Hiragino Sans GB\",Arial,sans-serif);border:0;border-radius:12px;padding:8px 13px;caret-color:var(--blue,#303033)}.ds-input::placeholder{color:#64646a;opacity:1}.ds-input:focus-visible{outline:2px solid #788795;outline-offset:3px}"
+    },
+    {
+      "name": "Workspace navigation",
+      "kind": "nav",
+      "refersTo": "workspace-tab",
+      "description": "两工作区的白色胶囊选中态与轻阴影；只改变视图。",
+      "html": "<nav class=\"ds-tabs\" role=\"tablist\" aria-label=\"工作区\"><button class=\"ds-tab\" type=\"button\" role=\"tab\" aria-selected=\"true\">实时监看</button><button class=\"ds-tab\" type=\"button\" role=\"tab\" aria-selected=\"false\" tabindex=\"-1\">素材库</button></nav>",
+      "css": ".ds-tabs{display:flex;align-items:center;gap:4px}.ds-tab{min-height:32px;border:0;background:none;border-radius:999px;padding:6px 14px;color:var(--muted,#626266);font:500 13px/1.5 var(--font-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",\"Noto Sans SC\",\"PingFang SC\",\"Hiragino Sans GB\",Arial,sans-serif);cursor:pointer;transition:background .15s ease-out,box-shadow .15s ease-out}.ds-tab:hover:not(:disabled){color:var(--ink,#252526);background:#e8e8ed}.ds-tab[aria-selected=true]{color:var(--ink,#252526);background:var(--paper,#fff);font-weight:600;box-shadow:0 2px 6px #2021240a}.ds-tab:active:not(:disabled){background:#d9d9df}.ds-tab:focus-visible{outline:2px solid #788795;outline-offset:3px}@media(prefers-reduced-motion:reduce){.ds-tab{transition:none}}"
+    },
+    {
+      "name": "Text status",
+      "kind": "chip",
+      "description": "文字与原生圆点；示例保留真实默认未连接状态。",
+      "html": "<span class=\"ds-status\">板子未连接</span>",
+      "css": ".ds-status{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;font:400 12px/1.5 var(--font-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",\"Noto Sans SC\",\"PingFang SC\",\"Hiragino Sans GB\",Arial,sans-serif);color:var(--muted,#626266)}.ds-status::before{content:\"\";height:6px;width:6px;border-radius:50%;background:#9b9b9e;flex:none}.ds-status.ds-good{color:var(--green,#216d50)}.ds-status.ds-good::before{background:#3a9876}.ds-status.ds-bad{color:var(--red,#ac3e43)}.ds-status.ds-bad::before{background:#cf6670}.ds-status.ds-warn{color:var(--amber,#856020)}.ds-status.ds-warn::before{background:#ad8436}"
+    },
+    {
+      "name": "Content container",
+      "kind": "card",
+      "refersTo": "section",
+      "description": "整个本机回放卡片按窗口可用高度等比缩小；stage 占满卡片宽度并保留完整16:9画面。",
+      "html": "<section class=\"ds-section\"><div class=\"ds-section-head\"><h2 class=\"ds-heading\">本机视频</h2></div><div class=\"ds-media-select\"><select class=\"ds-select\" aria-label=\"选择本机视频\"><option>暂无下载视频</option></select></div><div class=\"ds-media-stage\"><div class=\"ds-media-empty\"><strong>暂无本机视频</strong></div></div></section>",
+      "css": ".ds-section{width:100%;max-width:calc(var(--media-room,max(200px,calc(100dvh - var(--header-height,106px) - var(--health-height,88px) - 228px)))*16/9);justify-self:start;background:var(--paper,#fff);color:var(--ink,#252526);border:0;border-radius:24px;box-shadow:var(--surface-shadow,0 2px 5px #20212404,0 12px 32px #20212408);overflow:hidden;font:400 14px/1.5 var(--font-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",\"Noto Sans SC\",\"PingFang SC\",\"Hiragino Sans GB\",Arial,sans-serif)}.ds-section-head{display:flex;align-items:center;min-height:52px;padding:10px 18px;border:0}.ds-heading{margin:0;font-size:17px;font-weight:600;letter-spacing:-.02em}.ds-media-select{padding:0 18px 10px;background:var(--paper,#fff);border:0}.ds-select{width:100%;min-width:0;min-height:36px;background:var(--control-fill,#ededf0);color:var(--ink,#252526);font:400 12px/1.5 var(--font-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",\"Noto Sans SC\",\"PingFang SC\",\"Hiragino Sans GB\",Arial,sans-serif);padding:8px 13px;border:0;border-radius:12px;cursor:pointer}.ds-select:focus-visible{outline:2px solid #788795;outline-offset:3px}.ds-media-stage{position:relative;width:100%;background:var(--image,#202124);aspect-ratio:16/9;min-height:0;overflow:hidden}.ds-local-video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;display:block;background:var(--image,#202124)}.ds-media-empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#edf4f3;padding:24px;text-align:center}.ds-media-empty strong{font-size:18px;font-weight:500}@media(max-width:800px){.ds-section{max-width:none}}@media(max-width:599px){.ds-section-head{padding:12px}.ds-heading{font-size:16px}.ds-media-select{padding:10px 12px}}"
+    },
+    {
+      "name": "Image view switch",
+      "kind": "nav",
+      "description": "无边框胶囊分段切换；选中白色子胶囊有轻阴影。",
+      "html": "<div class=\"ds-switch\" aria-label=\"显示方式\"><button class=\"ds-segment\" type=\"button\" aria-pressed=\"true\">RGB</button><button class=\"ds-segment\" type=\"button\" aria-pressed=\"false\">检测叠加</button></div>",
+      "css": ".ds-switch{display:inline-flex;border:0;border-radius:999px;background:var(--control-fill,#ededf0);padding:2px;gap:2px}.ds-segment{display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:999px;min-height:28px;padding:4px 11px;font:500 12px/1.5 var(--font-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",\"Noto Sans SC\",\"PingFang SC\",\"Hiragino Sans GB\",Arial,sans-serif);background:none;color:var(--muted,#626266);cursor:pointer;transition:background .15s ease-out,box-shadow .15s ease-out}.ds-segment:hover:not(:disabled){background:#e2e2e7}.ds-segment:active:not(:disabled){background:#d9d9df}.ds-segment[aria-pressed=true]{background:#fff;color:var(--ink,#252526);box-shadow:0 2px 5px #20212412}.ds-segment:focus-visible{outline:2px solid #788795;outline-offset:3px}@media(prefers-reduced-motion:reduce){.ds-segment{transition:none}}"
+    },
+    {
+      "name": "Stable target table",
+      "kind": "custom",
+      "description": "固定 264px 的滚动测量区，空态不改变外部布局。",
+      "html": "<div class=\"ds-targets\" tabindex=\"0\" role=\"region\" aria-label=\"目标坐标列表，可滚动\"><table class=\"ds-table\"><thead><tr><th scope=\"col\">目标 / 评分</th><th scope=\"col\">定位</th><th scope=\"col\">水平 / 垂直角</th><th scope=\"col\">相机 X / Y / Z</th><th scope=\"col\">轴向 Z / 距离</th><th scope=\"col\">深度支持 / 状态</th></tr></thead><tbody><tr><td class=\"ds-empty-row\" colspan=\"6\">暂无识别目标</td></tr></tbody></table></div>",
+      "css": ".ds-targets{height:264px;overflow:auto;scrollbar-gutter:stable;overscroll-behavior:contain;background:var(--paper,#fff)}.ds-targets:focus-visible{outline:2px solid #788795;outline-offset:3px}.ds-table{border-collapse:separate;border-spacing:0;width:100%;color:var(--ink,#252526);font:400 12px/1.5 var(--font-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",\"Noto Sans SC\",\"PingFang SC\",\"Hiragino Sans GB\",Arial,sans-serif);font-variant-numeric:tabular-nums}.ds-table th,.ds-table td{padding:12px 14px;border-bottom:1px solid #e7e7e5;white-space:nowrap;text-align:left}.ds-table th{position:sticky;top:0;z-index:1;background:#f7f7f9;color:var(--muted,#626266);font-weight:500;font-size:11px}.ds-table td{height:43px}.ds-table tbody tr:hover{background:#fafaf9}.ds-table .ds-empty-row{padding:44px 20px;text-align:center;white-space:normal;color:var(--muted,#626266);border:0}"
+    }
+  ],
+  "narrative": {
+    "northStar": "稳定的软件工作台",
+    "overview": "以真实画面为中心的成熟采集软件。柔和中性工具面、石墨主操作、胶囊按钮与轻浮起的大圆角表面让控制保持清楚；常驻表面和控件不加外围描边。UAVLab 品牌和中文操作语言沿用。系统 UI 字体服务连续操作，测量数据用等宽数字对齐。\n\n实时数据不改变操作布局。导航、控制、设备健康与反馈有稳定的位置；工作区切换只改变前端视图，相机、YOLO、录像与后台下载的生命周期独立。视觉层级由空间、字重、选中状态和真实图像建立，不依靠装饰标题或重复卡片。",
+    "keyCharacteristics": [
+      "中性工具面、石墨主要操作与无外围描边的轻浮起表面。",
+      "小按钮两端半圆，大容器按尺度使用柔和圆角。",
+      "真实画面为中心，控制和状态保持稳定。",
+      "中文系统 UI 排版，测量数字对齐。",
+      "完整的焦点、禁用、错误、确认与可恢复反馈。"
+    ],
+    "rules": [
+      {
+        "name": "Semantic Color",
+        "body": "运行、异常与未标定状态同时使用文字和语义色；选择与主操作使用中性石墨，不恢复旧版蓝色主操作。",
+        "section": "colors"
+      },
+      {
+        "name": "Operational Type",
+        "body": "沿用系统 UI 字体与实际功能层级，不引入装饰性 display 字体；数值使用 tabular-nums，正文不改成技术等宽字体。",
+        "section": "typography"
+      },
+      {
+        "name": "Stable Targets",
+        "body": "目标区保持固定高度、sticky 表头和内部滚动；更新复用行节点并保留双向滚动位置，不随目标数量移动外部布局。",
+        "section": "layout"
+      },
+      {
+        "name": "Independent Workspaces",
+        "body": "切换实时监看与素材库只切换视图，不发送相机或录像启停 RPC；设备健康跨工作区可查。",
+        "section": "layout"
+      },
+      {
+        "name": "Quiet Surfaces",
+        "body": "常驻表面以填色、间距和轻微浮起阴影区分，不加外围描边；目标表内部行分隔与键盘焦点轮廓保留。",
+        "section": "elevation"
+      },
+      {
+        "name": "Rounded Controls",
+        "body": "小按钮两端半圆，大容器使用表面圆角；输入字段保持独立的较小圆角，不把所有对象改成同一轮廓。",
+        "section": "shapes"
+      }
+    ],
+    "dos": [
+      "Do 以真实 RGB、YOLO 画面和本机视频作为图像内容；图标采用现有内联 SVG。",
+      "Do 保持固定目标容器、稳定滚动条、sticky 表头和滚动位置。",
+      "Do 用文字配合状态色；未知、过期、未标定与错误保持明确。",
+      "Do 让桌面控制和素材来源栏 sticky 并内部滚动，窄屏恢复相应折叠或自然堆叠；反馈固定显示且不改变内容流。",
+      "Do 保留键盘焦点、禁用、空状态、失败重试、取消与不可逆确认。",
+      "Do 用胶囊按钮、分尺度圆角与轻环境阴影；常驻控件和表面保持无外围描边。",
+      "Do 按 --media-room 等比缩小整个本机回放卡片，让 stage 占满卡片宽度，以原比例和 contain 展示完整画面。",
+      "Do 将场次栏与视频卡片作为一个工作区整体居中，平衡两侧留白。",
+      "Do 将 CPU/GPU 使用率作为只读健康信息，缺失、首次采样或过期时显示未知。"
+    ],
+    "donts": [
+      "Don't 恢复蓝色主操作、全场 13px 正文或每个标题前的装饰图标。",
+      "Don't 堆叠同尺寸白卡片、硬偏移阴影或装饰动画。",
+      "Don't 把工作区切换与相机、识别、录像生命周期耦合。",
+      "Don't 将历史通用检测配色、双源标记或灵敏度控件继承为日常组件。",
+      "Don't 用模拟画面、装饰效果图或推算状态替代实际数据。",
+      "Don't 将遗留边框变量继承为当前常驻控件边框，或把实时监看的 650px 上限施加到本机回放。",
+      "Don't 用裁切或拉伸视频遮盖布局空白。",
+      "Don't 恢复常驻 YOLO/预览说明或在编码参数选项内加入指导文字。"
+    ]
+  }
+}

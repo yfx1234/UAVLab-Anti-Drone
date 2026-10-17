@@ -1,4 +1,4 @@
-# anti-drone-interceptor
+# anti-drone-interceptor（完整分支）
 
 Jetson 板载视觉拦截平台：单副 4mm 双目（竖直向上安装）→ IMM CV/CA/CT
 目标估计 → 前馈制导（保持下方站位 + 主动瞄准 AIM）→ 角度门火控
@@ -22,7 +22,13 @@ Jetson 板载视觉拦截平台：单副 4mm 双目（竖直向上安装）→ I
 
 ## 分支约定
 
-- `netgun_intercept`：网枪拦截链开发分支（以核心 ROS 包命名）。
+- `master`：**完整分支**——拦截链（本 README 所述全部内容）+ `perception-workbench/` 感知工作台源码副本。
+- `perception`：仅感知工作台副本（内容同 master 下的 `perception-workbench/`，供只需要感知部分的场合）。
+- `netgun_intercept`：网枪拦截链开发分支（master 上拦截链部分的前身，历史在此）。
+
+## 感知工作台（perception-workbench/）
+
+[perception-workbench](perception-workbench/README.md) 是独立感知与数据采集模块的源码副本：ZED X Mini 采集、YOLO/TensorRT 检测（现役自训模型 + GLAD 公开模型可选，置信度/目标尺寸可调）、深度与相机坐标观测、板上 SVO 录像、电脑实时监看与素材管理（含检测预览）。源版本跟踪 GitHub `yfx1234/UAVLab-Anti-Drone` main 分支，逐文件 SHA256 见其 `SOURCE_MANIFEST.json`。模型权重与采集素材不入库，需另行提供；感知与拦截链的衔接见 `docs/实机部署记录_2026-10-15.md` 与 `src/zed_perception_bridge/`。
 
 ## 快速开始（仿真，WSL Ubuntu 22.04）
 
@@ -56,7 +62,7 @@ ros2 launch netgun_intercept netgun_sim_12m.launch.py \
 | `docs/交接/网枪拦截项目工作日志.md` | 按日工作日志 |
 | `docs/仓库维护指南.md` | 目录职责与审计工具用法 |
 
-## 当前状态（2026-10-15）
+## 当前状态（2026-10-17）
 
 - 仿真侧：20 格全几何矩阵 19/20 格有解（唯一无解格 headon@5 待预测
   拦截项）；40 轮矩阵触发 77.5-82.5%、命中 100%、miss 均值 0.64m；

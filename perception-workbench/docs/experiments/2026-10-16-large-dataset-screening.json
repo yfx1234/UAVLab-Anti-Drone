@@ -1,0 +1,472 @@
+{
+  "scope": "GLAD global appearance only; fixed previously positive reference set, not exhaustive ground truth.",
+  "primary_case": {
+    "size": 640,
+    "threshold": 0.25,
+    "raw_reference_matched_frames": 62,
+    "human_confirmed_additional_match": {
+      "scene": "scene2",
+      "sample": 22,
+      "reference_iou": 0.28412576687116564,
+      "reason": "Visible target lies within oversized predicted box; reviewed full frame and enlarged crop."
+    },
+    "reviewed_hits_on_67_previously_positive_frames": 63,
+    "remaining_unreferenced_candidates": [
+      {
+        "scene": "scene1",
+        "sample": 2
+      },
+      {
+        "scene": "scene2",
+        "sample": 2
+      },
+      {
+        "scene": "scene2",
+        "sample": 4
+      }
+    ],
+    "remaining_candidates_status": "Unresolved; prior absence labels are not independent exhaustive truth. Do not call these proven false positives."
+  },
+  "timing_scope": "RTX 5060 Laptop FP16 batch1,10 warmups,89 serial calls per size; CUDA sync, pre/post yes, decode no. Not NX FPS or full video/GLAD latency.",
+  "source_framework": {
+    "repo": "https://github.com/ultralytics/yolov5",
+    "tag": "v7.0",
+    "commit": "915bbf294bb74c859f0b41f1c23bc395014ea679",
+    "author_documented_version": "v6.0",
+    "note": "Screening uses compatible vendor v7.0 with weights-only loading; rectangular 114 padding; not an exact reproduction of author square640 TRT128 padding pipeline."
+  },
+  "provenance": [
+    {
+      "repo": "WindyLab/Global-Local-MAV-Detection",
+      "commit": "ab9fd85e60c3f4cb61d79ea8ecd19d9362f5b380",
+      "file": "yolov5s_GLAD.pt",
+      "url": "https://raw.githubusercontent.com/WindyLab/Global-Local-MAV-Detection/ab9fd85e60c3f4cb61d79ea8ecd19d9362f5b380/weights/yolov5s_GLAD.pt",
+      "bytes": 14359541,
+      "sha256": "9e8edde080cf9e1eac0fcd68c12d7073bb23dac4059f2929ed3a06f301537a0c",
+      "globals": [
+        "torch.nn.modules.upsampling.Upsample",
+        "models.common.SPPF",
+        "models.common.Concat",
+        "models.common.Conv",
+        "torch.nn.modules.conv.Conv2d",
+        "numpy.core.multiarray._reconstruct",
+        "torch.nn.modules.container.Sequential",
+        "models.yolo.Detect",
+        "torch.nn.modules.container.ModuleList",
+        "models.common.Bottleneck",
+        "models.common.C3",
+        "numpy.ndarray",
+        "torch.nn.modules.pooling.MaxPool2d",
+        "torch.nn.modules.activation.SiLU",
+        "numpy.dtype",
+        "models.yolo.Model",
+        "torch.nn.modules.batchnorm.BatchNorm2d"
+      ]
+    },
+    {
+      "repo": "WindyLab/Global-Local-MAV-Detection",
+      "commit": "ab9fd85e60c3f4cb61d79ea8ecd19d9362f5b380",
+      "file": "yolov5s_GLAD-crop.pt",
+      "url": "https://raw.githubusercontent.com/WindyLab/Global-Local-MAV-Detection/ab9fd85e60c3f4cb61d79ea8ecd19d9362f5b380/weights/yolov5s_GLAD-crop.pt",
+      "bytes": 14454645,
+      "sha256": "031813a6c7ef8446080528e198b4f4e44ee936f066d1b12612adc4ef8af0d8a0",
+      "globals": [
+        "torch.nn.modules.upsampling.Upsample",
+        "models.common.SPPF",
+        "models.common.Concat",
+        "models.common.Conv",
+        "torch.nn.modules.conv.Conv2d",
+        "numpy.core.multiarray._reconstruct",
+        "torch.nn.modules.container.Sequential",
+        "models.yolo.Detect",
+        "torch.nn.modules.container.ModuleList",
+        "models.common.Bottleneck",
+        "models.common.C3",
+        "numpy.ndarray",
+        "torch.nn.modules.pooling.MaxPool2d",
+        "torch.nn.modules.activation.SiLU",
+        "numpy.dtype",
+        "models.yolo.Model",
+        "torch.nn.modules.batchnorm.BatchNorm2d"
+      ]
+    }
+  ],
+  "checkpoint_execution": "torch.load weights_only=True; explicit standard YOLOv5/Torch/NumPy model classes; author binary engines/plugins not executed.",
+  "cases": [
+    {
+      "model_sha256": "9e8edde080cf9e1eac0fcd68c12d7073bb23dac4059f2929ed3a06f301537a0c",
+      "scope": "GLAD global YOLOv5s appearance branch only; no local, motion, or temporal fusion.",
+      "settings": {
+        "size": 640,
+        "tensor_shape": [
+          1,
+          3,
+          384,
+          640
+        ],
+        "conf": 0.05,
+        "iou": 0.5,
+        "max_det": 30,
+        "half": true
+      },
+      "gpu": "NVIDIA GeForce RTX 5060 Laptop GPU",
+      "torch": "2.13.0+cu132",
+      "names": {
+        "0": "Drone"
+      },
+      "reference_note": "Existing visually reviewed custom-1080 boxes; IoU>=0.3 proxy, not independent tight ground truth or mAP. Same-target correlated frames.",
+      "timing_note": "Batch1; 10 warmups; CUDA synchronized; pre/post included; image decoding excluded; RTX laptop, not Jetson NX.",
+      "summary": [
+        {
+          "scene": "scene1",
+          "threshold": 0.1,
+          "frames": 45,
+          "positive_frames": 31,
+          "reference_matched_frames": 29,
+          "unmatched_or_duplicate_boxes": 3,
+          "negative_frames_with_prediction": 2,
+          "wall_median_ms": 12.219999975059181,
+          "wall_p95_ms": 18.051319976802915
+        },
+        {
+          "scene": "scene2",
+          "threshold": 0.1,
+          "frames": 44,
+          "positive_frames": 36,
+          "reference_matched_frames": 34,
+          "unmatched_or_duplicate_boxes": 4,
+          "negative_frames_with_prediction": 2,
+          "wall_median_ms": 10.766499966848642,
+          "wall_p95_ms": 14.602115016896278
+        },
+        {
+          "scene": "all",
+          "threshold": 0.1,
+          "frames": 89,
+          "positive_frames": 67,
+          "reference_matched_frames": 63,
+          "unmatched_or_duplicate_boxes": 7,
+          "negative_frames_with_prediction": 4,
+          "wall_median_ms": 11.530700023286045,
+          "wall_p95_ms": 17.67879999242723
+        },
+        {
+          "scene": "scene1",
+          "threshold": 0.25,
+          "frames": 45,
+          "positive_frames": 31,
+          "reference_matched_frames": 29,
+          "unmatched_or_duplicate_boxes": 1,
+          "negative_frames_with_prediction": 1,
+          "wall_median_ms": 12.219999975059181,
+          "wall_p95_ms": 18.051319976802915
+        },
+        {
+          "scene": "scene2",
+          "threshold": 0.25,
+          "frames": 44,
+          "positive_frames": 36,
+          "reference_matched_frames": 33,
+          "unmatched_or_duplicate_boxes": 3,
+          "negative_frames_with_prediction": 2,
+          "wall_median_ms": 10.766499966848642,
+          "wall_p95_ms": 14.602115016896278
+        },
+        {
+          "scene": "all",
+          "threshold": 0.25,
+          "frames": 89,
+          "positive_frames": 67,
+          "reference_matched_frames": 62,
+          "unmatched_or_duplicate_boxes": 4,
+          "negative_frames_with_prediction": 3,
+          "wall_median_ms": 11.530700023286045,
+          "wall_p95_ms": 17.67879999242723
+        },
+        {
+          "scene": "scene1",
+          "threshold": 0.55,
+          "frames": 45,
+          "positive_frames": 31,
+          "reference_matched_frames": 26,
+          "unmatched_or_duplicate_boxes": 0,
+          "negative_frames_with_prediction": 0,
+          "wall_median_ms": 12.219999975059181,
+          "wall_p95_ms": 18.051319976802915
+        },
+        {
+          "scene": "scene2",
+          "threshold": 0.55,
+          "frames": 44,
+          "positive_frames": 36,
+          "reference_matched_frames": 30,
+          "unmatched_or_duplicate_boxes": 1,
+          "negative_frames_with_prediction": 0,
+          "wall_median_ms": 10.766499966848642,
+          "wall_p95_ms": 14.602115016896278
+        },
+        {
+          "scene": "all",
+          "threshold": 0.55,
+          "frames": 89,
+          "positive_frames": 67,
+          "reference_matched_frames": 56,
+          "unmatched_or_duplicate_boxes": 1,
+          "negative_frames_with_prediction": 0,
+          "wall_median_ms": 11.530700023286045,
+          "wall_p95_ms": 17.67879999242723
+        }
+      ]
+    },
+    {
+      "model_sha256": "9e8edde080cf9e1eac0fcd68c12d7073bb23dac4059f2929ed3a06f301537a0c",
+      "scope": "GLAD global YOLOv5s appearance branch only; no local, motion, or temporal fusion.",
+      "settings": {
+        "size": 1280,
+        "tensor_shape": [
+          1,
+          3,
+          736,
+          1280
+        ],
+        "conf": 0.05,
+        "iou": 0.5,
+        "max_det": 30,
+        "half": true
+      },
+      "gpu": "NVIDIA GeForce RTX 5060 Laptop GPU",
+      "torch": "2.13.0+cu132",
+      "names": {
+        "0": "Drone"
+      },
+      "reference_note": "Existing visually reviewed custom-1080 boxes; IoU>=0.3 proxy, not independent tight ground truth or mAP. Same-target correlated frames.",
+      "timing_note": "Batch1; 10 warmups; CUDA synchronized; pre/post included; image decoding excluded; RTX laptop, not Jetson NX.",
+      "summary": [
+        {
+          "scene": "scene1",
+          "threshold": 0.1,
+          "frames": 45,
+          "positive_frames": 31,
+          "reference_matched_frames": 25,
+          "unmatched_or_duplicate_boxes": 8,
+          "negative_frames_with_prediction": 4,
+          "wall_median_ms": 17.285200010519475,
+          "wall_p95_ms": 20.55284003727138
+        },
+        {
+          "scene": "scene2",
+          "threshold": 0.1,
+          "frames": 44,
+          "positive_frames": 36,
+          "reference_matched_frames": 35,
+          "unmatched_or_duplicate_boxes": 6,
+          "negative_frames_with_prediction": 1,
+          "wall_median_ms": 16.40009999391623,
+          "wall_p95_ms": 20.54866000835318
+        },
+        {
+          "scene": "all",
+          "threshold": 0.1,
+          "frames": 89,
+          "positive_frames": 67,
+          "reference_matched_frames": 60,
+          "unmatched_or_duplicate_boxes": 14,
+          "negative_frames_with_prediction": 5,
+          "wall_median_ms": 16.74069999717176,
+          "wall_p95_ms": 20.611380017362535
+        },
+        {
+          "scene": "scene1",
+          "threshold": 0.25,
+          "frames": 45,
+          "positive_frames": 31,
+          "reference_matched_frames": 25,
+          "unmatched_or_duplicate_boxes": 7,
+          "negative_frames_with_prediction": 4,
+          "wall_median_ms": 17.285200010519475,
+          "wall_p95_ms": 20.55284003727138
+        },
+        {
+          "scene": "scene2",
+          "threshold": 0.25,
+          "frames": 44,
+          "positive_frames": 36,
+          "reference_matched_frames": 35,
+          "unmatched_or_duplicate_boxes": 3,
+          "negative_frames_with_prediction": 1,
+          "wall_median_ms": 16.40009999391623,
+          "wall_p95_ms": 20.54866000835318
+        },
+        {
+          "scene": "all",
+          "threshold": 0.25,
+          "frames": 89,
+          "positive_frames": 67,
+          "reference_matched_frames": 60,
+          "unmatched_or_duplicate_boxes": 10,
+          "negative_frames_with_prediction": 5,
+          "wall_median_ms": 16.74069999717176,
+          "wall_p95_ms": 20.611380017362535
+        },
+        {
+          "scene": "scene1",
+          "threshold": 0.55,
+          "frames": 45,
+          "positive_frames": 31,
+          "reference_matched_frames": 24,
+          "unmatched_or_duplicate_boxes": 4,
+          "negative_frames_with_prediction": 3,
+          "wall_median_ms": 17.285200010519475,
+          "wall_p95_ms": 20.55284003727138
+        },
+        {
+          "scene": "scene2",
+          "threshold": 0.55,
+          "frames": 44,
+          "positive_frames": 36,
+          "reference_matched_frames": 32,
+          "unmatched_or_duplicate_boxes": 1,
+          "negative_frames_with_prediction": 1,
+          "wall_median_ms": 16.40009999391623,
+          "wall_p95_ms": 20.54866000835318
+        },
+        {
+          "scene": "all",
+          "threshold": 0.55,
+          "frames": 89,
+          "positive_frames": 67,
+          "reference_matched_frames": 56,
+          "unmatched_or_duplicate_boxes": 5,
+          "negative_frames_with_prediction": 4,
+          "wall_median_ms": 16.74069999717176,
+          "wall_p95_ms": 20.611380017362535
+        }
+      ]
+    },
+    {
+      "model_sha256": "9e8edde080cf9e1eac0fcd68c12d7073bb23dac4059f2929ed3a06f301537a0c",
+      "scope": "GLAD global YOLOv5s appearance branch only; no local, motion, or temporal fusion.",
+      "settings": {
+        "size": 1920,
+        "tensor_shape": [
+          1,
+          3,
+          1088,
+          1920
+        ],
+        "conf": 0.05,
+        "iou": 0.5,
+        "max_det": 30,
+        "half": true
+      },
+      "gpu": "NVIDIA GeForce RTX 5060 Laptop GPU",
+      "torch": "2.13.0+cu132",
+      "names": {
+        "0": "Drone"
+      },
+      "reference_note": "Existing visually reviewed custom-1080 boxes; IoU>=0.3 proxy, not independent tight ground truth or mAP. Same-target correlated frames.",
+      "timing_note": "Batch1; 10 warmups; CUDA synchronized; pre/post included; image decoding excluded; RTX laptop, not Jetson NX.",
+      "summary": [
+        {
+          "scene": "scene1",
+          "threshold": 0.1,
+          "frames": 45,
+          "positive_frames": 31,
+          "reference_matched_frames": 21,
+          "unmatched_or_duplicate_boxes": 35,
+          "negative_frames_with_prediction": 9,
+          "wall_median_ms": 22.40619994699955,
+          "wall_p95_ms": 25.38585999282077
+        },
+        {
+          "scene": "scene2",
+          "threshold": 0.1,
+          "frames": 44,
+          "positive_frames": 36,
+          "reference_matched_frames": 32,
+          "unmatched_or_duplicate_boxes": 25,
+          "negative_frames_with_prediction": 4,
+          "wall_median_ms": 21.805299998959526,
+          "wall_p95_ms": 23.920614962116815
+        },
+        {
+          "scene": "all",
+          "threshold": 0.1,
+          "frames": 89,
+          "positive_frames": 67,
+          "reference_matched_frames": 53,
+          "unmatched_or_duplicate_boxes": 60,
+          "negative_frames_with_prediction": 13,
+          "wall_median_ms": 21.89210004871711,
+          "wall_p95_ms": 24.922159989364445
+        },
+        {
+          "scene": "scene1",
+          "threshold": 0.25,
+          "frames": 45,
+          "positive_frames": 31,
+          "reference_matched_frames": 21,
+          "unmatched_or_duplicate_boxes": 14,
+          "negative_frames_with_prediction": 5,
+          "wall_median_ms": 22.40619994699955,
+          "wall_p95_ms": 25.38585999282077
+        },
+        {
+          "scene": "scene2",
+          "threshold": 0.25,
+          "frames": 44,
+          "positive_frames": 36,
+          "reference_matched_frames": 27,
+          "unmatched_or_duplicate_boxes": 12,
+          "negative_frames_with_prediction": 3,
+          "wall_median_ms": 21.805299998959526,
+          "wall_p95_ms": 23.920614962116815
+        },
+        {
+          "scene": "all",
+          "threshold": 0.25,
+          "frames": 89,
+          "positive_frames": 67,
+          "reference_matched_frames": 48,
+          "unmatched_or_duplicate_boxes": 26,
+          "negative_frames_with_prediction": 8,
+          "wall_median_ms": 21.89210004871711,
+          "wall_p95_ms": 24.922159989364445
+        },
+        {
+          "scene": "scene1",
+          "threshold": 0.55,
+          "frames": 45,
+          "positive_frames": 31,
+          "reference_matched_frames": 20,
+          "unmatched_or_duplicate_boxes": 6,
+          "negative_frames_with_prediction": 4,
+          "wall_median_ms": 22.40619994699955,
+          "wall_p95_ms": 25.38585999282077
+        },
+        {
+          "scene": "scene2",
+          "threshold": 0.55,
+          "frames": 44,
+          "positive_frames": 36,
+          "reference_matched_frames": 23,
+          "unmatched_or_duplicate_boxes": 3,
+          "negative_frames_with_prediction": 1,
+          "wall_median_ms": 21.805299998959526,
+          "wall_p95_ms": 23.920614962116815
+        },
+        {
+          "scene": "all",
+          "threshold": 0.55,
+          "frames": 89,
+          "positive_frames": 67,
+          "reference_matched_frames": 43,
+          "unmatched_or_duplicate_boxes": 9,
+          "negative_frames_with_prediction": 5,
+          "wall_median_ms": 21.89210004871711,
+          "wall_p95_ms": 24.922159989364445
+        }
+      ]
+    }
+  ]
+}

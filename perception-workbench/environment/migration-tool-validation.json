@@ -1,0 +1,29 @@
+{
+  "date": "2026-10-12",
+  "target": "current Orin Nano 8GB; not NX",
+  "source_commit": "19b6e24",
+  "independent_project_directory": "/home/uavlab/Jetson_ROS2_V0/github-migration-check-20261012/project",
+  "staging_dry_run_exit_code": 0,
+  "staging_exit_code": 0,
+  "fresh_build_exit_code": 0,
+  "packages_built": [
+    "zed_perception_interfaces",
+    "zed_tracking"
+  ],
+  "native_tests_passed": [
+    "test_camera_modes",
+    "test_perception_quality",
+    "test_geometry",
+    "test_depth_stats",
+    "test_yolo_decode"
+  ],
+  "legacy_tracking_enabled": false,
+  "pc_tests": {
+    "run": 74,
+    "passed": 73,
+    "skipped": 1
+  },
+  "current_deployment_overwritten": false,
+  "camera_started_or_stopped": false,
+  "nx_acceptance_complete": false
+}

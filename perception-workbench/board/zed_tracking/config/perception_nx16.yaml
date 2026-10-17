@@ -1,0 +1,9 @@
+zed_perception_standalone:
+  ros__parameters:
+    profile: rgb
+    engine_path: /home/uavlab/Jetson_ROS2_V0/weights/candidates/platform_exp_20260909/exp_nx16_fp16.engine
+    model_id: 817e1709350e806e7ab261a3fe4d62acfa4828b6c2062b581ac51e9eea3d7712
+# Current NX16: keep HD1080/15 default until sustained recording acceptance.
+# Active default engine is selected by perception_config/selected_model.json.
+# Contract/source/finite-output checks passed; real quad accuracy remains pending.
+# Build target-module engines and verify GMSL, power and recording before enabling.
