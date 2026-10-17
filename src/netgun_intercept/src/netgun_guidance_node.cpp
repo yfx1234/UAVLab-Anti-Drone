@@ -2,6 +2,7 @@
 #include <cmath>
 #include <cstdio>
 #include <limits>
+#include <stdexcept>
 #include <string>
 
 #include <geometry_msgs/msg/point_stamped.hpp>
@@ -13,6 +14,8 @@
 #include <px4_offboard_tracking/msg/relative_estimate.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/bool.hpp>
+
+#include "netgun_intercept/netgun_model.hpp"
 #include <std_msgs/msg/string.hpp>
 #include <virtual_interception_interfaces/msg/virtual_shot_event.hpp>
 
@@ -104,7 +107,50 @@ public:
     // 绝不发 VehicleCommand、未进 offboard 绝不发任何 setpoint、
     // 切出 offboard 立即停发 setpoint（仅保留 offboard_control_mode
     // 心跳——它是模式声明不是设定点，PX4 接受切换的前提）
-    engage_mode_ = declare_parameter<std::string>("engage_mode", "auto");
+    // 实机安全（R0-1，2026-10-17）：默认 rc_gated；engage_mode 只认
+    // rc_gated/auto 两个值，auto 还需显式 allow_auto_engage——参数写错
+    // （如 rc-gated）绝不能静默退化成"每 3s 给真飞控发解锁指令"。
+    engage_mode_ = declare_parameter<std::string>("engage_mode", "rc_gated");
+    allow_auto_engage_ =
+      declare_parameter<bool>("allow_auto_engage", false);
+    vehicle_command_target_system_ =
+      declare_parameter<int>("vehicle_command_target_system", 2);
+    if (engage_mode_ != "rc_gated" && engage_mode_ != "auto") {
+      RCLCPP_FATAL(
+        get_logger(), "engage_mode '%s' 不合法（只接受 rc_gated / auto）",
+        engage_mode_.c_str());
+      throw std::runtime_error("invalid engage_mode");
+    }
+    if (engage_mode_ == "auto" && !allow_auto_engage_) {
+      RCLCPP_FATAL(
+        get_logger(),
+        "engage_mode=auto 需要显式 allow_auto_engage:=true（实机禁止）");
+      throw std::runtime_error("auto engage not enabled");
+    }
+    // 飞控数据/武器授权新鲜度（R0-2）：断链停发心跳与指令，PX4 失效保护接管
+    fcu_timeout_s_ = declare_parameter<double>("fcu_timeout_s", 0.5);
+    weapon_auth_timeout_s_ =
+      declare_parameter<double>("weapon_auth_timeout_s", 0.5);
+    // R0-4：AIM 与火控统一瞄准口径——同一 muzzle/deployment、同一
+    // aim_point（相对位置+相对速度×trigger_lead_s），PIP 用原始估计
+    muzzle_speed_mps_ = declare_parameter<double>("muzzle_speed_mps", 55.0);
+    deployment_time_s_ =
+      declare_parameter<double>("deployment_time_s", 0.055);
+    NetgunModelConfig aim_cfg;
+    aim_cfg.muzzle_speed_mps = muzzle_speed_mps_;
+    aim_cfg.deployment_time_s = deployment_time_s_;
+    aim_model_ = NetgunModel(aim_cfg);
+    // R1-2：目标速度坐标系（relative=旧口径默认；absolute 切换前需 SITL
+    // 验证稳态间隙 ≥50% 改善）；R1-1：垂直加速度独立限幅；R2-4：机体
+    // 横向加速度上限（0=关）
+    target_velocity_frame_ =
+      declare_parameter<std::string>("target_velocity_frame", "relative");
+    yaw_course_bidirectional_ =
+      declare_parameter<bool>("yaw_course_bidirectional", false);
+    max_vertical_acc_ =
+      declare_parameter<double>("max_vertical_acc_mps2", max_acc_);
+    max_lateral_acc_ =
+      declare_parameter<double>("max_lateral_acc_mps2", 0.0);
     // task origin 收敛后锁定（清单§八-5）：boot 期 EKF 未收敛值曾偏 6.6m
     task_origin_wait_converged_ =
       declare_parameter<bool>("task_origin_wait_converged", true);
@@ -172,12 +218,17 @@ public:
       declare_parameter<std::string>("local_position_topic", "/px4_1/fmu/out/vehicle_local_position"),
       px4_qos,
       [this](px4_msgs::msg::VehicleLocalPosition::ConstSharedPtr m) {
-        if (m->xy_valid && m->z_valid) { lp_ = m; }
+        lp_rx_s_ = now().seconds();
+        lp_valid_ = m->xy_valid && m->z_valid;
+        lp_ = m;
       });
     st_sub_ = create_subscription<px4_msgs::msg::VehicleStatus>(
       declare_parameter<std::string>("status_topic", "/px4_1/fmu/out/vehicle_status"),
       px4_qos,
-      [this](px4_msgs::msg::VehicleStatus::ConstSharedPtr m) { st_ = m; });
+      [this](px4_msgs::msg::VehicleStatus::ConstSharedPtr m) {
+        st_rx_s_ = now().seconds();
+        st_ = m;
+      });
 
     ob_pub_ = create_publisher<px4_msgs::msg::OffboardControlMode>(
       "/px4_1/fmu/in/offboard_control_mode", 10);
@@ -227,7 +278,10 @@ public:
       declare_parameter<std::string>(
         "weapon_authorization_topic", "/tracking/weapon_authorization"),
       rclcpp::QoS(1).transient_local(),
-      [this](std_msgs::msg::Bool::ConstSharedPtr msg) { weapon_auth_ = msg->data; });
+      [this](std_msgs::msg::Bool::ConstSharedPtr msg) {
+        auth_rx_s_ = now().seconds();
+        weapon_auth_ = msg->data;
+      });
     ready_pub_ = create_publisher<std_msgs::msg::Bool>(
       declare_parameter<std::string>(
         "takeoff_ready_topic", "/simulation/pursuer_takeoff_ready"),
@@ -250,19 +304,97 @@ public:
   }
 
 private:
+  // R0-2（2026-10-17）：飞控数据/武器授权新鲜度。数据断链（或 PX4 位置
+  // 失效）时停发心跳与一切指令，让 PX4 按 offboard 丢失失效保护接管、
+  // 飞手可立即夺回。注意这改变了旧语义"心跳永远在发"——心跳停滞现在是
+  // "飞控数据断"的显式信号（面板/interceptor_status.py 已同步该语义）。
+  bool fcu_inputs_fresh(double now_s) const
+  {
+    const bool lp_ok = lp_ && lp_valid_ && now_s - lp_rx_s_ <= fcu_timeout_s_;
+    const bool st_ok = st_ && now_s - st_rx_s_ <= fcu_timeout_s_;
+    return lp_ok && st_ok;
+  }
+  bool auth_effective(double now_s) const
+  {
+    return weapon_auth_ && now_s - auth_rx_s_ <= weapon_auth_timeout_s_;
+  }
+  // 交战状态复位（rc_gated 切出 / 飞控数据过期共用）。R0-3：覆盖全部
+  // "第二次进入 offboard 会串场"的内部状态——保持点、斜率限幅种子、
+  // 低通估计、积分、偏航锁定、授权/搜索计时、就位发布标志。
+  void reset_engagement_state(const char* reason)
+  {
+    const bool was_active = phase_ != Phase::WAITING || bearing_hold_;
+    phase_ = Phase::WAITING;
+    hold_mode_ = true;
+    bearing_hold_ = false;
+    shot_seen_ = false;
+    aim_stable_since_s_ = -1.0;
+    aim_seeded_ = false;
+    spin_accum_rad_ = 0.0;
+    settle_ok_since_s_ = -1.0;
+    ever_had_est_ = false;      // 重新搜索（自旋至再捕获）
+    search_spin_logged_ = false;
+    hold_target_[0] = lp_ ? lp_->x : 0.0;
+    hold_target_[1] = lp_ ? lp_->y : 0.0;
+    hold_target_[2] = lp_ ? lp_->z : -takeoff_h_;
+    last_vx_ = last_vy_ = last_vz_ = 0.0;
+    est_lp_[0] = est_lp_[1] = est_lp_[2] = 0.0;
+    est_lp_seeded_ = false;
+    integral_x_ = integral_y_ = 0.0;
+    track_entry_s_ = -1.0;
+    yaw_locked_ = false;
+    yaw_above_since_s_ = -1.0;
+    speed_above_since_s_ = -1.0;
+    est_lost_since_s_ = -1.0;
+    est_recover_since_s_ = -1.0;
+    ready_published_ = false;
+    if (was_active && now().seconds() - last_reset_log_s_ >= 1.0) {
+      last_reset_log_s_ = now().seconds();
+      RCLCPP_WARN(get_logger(), "engagement reset (%s) → standby", reason);
+    }
+  }
+  // R0-3：切入 offboard 那一刻用当前位置/速度/航向初始化——不初始化时
+  // 保持点滞留旧值（首飞锚点缺失或二次进入=上一次目标点），飞机会飞向
+  // PX4 本地原点或旧目标；斜率限幅/低通从旧值起步会有指令阶跃。
+  void on_engage_entry()
+  {
+    hold_target_[0] = lp_->x;
+    hold_target_[1] = lp_->y;
+    hold_target_[2] = -takeoff_h_;
+    last_vx_ = lp_->vx;
+    last_vy_ = lp_->vy;
+    last_vz_ = lp_->vz;
+    yaw_sp_ = lp_->heading;
+    yaw_sp_init_ = true;
+    est_lp_seeded_ = false;
+    integral_x_ = integral_y_ = 0.0;
+    hold_mode_ = true;
+    bearing_hold_ = false;
+    track_entry_s_ = -1.0;
+  }
   void tick()
   {
+    const double t_gate = now().seconds();
+    if (!fcu_inputs_fresh(t_gate)) {
+      reset_engagement_state("fcu data stale");
+      return;
+    }
     px4_msgs::msg::OffboardControlMode ob;
     ob.timestamp = static_cast<std::uint64_t>(now().nanoseconds() / 1000);
-    ob.position = (phase_ == Phase::TRACK && hold_mode_);
+    // R1-3：OCM 标志与实际 setpoint 类型一致——SETTLE/SPIN/DONE 发的
+    // 也是位置设定点，position 标志必须同拍为 true（PX4 按标志决定
+    // 需要哪类有效估计与接受哪类设定点）
+    ob.position = (phase_ == Phase::TRACK && hold_mode_) ||
+      phase_ == Phase::SETTLE || phase_ == Phase::SPIN ||
+      phase_ == Phase::DONE;
     ob.velocity = true;
     ob.acceleration = (phase_ == Phase::AIM);  // AIM：加速度前馈通道（B 路线）
     ob_pub_->publish(ob);
     ++ob_sent_;
 
     // 心跳/指令计数 5s 节流行（2026-10-15）：PC 面板据此显示当前阶段、
-    // 心跳连续性（ob_sent 增长）与指令流（sp_sent）。必须在早退之前打印
-    // ——无飞控数据时心跳仍在发，面板要能看到。
+    // 心跳连续性（ob_sent 增长）与指令流（sp_sent）。飞控数据过期时本行
+    // 不执行（R0-2：心跳停发即"飞控数据断"信号）。
     const double alive_t = now().seconds();
     if (alive_t - last_alive_log_s_ >= 5.0) {
       last_alive_log_s_ = alive_t;
@@ -282,21 +414,7 @@ private:
         // 未获遥控器授权：零 setpoint 发布（用户实测 1.15.4 上非
         // offboard 态发 setpoint 会与遥控器竞争）。offboard_control_mode
         // 心跳照常（顶部已发），保证飞手拨杆时 PX4 能接受切换
-        if (phase_ != Phase::WAITING) {
-          phase_ = Phase::WAITING;
-          hold_mode_ = true;
-          bearing_hold_ = false;
-          shot_seen_ = false;
-          aim_stable_since_s_ = -1.0;
-          aim_seeded_ = false;
-          spin_accum_rad_ = 0.0;
-          settle_ok_since_s_ = -1.0;
-          ever_had_est_ = false;      // 重新搜索（自旋至再捕获）
-          search_spin_logged_ = false;
-          RCLCPP_INFO(
-            get_logger(),
-            "offboard exited → standby (setpoints STOPPED, RC authority)");
-        }
+        reset_engagement_state("offboard exited (RC authority)");
       } else {
         send_sp(0, 0, 0, 0.0);
       }
@@ -361,6 +479,7 @@ private:
     }
 
     if (phase_ == Phase::WAITING) {
+      on_engage_entry();
       phase_ = Phase::TAKEOFF;
       RCLCPP_INFO(get_logger(), "phase → TAKEOFF");
     }
@@ -378,7 +497,7 @@ private:
       // 才起旋。确认窗排除回拉段的过零点（实测回拉峰值 ~0.5m/s）；
       // 超时兜底直接起旋（慢一点的原地旋转仍远优于无标志）。
       send_pos_sp(hold_target_[0], hold_target_[1], hold_target_[2],
-        0.0, 0.0, 0.0, yaw_servo_enabled_ ? frozen_yaw() : 0.0);
+        0.0, 0.0, 0.0, frozen_yaw());
       const double spd = std::hypot(lp_->vx, lp_->vy);
       const double now_s7 = now().seconds();
       if (spd < spin_settle_speed_mps_) {
@@ -423,7 +542,7 @@ private:
     if (phase_ == Phase::DONE) {
       // 开火后原地保持（脱离追击）；航向锁定最后指令值
       send_pos_sp(hold_target_[0], hold_target_[1], hold_target_[2],
-        0.0, 0.0, 0.0, yaw_servo_enabled_ ? frozen_yaw() : 0.0);
+        0.0, 0.0, 0.0, frozen_yaw());
       return;
     }
 
@@ -447,14 +566,25 @@ private:
     // 估计状态：只看 valid+时效（镜像语义）。不逐帧要求
     // measurement_accepted——瞬态期 IMM 拒帧会闪烁，造成模式抖动。
     bool est_ok = false;
+    double tvx = 0.0, tvy = 0.0, tax = 0.0, tay = 0.0;
     if (est_ && est_->valid) {
       const double now_s = now().seconds();
-      const double est_age = std::abs(now_s - est_->header.stamp.sec -
-        est_->header.stamp.nanosec * 1e-9);
-      est_ok = est_age <= est_timeout_;
+      // R0-2：有符号年龄窗——时间戳在未来（时钟跳变）不再被当成新鲜数据
+      const double est_age = now_s - est_->header.stamp.sec -
+        est_->header.stamp.nanosec * 1e-9;
+      est_ok = est_age >= -0.05 && est_age <= est_timeout_;
     }
-    const double target_speed = est_ok ?
-      std::hypot(est_->velocity.x, est_->velocity.y) : 0.0;
+    if (est_ok) {
+      // R1-2：目标速度/加速度按参数选坐标系。absolute=相对量+本机量
+      //（目标真实速度，稳态前馈有效）；relative=估计原始（默认旧口径）
+      tvx = est_->velocity.x; tvy = est_->velocity.y;
+      tax = est_->acceleration.x; tay = est_->acceleration.y;
+      if (target_velocity_frame_ == "absolute" && lp_) {
+        tvx += lp_->vx; tvy += lp_->vy;
+        tax += lp_->ax; tay += lp_->ay;
+      }
+    }
+    const double target_speed = est_ok ? std::hypot(tvx, tvy) : 0.0;
 
     // 首次捕获闩锁（搜索自旋停转判据）
     if (est_ok && !ever_had_est_) {
@@ -481,8 +611,8 @@ private:
         integral_x_ = integral_y_ = 0.0;
         // 速度环种子 = 当前前馈（此时 IMM 已在运动目标上收敛；从零爬升
         // 会在起跑瞬态拉开 ~1m 间隙，甩出 ±2.5m 相机视场造成永久丢失）
-        last_vx_ = clampd(ff_ * est_->velocity.x, -max_spd_, max_spd_);
-        last_vy_ = clampd(ff_ * est_->velocity.y, -max_spd_, max_spd_);
+        last_vx_ = clampd(ff_ * tvx, -max_spd_, max_spd_);
+        last_vy_ = clampd(ff_ * tvy, -max_spd_, max_spd_);
         last_vz_ = 0.0;
         RCLCPP_INFO(
           get_logger(), "track → velocity mode (target %.2f m/s)", target_speed);
@@ -495,11 +625,21 @@ private:
     // 只滤反馈（P/积分/保持点），前馈速度保持原始——摆动来自位置环
     // 对 IMM 噪声的响应（±0.23m@1.1s=1.8° 轴误差贴 2° 主门）
     if (est_ok) {
-      const double alpha = est_lp_tau_ > 0.0 ?
-        std::min(1.0, (1.0 / ctrl_hz_) / est_lp_tau_) : 1.0;
-      est_lp_[0] += alpha * (est_->position.x - est_lp_[0]);
-      est_lp_[1] += alpha * (est_->position.y - est_lp_[1]);
-      est_lp_[2] += alpha * (est_->position.z - est_lp_[2]);
+      if (!est_lp_seeded_) {
+        // R0-3：第一条有效估计直接赋值——从 0 起低通会把反馈项拖 ~1s
+        est_lp_[0] = est_->position.x;
+        est_lp_[1] = est_->position.y;
+        est_lp_[2] = est_->position.z;
+        est_lp_seeded_ = true;
+      } else {
+        const double alpha = est_lp_tau_ > 0.0 ?
+          std::min(1.0, (1.0 / ctrl_hz_) / est_lp_tau_) : 1.0;
+        est_lp_[0] += alpha * (est_->position.x - est_lp_[0]);
+        est_lp_[1] += alpha * (est_->position.y - est_lp_[1]);
+        est_lp_[2] += alpha * (est_->position.z - est_lp_[2]);
+      }
+    } else {
+      est_lp_seeded_ = false;
     }
 
     // AIM（B 路线）：速度匹配 + 加速度前馈主动倾斜。瞄准目标=PIP（est+
@@ -531,14 +671,18 @@ private:
           RCLCPP_INFO(
             get_logger(), "aim seed v=(%.2f,%.2f)", aim_vx_, aim_vy_);
         }
-        const double tof = std::sqrt(
-          est_lp_[0] * est_lp_[0] + est_lp_[1] * est_lp_[1] +
-          est_lp_[2] * est_lp_[2]) / 55.0;
-        const double pip_x = est_lp_[0] + est_->velocity.x * tof;
-        const double pip_y = est_lp_[1] + est_->velocity.y * tof;
+        // R0-4：PIP 用原始估计（非低通）+ 与火控同款 trigger_lead_s
+        //（含展开时间），瞄准点口径与火控 aim_point 完全一致
+        const double aim_range = std::sqrt(
+          est_->position.x * est_->position.x +
+          est_->position.y * est_->position.y +
+          est_->position.z * est_->position.z);
+        const double tof = aim_model_.trigger_lead_s(aim_range);
+        const double pip_x = est_->position.x + est_->velocity.x * tof;
+        const double pip_y = est_->position.y + est_->velocity.y * tof;
         const double pip_h = std::hypot(pip_x, pip_y);
         const double theta = std::min(
-          std::atan2(pip_h, std::abs(est_lp_[2])) * aim_tilt_compensation_,
+          std::atan2(pip_h, std::abs(est_->position.z)) * aim_tilt_compensation_,
           aim_max_tilt_rad_);
         const double a_mag = 9.80665 * std::tan(theta);
         double ax = 0.0, ay = 0.0;
@@ -549,7 +693,7 @@ private:
         double vz = vz_hold;
         if (alt < min_h_ && vz > 0) vz = 0;
         send_aim_sp(aim_vx_, aim_vy_, vz, ax, ay,
-          yaw_servo_enabled_ ? frozen_yaw() : 0.0);
+          frozen_yaw());
         return;
       }
     }
@@ -646,8 +790,16 @@ private:
       const double now_s3 = now().seconds();
       if (yaw_above_since_s_ < 0.0) { yaw_above_since_s_ = now_s3; }
       if (now_s3 - yaw_above_since_s_ >= 0.3) {
-        desired_yaw = std::atan2(est_->velocity.y, est_->velocity.x) +
-          yaw_course_offset_rad_;
+        // R1-2：航向用目标速度坐标系；bidirectional 时宽视场轴前后
+        // 对称——取当前航向更近的一侧，避免追过头时机头掉头 180°
+        double course = std::atan2(tvy, tvx) + yaw_course_offset_rad_;
+        if (yaw_course_bidirectional_) {
+          double d = course - yaw_sp_;
+          while (d > M_PI) { d -= 2.0 * M_PI; }
+          while (d < -M_PI) { d += 2.0 * M_PI; }
+          if (std::fabs(d) > M_PI / 2.0) { course += M_PI; }
+        }
+        desired_yaw = course;
         yaw_has_target = true;
       }
     } else {
@@ -682,7 +834,7 @@ private:
       }
       yaw_sp_ += search_spin_rate_rad_s_ / ctrl_hz_;
     }
-    const double yaw_cmd = yaw_servo_enabled_ ? frozen_yaw() : 0.0;
+    const double yaw_cmd = frozen_yaw();
 
     // AIM 进入（完整版，TRACK 内）：稳定跟踪 aim_enter_delay + 武器授权
     // （strike 单一真源）+ 目标速度门。【两种跟踪形态都可进入】——1 m/s
@@ -691,7 +843,7 @@ private:
     // 恒卡 5-6°无法瞄准）。BEARING_HOLD/估计失效/授权未到重置稳定计时；
     // 本拍照常发跟踪指令，AIM 控制自下一拍起。
     if (phase_ == Phase::TRACK && aim_mode_enabled_ && !bearing_hold_) {
-      const bool aim_ready = est_ok && weapon_auth_ &&
+      const bool aim_ready = est_ok && auth_effective(now().seconds()) &&
         target_speed <= aim_max_target_speed_mps_;
       const double now_s6 = now().seconds();
       if (aim_ready) {
@@ -785,17 +937,18 @@ private:
         pred_y *= max_pred_offset_m_ / pred_mag;
       }
       // 加速度前馈：起步/机动瞬态 IMM 速度滞后 ~0.4s（贡献 ~2m 间隙），
-      // 用 IMM 加速度估计超前补偿（2026-10-12 几何探针定位）
-      vx = gain_ * pred_x +
-        ff_ * (est_->velocity.x + est_->acceleration.x * accel_lead_s_);
-      vy = gain_ * pred_y +
-        ff_ * (est_->velocity.y + est_->acceleration.y * accel_lead_s_);
+      // 用 IMM 加速度估计超前补偿（2026-10-12 几何探针定位）。
+      // R1-2：前馈速度按 target_velocity_frame 选坐标系
+      vx = gain_ * pred_x + ff_ * (tvx + tax * accel_lead_s_);
+      vy = gain_ * pred_y + ff_ * (tvy + tay * accel_lead_s_);
       // 积分项：P+FF 无积分时稳态间隙 = v×(1/gain−horizon) ≈ 1-1.5m
       //（追踪机 lag 在目标后方，持续 5-8° 轴误差，2° 主门永远不开）。
       // 积分把间隙压回 0（正下方），kI=0.3、钳 ±0.8m/s 防风扰饱和。
       //（2026-10-14 摆动抑制：积分输入改低通估计，launch kI 0.3→0.1）
-      integral_x_ = clampd(integral_x_ + est_lp_[0] * integral_gain_ * 0.02, -0.8, 0.8);
-      integral_y_ = clampd(integral_y_ + est_lp_[1] * integral_gain_ * 0.02, -0.8, 0.8);
+      integral_x_ = clampd(
+        integral_x_ + est_lp_[0] * integral_gain_ / ctrl_hz_, -0.8, 0.8);
+      integral_y_ = clampd(
+        integral_y_ + est_lp_[1] * integral_gain_ / ctrl_hz_, -0.8, 0.8);
       vx += integral_x_;
       vy += integral_y_;
       // 方位伺服（清单§八-3 并入项）：瞄准线水平偏移死区外，加朝
@@ -818,17 +971,30 @@ private:
     // ~0.5s 内可信，追它会越飞越偏，2026-10-12 几何探针定位）
     double vz = vz_hold;
     if (alt < min_h_ && vz > 0) vz = 0;  // NED 正=下降；低于下限禁止下降
-    vx = clampd(vx, -max_spd_, max_spd_);
-    vy = clampd(vy, -max_spd_, max_spd_);
+    limit_horizontal_speed(vx, vy, max_spd_);  // R1-1：按矢量模限幅
     send_sp(vx, vy, vz, yaw_cmd);
   }
 
   void send_sp(double vx, double vy, double vz, double yaw)
   {
+    // R1-1：水平斜率按矢量模限幅（斜向加速度不超 max_acc），垂直独立
     const double max_dv = max_acc_ / ctrl_hz_;
-    vx = last_vx_ + clampd(vx - last_vx_, -max_dv, max_dv);
-    vy = last_vy_ + clampd(vy - last_vy_, -max_dv, max_dv);
-    vz = last_vz_ + clampd(vz - last_vz_, -max_dv, max_dv);
+    const double max_dvz = max_vertical_acc_ / ctrl_hz_;
+    double dvx = vx - last_vx_, dvy = vy - last_vy_;
+    limit_horizontal_speed(dvx, dvy, max_dv);
+    if (max_lateral_acc_ > 0.0) {
+      // R2-4（可选）：机体横向（窄视场轴）加速度分量限幅，默认关闭
+      const double c = std::cos(yaw), s = std::sin(yaw);
+      const double max_lat = max_lateral_acc_ / ctrl_hz_;
+      const double fwd = c * dvx + s * dvy;
+      double lat = -s * dvx + c * dvy;
+      lat = clampd(lat, -max_lat, max_lat);
+      dvx = c * fwd - s * lat;
+      dvy = s * fwd + c * lat;
+    }
+    vx = last_vx_ + dvx;
+    vy = last_vy_ + dvy;
+    vz = last_vz_ + clampd(vz - last_vz_, -max_dvz, max_dvz);
     last_vx_ = vx; last_vy_ = vy; last_vz_ = vz;
     px4_msgs::msg::TrajectorySetpoint sp;
     sp.timestamp = static_cast<std::uint64_t>(now().nanoseconds() / 1000);
@@ -852,9 +1018,22 @@ private:
     // 两位同开）。速度 slew 与 send_sp 同款——进入/退出 AIM 的指令斜坡
     // 自然衔接；加速度不经 slew（θ 指令本身已钳制在 aim_max_tilt 内）。
     const double max_dv = max_acc_ / ctrl_hz_;
-    vx = last_vx_ + clampd(vx - last_vx_, -max_dv, max_dv);
-    vy = last_vy_ + clampd(vy - last_vy_, -max_dv, max_dv);
-    vz = last_vz_ + clampd(vz - last_vz_, -max_dv, max_dv);
+    const double max_dvz = max_vertical_acc_ / ctrl_hz_;
+    double dvx = vx - last_vx_, dvy = vy - last_vy_;
+    limit_horizontal_speed(dvx, dvy, max_dv);
+    if (max_lateral_acc_ > 0.0) {
+      // R2-4（可选）：机体横向（窄视场轴）加速度分量限幅，默认关闭
+      const double c = std::cos(yaw), s = std::sin(yaw);
+      const double max_lat = max_lateral_acc_ / ctrl_hz_;
+      const double fwd = c * dvx + s * dvy;
+      double lat = -s * dvx + c * dvy;
+      lat = clampd(lat, -max_lat, max_lat);
+      dvx = c * fwd - s * lat;
+      dvy = s * fwd + c * lat;
+    }
+    vx = last_vx_ + dvx;
+    vy = last_vy_ + dvy;
+    vz = last_vz_ + clampd(vz - last_vz_, -max_dvz, max_dvz);
     last_vx_ = vx; last_vy_ = vy; last_vz_ = vz;
     dbg_ax_ = ax; dbg_ay_ = ay;  // 调试话题用（AIM 倾角指令）
     px4_msgs::msg::TrajectorySetpoint sp;
@@ -892,7 +1071,7 @@ private:
     px4_msgs::msg::VehicleCommand c;
     c.timestamp = static_cast<std::uint64_t>(now().nanoseconds() / 1000);
     c.param1 = p1; c.param2 = p2; c.command = cmd;
-    c.target_system = 2; c.target_component = 1;
+    c.target_system = vehicle_command_target_system_; c.target_component = 1;
     c.source_system = 2; c.source_component = 1;
     c.from_external = true;
     cmd_pub_->publish(c);
@@ -934,12 +1113,13 @@ private:
   {
     if (!lp_) {return;}
     const double t = now().seconds();
+    const bool fcu_ok = fcu_inputs_fresh(t);
     bool est_ok = false;
     double tspd = 0.0;
     if (est_ && est_->valid) {
-      const double age = std::abs(
-        t - est_->header.stamp.sec - est_->header.stamp.nanosec * 1e-9);
-      est_ok = age <= est_timeout_;
+      const double age = t -
+        est_->header.stamp.sec - est_->header.stamp.nanosec * 1e-9;
+      est_ok = age >= -0.05 && age <= est_timeout_;
       if (est_ok) {
         tspd = std::hypot(est_->velocity.x, est_->velocity.y);
       }
@@ -950,11 +1130,11 @@ private:
       "phase=%s hold=%d bh=%d aim=%d auth=%d est=%d tspd=%.2f "
       "stab=%.1f aim_t=%.2f | pos=%.2f,%.2f,%.2f vel=%.2f,%.2f "
       "yaw=%.1f tgt=%.2f,%.2f,%.2f | spv=%.2f,%.2f spa=%.2f,%.2f "
-      "spin=%.2f srch=%d to=%d",
+      "spin=%.2f srch=%d to=%d fcu=%d lpms=%.0f stms=%.0f authms=%.0f",
       phase_name(phase_), static_cast<int>(hold_mode_),
       static_cast<int>(bearing_hold_ && !hold_mode_),
       static_cast<int>(phase_ == Phase::AIM),
-      static_cast<int>(weapon_auth_), static_cast<int>(est_ok), tspd,
+      static_cast<int>(auth_effective(t)), static_cast<int>(est_ok), tspd,
       aim_stable_since_s_ > 0.0 ? t - aim_stable_since_s_ : -1.0,
       phase_ == Phase::AIM ? t - aim_since_s_ : -1.0,
       lp_->x, lp_->y, lp_->z, lp_->vx, lp_->vy,
@@ -964,7 +1144,11 @@ private:
       spin_accum_rad_,
       static_cast<int>(search_spin_enabled_ && !ever_had_est_ &&
         phase_ == Phase::TRACK),
-      static_cast<int>(to_pub_done_));
+      static_cast<int>(to_pub_done_),
+      static_cast<int>(fcu_ok),
+      lp_ ? (t - lp_rx_s_) * 1000.0 : -1.0,
+      st_ ? (t - st_rx_s_) * 1000.0 : -1.0,
+      (t - auth_rx_s_) * 1000.0);
     msg.data = buf;
     debug_pub_->publish(msg);
   }
@@ -1012,7 +1196,24 @@ private:
   double bearing_servo_deadband_m_{0.15};
   double est_lp_tau_{0.0};
   double est_lp_[3]{0.0, 0.0, 0.0};
+  bool est_lp_seeded_{false};  // R0-3：低通种子标志（第一条有效估计直赋）
   std::string engage_mode_{"auto"};
+  bool allow_auto_engage_{false};
+  int vehicle_command_target_system_{2};
+  double fcu_timeout_s_{0.5};
+  double weapon_auth_timeout_s_{0.5};
+  double muzzle_speed_mps_{55.0};
+  double deployment_time_s_{0.055};
+  NetgunModel aim_model_;
+  std::string target_velocity_frame_{"relative"};
+  bool yaw_course_bidirectional_{false};
+  double max_vertical_acc_{2.5};
+  double max_lateral_acc_{0.0};
+  double lp_rx_s_{-1e9};
+  double st_rx_s_{-1e9};
+  double auth_rx_s_{-1e9};
+  bool lp_valid_{false};
+  double last_reset_log_s_{-1e9};
   bool task_origin_wait_converged_{true};
   double task_origin_settle_s_{2.0};
   double task_origin_drift_max_m_{0.3};

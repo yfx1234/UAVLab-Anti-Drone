@@ -47,6 +47,9 @@ def generate_launch_description():
             # 避开真实感知的 JSON 流，见 tools/board_test/）
             DeclareLaunchArgument(
                 "bridge_input_topic", default_value="/perception/observations_json"),
+            # R0-4：AIM 与火控共用同一组枪口/展开参数（统一瞄准口径）
+            DeclareLaunchArgument("muzzle_speed_mps", default_value="55.0"),
+            DeclareLaunchArgument("deployment_time_s", default_value="0.055"),
             # ---- 感知桥（PerceptionFrame v2 JSON -> DepthObservation V1） ----
             Node(
                 package="zed_perception_bridge",
@@ -96,8 +99,13 @@ def generate_launch_description():
                         "bearing_only_range_sigma_m": 30.0,
                         # 秒单位，与相机帧率无关（实机 15Hz 零改参）
                         "divergence_reset_period_s": 1.5,
-                        # 姿态采样容差：实机时间戳质量高于仿真，先沿用
-                        "attitude_sync_tolerance_s": 0.2,
+                        # 姿态采样容差：收紧到代码默认 0.05（R1-5；旧值 0.2s
+                        # 在 1 rad/s 角速度下即 ~11° 姿态误差）。首次接真
+                        # 飞控后按 estimator 诊断确认
+                        "attitude_sync_tolerance_s": 0.05,
+                        # PX4 与 ROS 时钟域判定容差：默认 5.0 过松，先收 0.5
+                        #（UXRCE_DDS_SYNCT 开启时应走直通分支；实接后核对）
+                        "attitude_clock_domain_tolerance_s": 0.5,
                         "innovation_gate_mahalanobis": 25.0,
                         "acceleration_noise_stddev_mps2": 4.0,
                     }
@@ -111,14 +119,17 @@ def generate_launch_description():
                 name="netgun_guidance_node",
                 output="screen",
                 # 输出话题在节点内硬编码为仿真命名空间 /px4_1/fmu/in/*（实机
-                # 交接文档预留的 remap 方案），实机 PX4 走 /fmu/in/*
+                # 交接文档预留的 remap 方案），实机 PX4 走 /fmu/in/*。
+                # vehicle_command 重映射到无订阅者的阻塞话题（R0-1，实机
+                # "VehicleCommand 永久拦截"红线）：rc_gated 下本就不发，
+                # 这里物理隔离兜底参数写错/回归的场景。
                 remappings=[
                     ("/px4_1/fmu/in/offboard_control_mode",
                      "/fmu/in/offboard_control_mode"),
                     ("/px4_1/fmu/in/trajectory_setpoint",
                      "/fmu/in/trajectory_setpoint"),
                     ("/px4_1/fmu/in/vehicle_command",
-                     "/fmu/in/vehicle_command"),
+                     "/netgun/blocked/vehicle_command"),
                 ],
                 parameters=[
                     {
@@ -126,6 +137,11 @@ def generate_launch_description():
                         "local_position_topic": "/fmu/out/vehicle_local_position",
                         "status_topic": "/fmu/out/vehicle_status",
                         "engage_mode": "rc_gated",
+                        # R0-4：AIM 与火控统一瞄准口径（与 strike 同参）
+                        "muzzle_speed_mps": LaunchConfiguration(
+                            "muzzle_speed_mps"),
+                        "deployment_time_s": LaunchConfiguration(
+                            "deployment_time_s"),
                         "takeoff_height_m": 5.8,
                         "minimum_height_m": 1.6,
                         "horizontal_position_gain": 2.0,
@@ -175,9 +191,11 @@ def generate_launch_description():
                         "local_position_topic": "/fmu/out/vehicle_local_position",
                         "shot_topic": SHOT_TOPIC,
                         "frame_id": "map_ned",
-                        "muzzle_speed_mps": 55.0,
+                        "muzzle_speed_mps": LaunchConfiguration(
+                            "muzzle_speed_mps"),
                         "coverage_half_extent_m": 1.5,
-                        "deployment_time_s": 0.055,
+                        "deployment_time_s": LaunchConfiguration(
+                            "deployment_time_s"),
                         "effective_range_min_m": 4.0,
                         "effective_range_max_m": 9.8,
                         "primary_axis_error_rad": LaunchConfiguration(
@@ -198,7 +216,7 @@ def generate_launch_description():
                             "stable_track_time_s"
                         ),
                         "engagement_timeout_s": 0.0,
-                        "pursuer_velocity_compensation": True,
+                        "pursuer_velocity_compensation": False,
                         "weapon_authorization_topic": "/tracking/weapon_authorization",
                     }
                 ],

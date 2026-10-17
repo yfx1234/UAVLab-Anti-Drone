@@ -207,3 +207,77 @@ class TestBuildObservation:
         fields = mapping.build_observation(make_frame(), make_target())
         assert all(math.isfinite(v) and v >= 0.0 for v in fields["angle_covariance"])
         assert all(math.isfinite(v) and v >= 0.0 for v in fields["position_covariance"])
+
+
+class TestStickySelection:
+    """R1-4：sticky 选择——同 ID 续选，双目标不跳，超时/远离才切换。"""
+
+    def test_same_id_kept_even_when_other_confidence_higher(self):
+        targets = [
+            mapping_test_target(track_id=1, confidence=0.9),
+            mapping_test_target(track_id=2, confidence=0.95),
+        ]
+        previous = {"track_id": 1, "u": 850.0, "v": 430.0, "age_s": 0.05}
+        target, reason = mapping.select_target(targets, previous=previous)
+        assert reason is None and (target["track_id"] & 0x7FFFFFFF) == 1
+
+    def test_near_pixel_distance_continues_after_id_change(self):
+        targets = [
+            mapping_test_target(track_id=9, confidence=0.9,
+                                pixel_u=870.0, pixel_v=440.0),
+        ]
+        previous = {"track_id": 1, "u": 850.0, "v": 430.0, "age_s": 0.1}
+        target, _ = mapping.select_target(targets, previous=previous)
+        assert target is not None  # ~25px 距离 ≤150 → 视为同一目标
+
+    def test_far_new_target_after_sticky_timeout(self):
+        targets = [mapping_test_target(track_id=9, confidence=0.9,
+                                       pixel_u=1500.0, pixel_v=800.0)]
+        previous = {"track_id": 1, "u": 850.0, "v": 430.0, "age_s": 0.5}
+        target, _ = mapping.select_target(targets, previous=previous)
+        assert target is not None  # 超时后允许切换
+
+
+def mapping_test_target(**kw):
+    base = dict(
+        track_id=1, class_id=0, confidence=0.9,
+        bbox_xyxy=[800.0, 400.0, 834.0, 434.0],
+        detector_source="yolo", score_kind="class_confidence",
+        class_confirmed=True, pixel_u=850.0, pixel_v=430.0,
+        horizontal_angle_rad=0.0, vertical_angle_rad=0.0,
+        mode="bearing_only", position_valid=False,
+        depth_measured_valid=False, depth_z_m=None, distance_m=None,
+        position_camera=None,
+    )
+    base.update(kw)
+    return base
+
+
+class TestDepthConsistency:
+    """R1-4：深度与相机系位置矛盾/缺失时降级 bearing-only。"""
+
+    def test_missing_position_downgrades(self):
+        t = mapping_test_target(mode="depth", depth_measured_valid=True,
+                                depth_z_m=6.0, distance_m=6.0,
+                                position_camera=None)
+        fields = mapping.build_observation(
+            make_frame(), t)
+        assert fields["depth_valid"] is False
+        assert fields["depth_inconsistent"] is True
+
+    def test_contradictory_position_downgrades(self):
+        # 深度 6m，但位置 z=3m（偏差远超 5cm+5%）
+        t = mapping_test_target(mode="depth", depth_measured_valid=True,
+                                depth_z_m=6.0, distance_m=6.0,
+                                position_camera=[0.1, 0.1, 3.0])
+        fields = mapping.build_observation(make_frame(), t)
+        assert fields["depth_valid"] is False
+        assert fields["depth_inconsistent"] is True
+
+    def test_consistent_position_keeps_depth(self):
+        t = mapping_test_target(mode="depth", depth_measured_valid=True,
+                                depth_z_m=6.0, distance_m=6.0,
+                                position_camera=[0.1, 0.1, 6.0])
+        fields = mapping.build_observation(make_frame(), t)
+        assert fields["depth_valid"] is True
+        assert fields["depth_inconsistent"] is False

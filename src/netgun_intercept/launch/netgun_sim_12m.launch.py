@@ -60,8 +60,10 @@ def generate_launch_description():
             # 强制重置滤波器；与相机帧率无关（任意频率零改参）
             DeclareLaunchArgument("divergence_reset_period_s", default_value="1.5"),
             # engage 模式：auto=仿真自动解锁+offboard；rc_gated=实机
-            # 门控（切入前零 setpoint/切出即停/永不下发指令）
+            # 门控（切入前零 setpoint/切出即停/永不下发指令）。
+            # auto 需 allow_auto_engage 白名单（R0-1 防误配）
             DeclareLaunchArgument("engage_mode", default_value="auto"),
+            DeclareLaunchArgument("allow_auto_engage", default_value="true"),
             # BEARING_HOLD 导航（§八-8 死区外推，2026-10-15 矩阵证伪默认关；
             # false=§十七 方位逼近 3.5 m/s = matrix_geo2 验证口径）
             DeclareLaunchArgument(
@@ -246,6 +248,8 @@ def generate_launch_description():
                         "feedforward_gain": 1.0,
                         # engage 模式（§八-9 实机）：auto/rc_gated
                         "engage_mode": LaunchConfiguration("engage_mode"),
+                        "allow_auto_engage":
+                            LaunchConfiguration("allow_auto_engage"),
                         # 航向伺服（交接清单 §八-1）：机头=相机宽轴对准
                         # 目标航线；锁定模式保持（估计失效/目标静止不转）
                         "yaw_servo_enabled": True,
@@ -340,7 +344,7 @@ def generate_launch_description():
                             "stable_track_time_s"
                         ),
                         "engagement_timeout_s": 0.0,
-                        "pursuer_velocity_compensation": True,
+                        "pursuer_velocity_compensation": False,
                         # 武器授权单一真源（§八-0）：guidance AIM 进入条件
                         "weapon_authorization_topic": "/tracking/weapon_authorization",
                     }

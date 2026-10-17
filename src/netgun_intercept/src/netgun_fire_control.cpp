@@ -29,6 +29,7 @@ FireDecision NetgunFireControl::update(const FireControlInput & input)
 
   const bool base_ok = input.authorization_passed &&
     input.estimate_valid &&
+    input.measurement_quality_ok &&
     distance_gate_passed(input) &&
     std::isfinite(input.axis_error_rad) &&
     input.axis_error_rad >= 0.0 &&

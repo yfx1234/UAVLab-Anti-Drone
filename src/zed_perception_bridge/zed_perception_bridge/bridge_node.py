@@ -12,7 +12,8 @@ zed_perception_interfaces（消费端免重建消息包）。
 1Hz 发布 /debug/bridge_state（std_msgs/String，key=value），风格对齐
 /debug/{guidance,strike,estimator}_state，便于按 estimator->strike->guidance
 之外的桥接环节归因。其中 intrinsics_fx/fy/cx/cy 透传感知上报的相机内参，
-供核对 relative_estimator 的 camera_fx 等 launch 参数（现用 1274 假设值）。
+供核对 relative_estimator 的 camera_fx 等 launch 参数（实机 launch 现用
+SDK 实测值 1266.5/1011.7/538.4）。
 """
 
 import json
@@ -38,6 +39,9 @@ class PerceptionBridgeNode(Node):
         self.declare_parameter("debug_topic", "/debug/bridge_state")
         self.declare_parameter("selection", "confidence")
         self.declare_parameter("allow_generic", False)
+        # R1-4：优先保持上一帧目标（同 ID 续选/0.3s 内 150px 近距续选），
+        # 防双目标或误检在场时逐帧跳变打断估计
+        self.declare_parameter("selection_sticky", True)
         self.declare_parameter("min_confidence", 0.0)
         self.declare_parameter("debug_period_s", 1.0)
 
@@ -51,6 +55,7 @@ class PerceptionBridgeNode(Node):
         self._last_intrinsics = {}
         self._stamps = {"received": [], "forwarded": []}
         self._warned = set()
+        self._last_forwarded = None
 
         input_topic = str(self.get_parameter("input_json_topic").value)
         output_topic = str(self.get_parameter("output_topic").value)
@@ -96,8 +101,19 @@ class PerceptionBridgeNode(Node):
 
         policy = str(self.get_parameter("selection").value)
         allow_generic = bool(self.get_parameter("allow_generic").value)
+        previous = None
+        if bool(self.get_parameter("selection_sticky").value) and \
+            self._last_forwarded is not None:
+            lf = self._last_forwarded
+            previous = {
+                "track_id": lf["track_id"],
+                "u": lf["u"],
+                "v": lf["v"],
+                "age_s": (now_ns - lf["t_ns"]) / 1e9,
+            }
         target, reason = mapping.select_target(
-            frame["targets"], policy=policy, allow_generic=allow_generic
+            frame["targets"], policy=policy, allow_generic=allow_generic,
+            previous=previous
         )
         if target is None:
             self._drop(reason)
@@ -155,6 +171,14 @@ class PerceptionBridgeNode(Node):
         self._last_conf = out.confidence
         self._last_depth_valid = out.depth_valid
         self._last_stamp_age_ms = (now_ns - fields["stamp_ns"]) / 1e6
+        if fields["depth_inconsistent"]:
+            self._last_reason = "depth_inconsistent"
+        self._last_forwarded = {
+            "track_id": out.track_id,
+            "u": out.pixel_u,
+            "v": out.pixel_v,
+            "t_ns": now_ns,
+        }
 
     # ---- 调试与计数 ----
 
