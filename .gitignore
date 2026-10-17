@@ -1,25 +1,43 @@
-# ---- colcon 构建产物 ----
-build/
-install/
-log/
-
-# ---- 模型权重（大二进制不入库，本地保留；结构与获取见 weights/README.md）----
-weights/*
-!weights/README.md
-
-# ---- Python ----
 __pycache__/
 *.pyc
-.venv/
-
-# ---- 仿真/运行副产物 ----
+*.log
+runtime/
+test-results/
+.worktrees/
+.superpowers/
+.impeccable/review/
+.impeccable/mocks/
+.impeccable/build/
+data/
+build*/
+install*/
+log*/
+*.part
+*.engine
+*.svo
+*.svo2
+*.mp4
+*.mkv
+*.avi
+*.pid
 *.bag
 nohup.out
-*.log
 /core.*
-
-# ---- 编辑器/系统 ----
+.venv/
+.env
+.env.*
+!.env.example
+*credentials*.json
+*credentials*.yml
+*credentials*.yaml
+connection.local.json
+id_rsa*
+id_ed25519*
+*.pem
+*.key
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
+weights/*
+!weights/README.md
