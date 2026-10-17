@@ -353,6 +353,17 @@ private:
     const bool height_ok = position_fresh &&
       std::isfinite(latest_local_position_->z) &&
       -latest_local_position_->z >= minimum_height_m_;
+    // R1-6：退出 offboard/断链持续 1s → 重置就位锚与稳定跟踪计时，
+    // 攻击授权延时在下次进入时重新起算（否则 2s 防抖只对首次有效）
+    if (!armed_and_offboard) {
+      if (disarmed_since_s_ < 0.0) { disarmed_since_s_ = now_s; }
+      if (now_s - disarmed_since_s_ >= 1.0) {
+        ready_time_s_ = -1.0;
+        est_valid_since_s_ = -1.0;
+      }
+    } else {
+      disarmed_since_s_ = -1.0;
+    }
     input.authorization_passed = armed_and_offboard && height_ok &&
       ready_time_s_ > 0.0 &&
       now_s - ready_time_s_ >= attack_enable_delay_s_ &&
@@ -520,6 +531,7 @@ private:
   double engagement_timeout_s_ = 0.0;
   bool pursuer_velocity_compensation_ = false;
   double ready_time_s_ = -1.0;
+  double disarmed_since_s_ = -1.0;  // R1-6：非 armed/offboard 持续时长
   double first_valid_estimate_s_ = -1.0;
   double last_auth_pub_s_ = -1.0;
   double last_debug_pub_s_ = -1.0;
