@@ -33,6 +33,8 @@ def valid_request(host,origin,token,expected):
     return host in ('127.0.0.1:8767','localhost:8767') and origin=='http://'+host and isinstance(token,str) and hmac.compare_digest(token,expected)
 
 class Panel:
+    # 类级兜底：测试用 Panel.__new__ 跳过 __init__ 铺字段时保持 snapshot 完整
+    interceptor={};interceptor_error=None;interceptor_observed_at=0.0
     def __init__(self):
         self.token=secrets.token_urlsafe(32);self.instance_id=uuid.uuid4().hex;self.lock=threading.RLock();self.board=BoardClient();self.jobs=JobManager()
         self.connected=False;self.state={};self.state_observed_at=0.0;self.control_roundtrip_ms=None;self.error=None;self.closed=threading.Event();self.local_revision=0
