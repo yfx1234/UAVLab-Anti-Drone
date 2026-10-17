@@ -120,21 +120,41 @@ inline EstimatedZ estimate_target_z(double size,double fx,double fy,double bw,do
   return {normalized_extent>0,size/normalized_extent};
 }
 class TargetAssociation {
-  struct Track {std::uint32_t id;Detection box;double seen;int streak;};
+  struct Track {std::uint32_t id;Detection box;double vx,vy;double seen;int streak;};
   std::vector<Track> tracks_;std::uint32_t next_{1};
 public:
   void reset(){tracks_.clear();} // ID allocator remains monotonic within a run.
+  // Constant-velocity prediction plus a center-distance fallback: small fast
+  // targets routinely stop overlapping their previous box (field video
+  // 2026-10-17: 41% per-frame ID churn with pure same-frame IoU, which
+  // starves depth_ready of its 3-consecutive-frame window).
   std::vector<std::uint32_t> assign(const std::vector<Detection>& boxes,double now) {
     tracks_.erase(std::remove_if(tracks_.begin(),tracks_.end(),[&](const Track& t){return now-t.seen>.5;}),tracks_.end());
     std::vector<std::uint32_t> ids;std::vector<std::uint32_t> used;
     for(const auto& box:boxes){
-      Track* best=nullptr;double score=.2,second=0;
+      Track* best=nullptr;double score=0,second=0;
       for(auto& t:tracks_)if(t.box.class_id==box.class_id && std::find(used.begin(),used.end(),t.id)==used.end()) {
-        double iou=box_iou(box,t.box);
-        if(iou>score){second=score;score=iou;best=&t;}else second=std::max(second,iou);
+        double dt=std::clamp(now-t.seen,1.0/30,0.2);
+        Detection predicted=t.box;
+        predicted.x1+=t.vx*dt;predicted.x2+=t.vx*dt;
+        predicted.y1+=t.vy*dt;predicted.y2+=t.vy*dt;
+        double iou=box_iou(box,predicted),value=0;
+        if(iou>=.2)value=iou;
+        else{
+          double distance=std::hypot((box.x1+box.x2-predicted.x1-predicted.x2)/2,(box.y1+box.y2-predicted.y1-predicted.y2)/2);
+          double extent=std::hypot(box.x2-box.x1,box.y2-box.y1);
+          if(extent>0&&distance<=1.25*extent)value=.2-.08*distance/extent;
+        }
+        if(value>score){second=score;score=value;best=&t;}else second=std::max(second,value);
       }
-      if(best && score-second>.05){best->box=box;best->seen=now;ids.push_back(best->id);}
-      else{tracks_.push_back({next_++,box,now,0});ids.push_back(tracks_.back().id);}
+      if(best && score-second>.03){
+        double dt=std::clamp(now-best->seen,1.0/30,0.2);
+        double cx=(box.x1+box.x2)/2,cy=(box.y1+box.y2)/2;
+        double ox=(best->box.x1+best->box.x2)/2,oy=(best->box.y1+best->box.y2)/2;
+        best->vx=.5*((cx-ox)/dt)+.5*best->vx;
+        best->vy=.5*((cy-oy)/dt)+.5*best->vy;
+        best->box=box;best->seen=now;ids.push_back(best->id);}
+      else{tracks_.push_back({next_++,box,0,0,now,0});ids.push_back(tracks_.back().id);}
       used.push_back(ids.back());
     }
     return ids;

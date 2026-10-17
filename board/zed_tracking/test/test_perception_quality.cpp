@@ -62,6 +62,33 @@ int main() {
   zed_tracking::Detection box;box.x1=10;box.y1=10;box.x2=30;box.y2=30;box.class_id=0;
   auto first=tracks.assign({box},1)[0];tracks.reset();
   assert(tracks.assign({box},2)[0]>first);
+  { // Fast small target: 17px box jumping 25px/frame must keep one ID
+    // (2026-10-17 field video: pure same-frame IoU churned 41% of frames).
+    zed_tracking::TargetAssociation fast;std::uint32_t prev=0;int held=0;
+    for(int i=0;i<8;++i){
+      zed_tracking::Detection b;b.class_id=0;
+      b.x1=float(100+i*25);b.y1=200;b.x2=b.x1+17;b.y2=b.y1+17;b.score=.8f;
+      auto id=fast.assign({b},i/15.0)[0];
+      if(prev&&id==prev)++held;prev=id;
+    }
+    assert(held>=6);
+  }
+  { // Center-distance fallback: jump of ~1 box-diagonal (no IoU) still matches
+    zed_tracking::TargetAssociation kept;
+    zed_tracking::Detection a;a.class_id=0;a.x1=0;a.y1=0;a.x2=20;a.y2=20;a.score=.8f;
+    auto id=kept.assign({a},0)[0];
+    zed_tracking::Detection b=a;b.x1+=16;b.x2+=16;b.y1+=12;b.y2+=12;
+    assert(kept.assign({b},1/15.0)[0]==id);
+    zed_tracking::Detection c=a;c.x1+=60;c.x2+=60;c.y1+=45;c.y2+=45;
+    assert(kept.assign({c},2/15.0)[0]!=id);
+  }
+  { // Ambiguity margin: same-frame pair never collapses onto one track
+    zed_tracking::TargetAssociation ambiguous;
+    zed_tracking::Detection a;a.class_id=0;a.x1=0;a.y1=0;a.x2=20;a.y2=20;a.score=.8f;
+    zed_tracking::Detection twin=a;twin.x1=1;twin.x2=21;
+    auto ids=ambiguous.assign({a,twin},0);
+    assert(ids[0]!=ids[1]);
+  }
   assert(!zed_tracking::model_change_allowed(true,"","new_model"));
   assert(zed_tracking::model_change_allowed(true,"same","same"));
   zed_tracking::SessionWorkCounter pending;
