@@ -37,6 +37,14 @@ int main() {
   assert(!small.valid);
   assert(!zed_tracking::estimate_target_z(.3,100,100,30,20,true).valid);
   assert(std::abs(zed_tracking::estimate_target_z(.3,100,100,30,20,false).z-1)<1e-9);
+  { // Depth veto rules: missing or uncalibrated size estimate never rejects
+    // a real measurement; only a calibrated prior with a real disagreement does.
+    assert(!zed_tracking::depth_vetoed_by_size_prior(false,true,2.0,6.0));
+    assert(!zed_tracking::depth_vetoed_by_size_prior(true,false,2.0,6.0));
+    assert(zed_tracking::depth_vetoed_by_size_prior(true,true,2.0,6.0));
+    assert(!zed_tracking::depth_vetoed_by_size_prior(true,true,3.6,6.0)); // boundary
+    assert(!zed_tracking::depth_vetoed_by_size_prior(true,true,6.0,5.0));
+  }
   assert(!zed_tracking::targets_are_fresh(false,true,.5,.4));
   assert(!zed_tracking::targets_are_fresh(true,false,.1,.1));
   assert(!zed_tracking::targets_are_fresh(true,true,.1,1.1));

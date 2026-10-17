@@ -548,7 +548,7 @@ class Perception final:public rclcpp::Node {
           bool clipped=b.x1<=1||b.y1<=1||b.x2>=f->w-2||b.y2>=f->h-2;
           auto q=zed_tracking::assess_target_depth(f->depth.empty()?nullptr:f->depth.data(),f->confidence.empty()?nullptr:f->confidence.data(),f->w,f->h,b.x1,b.y1,b.x2,b.y2);
           auto estimate=zed_tracking::estimate_target_z(extent,intrinsics_.fx,intrinsics_.fy,b.x2-b.x1,b.y2-b.y1,clipped);
-          bool consistent=estimate.valid&&zed_tracking::depth_matches_size_prior(q.z,estimate.z);
+          bool consistent=!zed_tracking::depth_vetoed_by_size_prior(estimate.valid,calibrated,q.z,estimate.z);
           bool separated=q.accepted&&zed_tracking::target_separates_from_background(f->depth.data(),f->confidence.data(),f->w,f->h,b.x1,b.y1,b.x2,b.y2,q.z);
           const bool accepted=q.accepted&&!clipped&&consistent&&separated;
           bool measured=input.generic_only?sky_tracker.confirm_depth(input.id&0x7fffffffu,accepted):association.depth_ready(input.id,accepted);
@@ -557,7 +557,7 @@ class Perception final:public rclcpp::Node {
           std::string mode=measured?"depth":(valid?"size_estimate":"bearing_only");
           std::string reason=measured?q.reason:(clipped?"clipped_box":q.reason);
           if(q.accepted&&!measured&&!clipped)reason="depth_temporal_warmup";
-          if(q.accepted&&!consistent&&!clipped&&estimate.valid)reason="depth_size_disagreement";
+          if(q.accepted&&!consistent&&!clipped)reason="depth_size_disagreement";
           if(q.accepted&&consistent&&!separated&&!clipped)reason="background_depth_ambiguous";
           if(!valid&&!clipped)reason="box_too_small";
           Json target={{"track_id",input.id},{"class_id",b.class_id},{"confidence",b.score},{"bbox_xyxy",{b.x1,b.y1,b.x2,b.y2}},

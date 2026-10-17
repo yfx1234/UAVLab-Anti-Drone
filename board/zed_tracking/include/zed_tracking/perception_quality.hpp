@@ -43,6 +43,12 @@ inline bool depth_matches_size_prior(double depth,double estimate) {
   // Coarse sanity gate only. Perspective/rotor extent still needs field calibration.
   return std::isfinite(depth+estimate)&&depth>0&&estimate>0&&depth>=estimate*.6&&depth<=estimate/ .6;
 }
+// Measured stereo depth may only be vetoed by the size-derived range when the
+// size prior is calibrated AND the estimate exists; an absent or uncalibrated
+// estimate must skip the check, never reject the measurement (2026-10-17).
+inline bool depth_vetoed_by_size_prior(bool estimate_valid,bool calibrated,double depth,double estimate) {
+  return estimate_valid&&calibrated&&!depth_matches_size_prior(depth,estimate);
+}
 struct TargetDepthQuality {
   bool accepted{false}; double z{0},ratio{0},iqr{0}; int count{0};
   std::string reason{"no_depth"};
