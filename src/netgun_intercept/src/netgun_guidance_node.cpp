@@ -296,7 +296,9 @@ private:
   {
     return weapon_auth_ && now_s - auth_rx_s_ <= weapon_auth_timeout_s_;
   }
-  // 交战状态复位（rc_gated 切出 / 飞控数据过期共用；R0-3 提交扩展其覆盖面）
+  // 交战状态复位（rc_gated 切出 / 飞控数据过期共用）。R0-3：覆盖全部
+  // "第二次进入 offboard 会串场"的内部状态——保持点、斜率限幅种子、
+  // 低通估计、积分、偏航锁定、授权/搜索计时、就位发布标志。
   void reset_engagement_state(const char* reason)
   {
     const bool was_active = phase_ != Phase::WAITING || bearing_hold_;
@@ -310,10 +312,43 @@ private:
     settle_ok_since_s_ = -1.0;
     ever_had_est_ = false;      // 重新搜索（自旋至再捕获）
     search_spin_logged_ = false;
+    hold_target_[0] = lp_ ? lp_->x : 0.0;
+    hold_target_[1] = lp_ ? lp_->y : 0.0;
+    hold_target_[2] = lp_ ? lp_->z : -takeoff_h_;
+    last_vx_ = last_vy_ = last_vz_ = 0.0;
+    est_lp_[0] = est_lp_[1] = est_lp_[2] = 0.0;
+    est_lp_seeded_ = false;
+    integral_x_ = integral_y_ = 0.0;
+    track_entry_s_ = -1.0;
+    yaw_locked_ = false;
+    yaw_above_since_s_ = -1.0;
+    speed_above_since_s_ = -1.0;
+    est_lost_since_s_ = -1.0;
+    est_recover_since_s_ = -1.0;
+    ready_published_ = false;
     if (was_active && now().seconds() - last_reset_log_s_ >= 1.0) {
       last_reset_log_s_ = now().seconds();
       RCLCPP_WARN(get_logger(), "engagement reset (%s) → standby", reason);
     }
+  }
+  // R0-3：切入 offboard 那一刻用当前位置/速度/航向初始化——不初始化时
+  // 保持点滞留旧值（首飞锚点缺失或二次进入=上一次目标点），飞机会飞向
+  // PX4 本地原点或旧目标；斜率限幅/低通从旧值起步会有指令阶跃。
+  void on_engage_entry()
+  {
+    hold_target_[0] = lp_->x;
+    hold_target_[1] = lp_->y;
+    hold_target_[2] = -takeoff_h_;
+    last_vx_ = lp_->vx;
+    last_vy_ = lp_->vy;
+    last_vz_ = lp_->vz;
+    yaw_sp_ = lp_->heading;
+    yaw_sp_init_ = true;
+    est_lp_seeded_ = false;
+    integral_x_ = integral_y_ = 0.0;
+    hold_mode_ = true;
+    bearing_hold_ = false;
+    track_entry_s_ = -1.0;
   }
   void tick()
   {
@@ -417,6 +452,7 @@ private:
     }
 
     if (phase_ == Phase::WAITING) {
+      on_engage_entry();
       phase_ = Phase::TAKEOFF;
       RCLCPP_INFO(get_logger(), "phase → TAKEOFF");
     }
@@ -434,7 +470,7 @@ private:
       // 才起旋。确认窗排除回拉段的过零点（实测回拉峰值 ~0.5m/s）；
       // 超时兜底直接起旋（慢一点的原地旋转仍远优于无标志）。
       send_pos_sp(hold_target_[0], hold_target_[1], hold_target_[2],
-        0.0, 0.0, 0.0, yaw_servo_enabled_ ? frozen_yaw() : 0.0);
+        0.0, 0.0, 0.0, frozen_yaw());
       const double spd = std::hypot(lp_->vx, lp_->vy);
       const double now_s7 = now().seconds();
       if (spd < spin_settle_speed_mps_) {
@@ -479,7 +515,7 @@ private:
     if (phase_ == Phase::DONE) {
       // 开火后原地保持（脱离追击）；航向锁定最后指令值
       send_pos_sp(hold_target_[0], hold_target_[1], hold_target_[2],
-        0.0, 0.0, 0.0, yaw_servo_enabled_ ? frozen_yaw() : 0.0);
+        0.0, 0.0, 0.0, frozen_yaw());
       return;
     }
 
@@ -552,11 +588,21 @@ private:
     // 只滤反馈（P/积分/保持点），前馈速度保持原始——摆动来自位置环
     // 对 IMM 噪声的响应（±0.23m@1.1s=1.8° 轴误差贴 2° 主门）
     if (est_ok) {
-      const double alpha = est_lp_tau_ > 0.0 ?
-        std::min(1.0, (1.0 / ctrl_hz_) / est_lp_tau_) : 1.0;
-      est_lp_[0] += alpha * (est_->position.x - est_lp_[0]);
-      est_lp_[1] += alpha * (est_->position.y - est_lp_[1]);
-      est_lp_[2] += alpha * (est_->position.z - est_lp_[2]);
+      if (!est_lp_seeded_) {
+        // R0-3：第一条有效估计直接赋值——从 0 起低通会把反馈项拖 ~1s
+        est_lp_[0] = est_->position.x;
+        est_lp_[1] = est_->position.y;
+        est_lp_[2] = est_->position.z;
+        est_lp_seeded_ = true;
+      } else {
+        const double alpha = est_lp_tau_ > 0.0 ?
+          std::min(1.0, (1.0 / ctrl_hz_) / est_lp_tau_) : 1.0;
+        est_lp_[0] += alpha * (est_->position.x - est_lp_[0]);
+        est_lp_[1] += alpha * (est_->position.y - est_lp_[1]);
+        est_lp_[2] += alpha * (est_->position.z - est_lp_[2]);
+      }
+    } else {
+      est_lp_seeded_ = false;
     }
 
     // AIM（B 路线）：速度匹配 + 加速度前馈主动倾斜。瞄准目标=PIP（est+
@@ -606,7 +652,7 @@ private:
         double vz = vz_hold;
         if (alt < min_h_ && vz > 0) vz = 0;
         send_aim_sp(aim_vx_, aim_vy_, vz, ax, ay,
-          yaw_servo_enabled_ ? frozen_yaw() : 0.0);
+          frozen_yaw());
         return;
       }
     }
@@ -739,7 +785,7 @@ private:
       }
       yaw_sp_ += search_spin_rate_rad_s_ / ctrl_hz_;
     }
-    const double yaw_cmd = yaw_servo_enabled_ ? frozen_yaw() : 0.0;
+    const double yaw_cmd = frozen_yaw();
 
     // AIM 进入（完整版，TRACK 内）：稳定跟踪 aim_enter_delay + 武器授权
     // （strike 单一真源）+ 目标速度门。【两种跟踪形态都可进入】——1 m/s
