@@ -344,7 +344,7 @@ def generate_launch_description():
                             "stable_track_time_s"
                         ),
                         "engagement_timeout_s": 0.0,
-                        "pursuer_velocity_compensation": True,
+                        "pursuer_velocity_compensation": False,
                         # 武器授权单一真源（§八-0）：guidance AIM 进入条件
                         "weapon_authorization_topic": "/tracking/weapon_authorization",
                     }

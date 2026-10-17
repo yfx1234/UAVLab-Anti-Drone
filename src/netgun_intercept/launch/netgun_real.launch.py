@@ -47,6 +47,9 @@ def generate_launch_description():
             # 避开真实感知的 JSON 流，见 tools/board_test/）
             DeclareLaunchArgument(
                 "bridge_input_topic", default_value="/perception/observations_json"),
+            # R0-4：AIM 与火控共用同一组枪口/展开参数（统一瞄准口径）
+            DeclareLaunchArgument("muzzle_speed_mps", default_value="55.0"),
+            DeclareLaunchArgument("deployment_time_s", default_value="0.055"),
             # ---- 感知桥（PerceptionFrame v2 JSON -> DepthObservation V1） ----
             Node(
                 package="zed_perception_bridge",
@@ -129,6 +132,11 @@ def generate_launch_description():
                         "local_position_topic": "/fmu/out/vehicle_local_position",
                         "status_topic": "/fmu/out/vehicle_status",
                         "engage_mode": "rc_gated",
+                        # R0-4：AIM 与火控统一瞄准口径（与 strike 同参）
+                        "muzzle_speed_mps": LaunchConfiguration(
+                            "muzzle_speed_mps"),
+                        "deployment_time_s": LaunchConfiguration(
+                            "deployment_time_s"),
                         "takeoff_height_m": 5.8,
                         "minimum_height_m": 1.6,
                         "horizontal_position_gain": 2.0,
@@ -178,9 +186,11 @@ def generate_launch_description():
                         "local_position_topic": "/fmu/out/vehicle_local_position",
                         "shot_topic": SHOT_TOPIC,
                         "frame_id": "map_ned",
-                        "muzzle_speed_mps": 55.0,
+                        "muzzle_speed_mps": LaunchConfiguration(
+                            "muzzle_speed_mps"),
                         "coverage_half_extent_m": 1.5,
-                        "deployment_time_s": 0.055,
+                        "deployment_time_s": LaunchConfiguration(
+                            "deployment_time_s"),
                         "effective_range_min_m": 4.0,
                         "effective_range_max_m": 9.8,
                         "primary_axis_error_rad": LaunchConfiguration(
@@ -201,7 +211,7 @@ def generate_launch_description():
                             "stable_track_time_s"
                         ),
                         "engagement_timeout_s": 0.0,
-                        "pursuer_velocity_compensation": True,
+                        "pursuer_velocity_compensation": False,
                         "weapon_authorization_topic": "/tracking/weapon_authorization",
                     }
                 ],

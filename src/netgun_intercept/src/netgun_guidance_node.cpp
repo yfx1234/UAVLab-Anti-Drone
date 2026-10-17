@@ -14,6 +14,8 @@
 #include <px4_offboard_tracking/msg/relative_estimate.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/bool.hpp>
+
+#include "netgun_intercept/netgun_model.hpp"
 #include <std_msgs/msg/string.hpp>
 #include <virtual_interception_interfaces/msg/virtual_shot_event.hpp>
 
@@ -129,6 +131,15 @@ public:
     fcu_timeout_s_ = declare_parameter<double>("fcu_timeout_s", 0.5);
     weapon_auth_timeout_s_ =
       declare_parameter<double>("weapon_auth_timeout_s", 0.5);
+    // R0-4：AIM 与火控统一瞄准口径——同一 muzzle/deployment、同一
+    // aim_point（相对位置+相对速度×trigger_lead_s），PIP 用原始估计
+    muzzle_speed_mps_ = declare_parameter<double>("muzzle_speed_mps", 55.0);
+    deployment_time_s_ =
+      declare_parameter<double>("deployment_time_s", 0.055);
+    NetgunModelConfig aim_cfg;
+    aim_cfg.muzzle_speed_mps = muzzle_speed_mps_;
+    aim_cfg.deployment_time_s = deployment_time_s_;
+    aim_model_ = NetgunModel(aim_cfg);
     // task origin 收敛后锁定（清单§八-5）：boot 期 EKF 未收敛值曾偏 6.6m
     task_origin_wait_converged_ =
       declare_parameter<bool>("task_origin_wait_converged", true);
@@ -634,14 +645,18 @@ private:
           RCLCPP_INFO(
             get_logger(), "aim seed v=(%.2f,%.2f)", aim_vx_, aim_vy_);
         }
-        const double tof = std::sqrt(
-          est_lp_[0] * est_lp_[0] + est_lp_[1] * est_lp_[1] +
-          est_lp_[2] * est_lp_[2]) / 55.0;
-        const double pip_x = est_lp_[0] + est_->velocity.x * tof;
-        const double pip_y = est_lp_[1] + est_->velocity.y * tof;
+        // R0-4：PIP 用原始估计（非低通）+ 与火控同款 trigger_lead_s
+        //（含展开时间），瞄准点口径与火控 aim_point 完全一致
+        const double aim_range = std::sqrt(
+          est_->position.x * est_->position.x +
+          est_->position.y * est_->position.y +
+          est_->position.z * est_->position.z);
+        const double tof = aim_model_.trigger_lead_s(aim_range);
+        const double pip_x = est_->position.x + est_->velocity.x * tof;
+        const double pip_y = est_->position.y + est_->velocity.y * tof;
         const double pip_h = std::hypot(pip_x, pip_y);
         const double theta = std::min(
-          std::atan2(pip_h, std::abs(est_lp_[2])) * aim_tilt_compensation_,
+          std::atan2(pip_h, std::abs(est_->position.z)) * aim_tilt_compensation_,
           aim_max_tilt_rad_);
         const double a_mag = 9.80665 * std::tan(theta);
         double ax = 0.0, ay = 0.0;
@@ -1125,6 +1140,9 @@ private:
   int vehicle_command_target_system_{2};
   double fcu_timeout_s_{0.5};
   double weapon_auth_timeout_s_{0.5};
+  double muzzle_speed_mps_{55.0};
+  double deployment_time_s_{0.055};
+  NetgunModel aim_model_;
   double lp_rx_s_{-1e9};
   double st_rx_s_{-1e9};
   double auth_rx_s_{-1e9};

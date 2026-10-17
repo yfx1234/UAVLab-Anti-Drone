@@ -144,10 +144,18 @@ public:
     // 蒙射 B 支接口（默认关）：交战超时阈值，0=不启用。
     engagement_timeout_s_ =
       declare_parameter<double>("engagement_timeout_s", 0.0);
-    // 本机速度补偿：网继承发射器速度（55m/s 下 2m/s 横漂≈2°/0.29m@8m），
-    // 瞄准方向按 (预测点 - v_own·提前量) 归一，消除该系统偏差。
+    // 本机速度补偿（R0-4 默认关闭）：相对估计已是"目标减本机"，网弹又
+    // 继承发射器速度——瞄准方向就是相对量外推，再扣 v_own 属于重复扣除
+    //（同速跟随 3m/s 时 ~4.4°>4° 判窗，最好的射击时机反而不开火）。
+    // 参数仅留作 A/B 对照，为 true 时启动打 WARN。
     pursuer_velocity_compensation_ =
-      declare_parameter<bool>("pursuer_velocity_compensation", true);
+      declare_parameter<bool>("pursuer_velocity_compensation", false);
+    if (pursuer_velocity_compensation_) {
+      RCLCPP_WARN(
+        get_logger(),
+        "pursuer_velocity_compensation=true：相对估计语义下属重复扣除，"
+        "仅 A/B 对照用");
+    }
 
     const rclcpp::QoS reliable(10);
     // PX4 话题为 best_effort（与 relative_estimator 同款 px4_qos），
@@ -245,14 +253,16 @@ private:
     input.range_rate_mps =
       input.range_m > 1e-6 ? range_rate_numerator / input.range_m : 0.0;
 
-    // 预测拦截点：骨架用匀速外推；IMM 概率加权预测接口预留。
+    // 预测拦截点：统一瞄准点 aim_point（相对位置+相对速度×提前量，
+    // R0-4 唯一真源）；IMM 概率加权预测接口预留。
     const double lead_s = model_.trigger_lead_s(input.range_m);
-    std::array<double, 3> predicted{
-      relative_x + latest_estimate_->velocity.x * lead_s,
-      relative_y + latest_estimate_->velocity.y * lead_s,
-      relative_z + latest_estimate_->velocity.z * lead_s};
-    // 本机速度补偿：网继承发射器速度，瞄准方向扣除 v_own·lead 的贡献
-    //（v_own 取 PX4 融合速度，NED；缺失或关闭时不补偿）。
+    const double p_rel[3] = {relative_x, relative_y, relative_z};
+    const double v_rel[3] = {latest_estimate_->velocity.x,
+      latest_estimate_->velocity.y, latest_estimate_->velocity.z};
+    const auto aim = aim_point(p_rel, v_rel, lead_s);
+    std::array<double, 3> predicted{aim.x, aim.y, aim.z};
+    // 重复扣除的本机速度补偿（R0-4 前旧口径）：仅 A/B 对照用，默认关闭；
+    // 开启时 WARN——相对估计语义下再扣 v_own 属于双重扣除。
     if (pursuer_velocity_compensation_ && latest_local_position_ &&
       std::isfinite(latest_local_position_->vx) &&
       std::isfinite(latest_local_position_->vy) &&
@@ -464,7 +474,7 @@ private:
   double last_local_position_rx_s_{-1e9};
   double attack_enable_delay_s_ = 0.0;
   double engagement_timeout_s_ = 0.0;
-  bool pursuer_velocity_compensation_ = true;
+  bool pursuer_velocity_compensation_ = false;
   double ready_time_s_ = -1.0;
   double first_valid_estimate_s_ = -1.0;
   double last_auth_pub_s_ = -1.0;

@@ -24,6 +24,23 @@ struct CoverageInput
   double range_m = 0.0;
 };
 
+/// 匀速外推瞄准点（R0-4，唯一真源）：相对估计是"目标减本机"，网弹又
+/// 继承发射平台速度，故瞄准方向就是相对位置 + 相对速度×提前量——
+/// 不得再叠加/扣除任何本机速度项。AIM（制导）与火控共用本函数。
+struct AimPoint
+{
+  double x = 0.0;
+  double y = 0.0;
+  double z = 0.0;
+};
+
+inline AimPoint aim_point(
+  const double p_rel[3], const double v_rel[3], double lead_s)
+{
+  return {p_rel[0] + v_rel[0] * lead_s,
+    p_rel[1] + v_rel[1] * lead_s, p_rel[2] + v_rel[2] * lead_s};
+}
+
 class NetgunModel
 {
 public:
