@@ -41,9 +41,9 @@ ZED X Mini (GMSL)
 
 ## 分支与仓库约定
 
-- **GitHub `main`（本分支）**：完整板上代码（感知 + 拦截链）。
-- **Gitee `master`**：与本分支同树的镜像（`gitee.com/buaalab/anti-drone-interceptor`）。
+- **GitHub `main`** 与 **Gitee `master`**：完整板上代码（感知 + 拦截链），发布时指向同一个提交，源码与历史一致。
 - Gitee `perception`：仅感知副本；`netgun_intercept`：拦截链历史分支。
+- 后续改动须同步两个默认分支，并核对远端提交 SHA；`origin` 在不同本地副本中指向不同平台，使用前必须核对 URL。操作见 [仓库同步约定](docs/仓库同步约定.md)。
 - 模型权重、TensorRT 引擎、录像素材不入库；来源与哈希登记在 `models/` 与 `weights/README.md`。
 
 ## 环境与部署（系统依赖不随仓库分发，见下）
@@ -94,6 +94,7 @@ PC 工作台依赖：Python 3.10+、paramiko、ffmpeg（打包版即可），入
 | `docs/交接/网枪拦截项目交接文档.md` | 拦截链状态总览 + 下一步清单 |
 | `docs/项目开发手册.md` | 红线/参数真源/环境配方 |
 | `docs/仓库维护指南.md` | 目录职责与审计工具 |
+| `docs/仓库同步约定.md` | GitHub/Gitee 默认分支同步、远端名称与验收方式 |
 
 ## 安全红线（摘录，全文见拦截侧项目开发手册）
 
