@@ -99,8 +99,13 @@ def generate_launch_description():
                         "bearing_only_range_sigma_m": 30.0,
                         # 秒单位，与相机帧率无关（实机 15Hz 零改参）
                         "divergence_reset_period_s": 1.5,
-                        # 姿态采样容差：实机时间戳质量高于仿真，先沿用
-                        "attitude_sync_tolerance_s": 0.2,
+                        # 姿态采样容差：收紧到代码默认 0.05（R1-5；旧值 0.2s
+                        # 在 1 rad/s 角速度下即 ~11° 姿态误差）。首次接真
+                        # 飞控后按 estimator 诊断确认
+                        "attitude_sync_tolerance_s": 0.05,
+                        # PX4 与 ROS 时钟域判定容差：默认 5.0 过松，先收 0.5
+                        #（UXRCE_DDS_SYNCT 开启时应走直通分支；实接后核对）
+                        "attitude_clock_domain_tolerance_s": 0.5,
                         "innovation_gate_mahalanobis": 25.0,
                         "acceleration_noise_stddev_mps2": 4.0,
                     }

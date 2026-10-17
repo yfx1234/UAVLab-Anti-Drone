@@ -141,6 +141,11 @@ private:
     const double sample_time_s = SampleTimeAttitudeBuffer::px4_sample_or_receipt_time(
       msg.timestamp, msg.timestamp_sample, receipt_time_s,
       attitude_clock_domain_tolerance_s_);
+    // R1-5：接收-采样偏移统计（诊断 PX4 时钟域走哪条分支；实接飞控后
+    // 按此确认 attitude_clock_domain_tolerance_s 与 sync 容差是否合适）
+    ++att_off_n_;
+    att_off_sum_ += receipt_time_s - sample_time_s;
+    att_off_max_ = std::max(att_off_max_, receipt_time_s - sample_time_s);
     attitude_buffer_.add(sample_time_s, quaternion);
   }
 
@@ -432,7 +437,8 @@ private:
       RCLCPP_INFO(
         get_logger(),
         "estimator diag: obs=%llu inv=%llu attmiss=%llu acc=%llu bo=%llu "
-        "reset=%llu init=%d valid=%d age=%.2f",
+        "reset=%llu init=%d valid=%d age=%.2f rejsize=%llu "
+        "atavg=%.3f atmax=%.3f",
         static_cast<unsigned long long>(diag_obs_received_),
         static_cast<unsigned long long>(diag_rejected_invalid_),
         static_cast<unsigned long long>(diag_rejected_attitude_),
@@ -440,7 +446,10 @@ private:
         static_cast<unsigned long long>(diag_bearing_only_),
         static_cast<unsigned long long>(diag_filter_resets_),
         static_cast<int>(state.initialized), static_cast<int>(out.valid),
-        std::isfinite(out.data_age) ? out.data_age : -1.0);
+        std::isfinite(out.data_age) ? out.data_age : -1.0,
+        static_cast<unsigned long long>(diag_rejected_size_),
+        att_off_n_ > 0 ? att_off_sum_ / att_off_n_ : 0.0,
+        att_off_max_);
     }
   }
 
@@ -454,6 +463,9 @@ private:
   double attitude_sync_tolerance_s_;
   double attitude_buffer_s_;
   double attitude_clock_domain_tolerance_s_;
+  std::uint64_t att_off_n_{0};   // R1-5：接收−采样偏移统计
+  double att_off_sum_{0.0};
+  double att_off_max_{0.0};
   double pixel_stddev_px_;
   double depth_stddev_m_;
   CameraIntrinsics camera_intrinsics_;
