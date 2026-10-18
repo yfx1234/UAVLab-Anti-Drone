@@ -130,6 +130,10 @@ def main():
     rclpy.init()
     node = PreflightNode()
     try:
+        # 发现预热：本板 FastDDS 晚加入订阅者要 1-2s 才完成端点匹配，
+        # 不预热会把匹配延迟算进频率窗（板上实测 2026-10-18，全部频率
+        # 被打到 ~50%）
+        spin_for(node, 3.0)
         # 1-4. 飞控数据流 + 感知观测频率（共用 5s 窗）
         hz = measure_all_hz(
             node, [T_ATT, T_LP, T_ST, T_OBS, T_OBS_ALT], 5.0)
