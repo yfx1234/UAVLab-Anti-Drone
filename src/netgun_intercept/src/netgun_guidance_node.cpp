@@ -412,15 +412,25 @@ private:
       if ((phase_ != Phase::WAITING || bearing_hold_) &&
         t_gate - fcu_stale_since_s_ >= fcu_stale_reset_s_) {
         reset_engagement_state("fcu data stale");
+        stale_reset_done_ = true;  // H-6：恢复日志措辞区分两种情形
       }
       return;
     }
     if (fcu_stale_since_s_ > 0.0) {
       // 宽限窗内恢复：继续当前阶段；斜率限幅种子用当前实际速度重置，
       // 防停发期间的旧指令值在新一拍产生阶跃
-      RCLCPP_INFO(
-        get_logger(), "fcu data recovered after %.2fs (engagement kept)",
-        t_gate - fcu_stale_since_s_);
+      if (stale_reset_done_) {
+        // H-6：交战已被复位，"engagement kept" 会误导外场判读
+        RCLCPP_INFO(
+          get_logger(),
+          "fcu data recovered after %.2fs (engagement was reset → WAITING)",
+          t_gate - fcu_stale_since_s_);
+        stale_reset_done_ = false;
+      } else {
+        RCLCPP_INFO(
+          get_logger(), "fcu data recovered after %.2fs (engagement kept)",
+          t_gate - fcu_stale_since_s_);
+      }
       fcu_stale_since_s_ = -1.0;
       fcu_stale_logged_s_ = -1e9;
       last_vx_ = lp_->vx;
@@ -1287,6 +1297,7 @@ private:
   double fcu_stale_reset_s_{1.0};
   double fcu_stale_since_s_{-1.0};
   double fcu_stale_logged_s_{-1e9};
+  bool stale_reset_done_{false};  // H-6：stale 期间是否已复位交战
   bool post_shot_reengage_{false};
   double weapon_auth_timeout_s_{0.5};
   double muzzle_speed_mps_{55.0};
