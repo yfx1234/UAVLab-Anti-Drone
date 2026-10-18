@@ -347,7 +347,8 @@ target_link_libraries(
   "${cpp_typesupport_target}")
 
 install(TARGETS common_frame_transform camera_model sample_time_sync
-  target_observation_model relative_ekf estimator_evaluation
+  target_observation_model relative_ekf bearing_only_measurement
+  estimator_evaluation
   relative_kinematics_model approach_corridor mpc_guidance terminal_guidance
   z_axis_alignment attitude_setpoint_generator
   alignment_feasibility
