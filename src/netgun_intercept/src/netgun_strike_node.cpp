@@ -256,24 +256,16 @@ private:
     // R0-5：开火测量质量门——深度年龄（data_age 已回归深度本义）+
     // 距离/横向 1σ（取自 full_covariance 位置块沿视线分解）。方位-only
     // 或深度陈旧时 quality=false，三开门控全部闭锁。
+    // F-2：full_covariance 是 9×9 行主序，下标 9*row+col（旧代码按 3×3
+    // 取到的是第 0 行互协方差，σ_range 恒近 0、距离门永远放行）。
     {
       const double r_inv = input.range_m > 1e-6 ? 1.0 / input.range_m : 0.0;
       const double u[3] = {relative_x * r_inv, relative_y * r_inv,
         relative_z * r_inv};
-      double sigma_range2 = 0.0;
-      for (int row = 0; row < 3; ++row) {
-        for (int col = 0; col < 3; ++col) {
-          sigma_range2 += u[row] * latest_estimate_->full_covariance[3 * row + col] *
-            u[col];
-        }
-      }
-      const double trace = latest_estimate_->full_covariance[0] +
-        latest_estimate_->full_covariance[3 * 1 + 1] +
-        latest_estimate_->full_covariance[3 * 2 + 2];
       depth_age_s_ = latest_estimate_->data_age;
-      sigma_range_m_ = std::sqrt(std::max(0.0, sigma_range2));
-      sigma_lateral_m_ = std::sqrt(
-        std::max(0.0, (trace - sigma_range2) / 2.0));
+      const auto sigma = sigma_range_lateral(latest_estimate_->full_covariance, u);
+      sigma_range_m_ = sigma.range_m;
+      sigma_lateral_m_ = sigma.lateral_m;
       input.measurement_quality_ok =
         depth_age_s_ <= fire_max_depth_age_s_ &&
         sigma_range_m_ <= fire_max_range_sigma_m_ &&

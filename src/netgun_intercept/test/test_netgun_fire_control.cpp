@@ -2,6 +2,7 @@
 
 #include "netgun_intercept/netgun_fire_control.hpp"
 
+#include <array>
 #include <cmath>
 
 namespace
@@ -154,6 +155,57 @@ TEST(FireControl, InvalidInputsAreSafe)
   nan_error.axis_error_rad = std::nan("");
   EXPECT_FALSE(control.update(nan_error).fire);
   EXPECT_FALSE(control.update(make_input(std::nan(""), 0.5)).fire);
+}
+
+// ---- F-2：sigma_range_lateral 必须读 9×9 行主序的位置块 ----
+
+using netgun_intercept::RangeLateralSigma;
+using netgun_intercept::sigma_range_lateral;
+
+// 位置块对角 + 各阶互协方差标记值（应被忽略）。
+std::array<double, 81> make_cov(double p00, double p11, double p22)
+{
+  std::array<double, 81> cov{};
+  for (int i = 0; i < 81; ++i) {
+    cov[i] = 99.0 + i;  // 标记值：任何位置块之外的下标读到都算错
+  }
+  cov[9 * 0 + 0] = p00;
+  cov[9 * 1 + 1] = p11;
+  cov[9 * 2 + 2] = p22;
+  return cov;
+}
+
+// 位置块和第 0 行不同值：结果只取决于位置块（旧 3×3 下标读到的是第 0 行）。
+TEST(SigmaRangeLateral, UsesPositionBlockNotFirstRow)
+{
+  auto cov = make_cov(0.04, 0.09, 0.25);
+  const double u[3] = {0.0, 0.0, 1.0};
+  const auto sigma = sigma_range_lateral(cov, u);
+  EXPECT_NEAR(sigma.range_m, std::sqrt(0.25), 1e-12);
+  EXPECT_NEAR(sigma.lateral_m, std::sqrt((0.04 + 0.09) / 2.0), 1e-12);
+}
+
+// 目标正上方：u=(0,0,-1)，σ_range = sqrt(P22)。
+TEST(SigmaRangeLateral, OverheadMatchesDiagonal)
+{
+  auto cov = make_cov(0.04, 0.09, 0.25);
+  const double u[3] = {0.0, 0.0, -1.0};
+  const auto sigma = sigma_range_lateral(cov, u);
+  EXPECT_NEAR(sigma.range_m, std::sqrt(0.25), 1e-12);
+}
+
+// 偏轴 45°：σ_range² = 0.5(P00+P11) + P01（对称）。
+TEST(SigmaRangeLateral, OffAxisMatchesAnalytic)
+{
+  auto cov = make_cov(0.04, 0.09, 0.25);
+  cov[9 * 0 + 1] = cov[9 * 1 + 0] = 0.02;
+  const double s = 1.0 / std::sqrt(2.0);
+  const double u[3] = {s, s, 0.0};
+  const auto sigma = sigma_range_lateral(cov, u);
+  const double expected2 = 0.5 * (0.04 + 0.09) + 0.02;
+  EXPECT_NEAR(sigma.range_m, std::sqrt(expected2), 1e-12);
+  EXPECT_NEAR(sigma.lateral_m, std::sqrt((0.04 + 0.09 + 0.25 - expected2) / 2.0),
+    1e-12);
 }
 
 }  // namespace

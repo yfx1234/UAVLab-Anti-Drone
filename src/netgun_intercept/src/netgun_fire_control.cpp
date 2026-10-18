@@ -5,6 +5,23 @@
 namespace netgun_intercept
 {
 
+RangeLateralSigma sigma_range_lateral(
+  const std::array<double, 81> & full_covariance, const double u[3])
+{
+  double sigma_range2 = 0.0;
+  double trace = 0.0;
+  for (int row = 0; row < 3; ++row) {
+    trace += full_covariance[9 * row + row];
+    for (int col = 0; col < 3; ++col) {
+      sigma_range2 += u[row] * full_covariance[9 * row + col] * u[col];
+    }
+  }
+  RangeLateralSigma out;
+  out.range_m = std::sqrt(std::max(0.0, sigma_range2));
+  out.lateral_m = std::sqrt(std::max(0.0, (trace - sigma_range2) / 2.0));
+  return out;
+}
+
 NetgunFireControl::NetgunFireControl(const FireControlConfig & config)
 : config_(config)
 {

@@ -1,10 +1,25 @@
 #ifndef NETGUN_INTERCEPT__NETGUN_FIRE_CONTROL_HPP_
 #define NETGUN_INTERCEPT__NETGUN_FIRE_CONTROL_HPP_
 
+#include <array>
 #include <string>
 
 namespace netgun_intercept
 {
+
+/// 沿视线分解的测量 1σ（F-2：来源必须是 9×9 行主序的位置块）。
+struct RangeLateralSigma
+{
+  double range_m = 0.0;
+  double lateral_m = 0.0;
+};
+
+/// 从 9×9（行主序 81 元素，px/v/ax 分块）位置/速度/加速度协方差中，
+/// 沿视线单位向量 u（NED，指向目标）取位置块分解距离/横向 1σ：
+/// σ_range² = uᵀP_pos u；横向取 (trace(P_pos) − σ_range²)/2 的平方根。
+/// F-2 修复后 strike 与本函数共用，下标 9*row+col 只此一处。
+RangeLateralSigma sigma_range_lateral(
+  const std::array<double, 81> & full_covariance, const double u[3]);
 
 /// 择时火控配置（方案 v4 §3/§4）。
 struct FireControlConfig
