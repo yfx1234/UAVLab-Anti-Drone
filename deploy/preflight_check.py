@@ -1,136 +1,182 @@
 #!/usr/bin/env python3
-"""起飞前只读自检（R2-3，2026-10-17）。
+"""起飞前只读自检（R2-3，2026-10-17；F-4 重写 2026-10-18）。
 
 用法（板上，拦截链已启动、相机+YOLO 运行、飞控上电）：
+  source /opt/ros/humble/setup.bash 等 ROS 环境
   python3 ~/interceptor_ws/deploy/preflight_check.py
 
-只读检查项（输出 PASS/FAIL 列表，退出码 0=全过）：
-  1. /fmu/out/{vehicle_attitude,vehicle_local_position,vehicle_status} 有数据
-  2. /perception/observations_json 频率 ≈15Hz
-  3. /debug/bridge_state：in_hz≈15 且 last_stamp_age_ms < 300
-  4. /debug/estimator_state：attmiss 不增长（姿态被接受）
-  5. /fmu/in/vehicle_command 发布者数为 0（rc_gated 红线）
-  6. timedatectl 时钟已同步（NTP）
+全部检查在进程内用 rclpy 完成（F-4：ros2 topic hz 输出到管道时块缓
+冲、永不自退；topic info/echo 依赖 CLI daemon 的图视图——都不可靠）。
+输出 PASS/FAIL/WARN 列表，退出码 0=无 FAIL（WARN 不计入）：
+  1. /fmu/out/vehicle_attitude       >=20 Hz
+  2. /fmu/out/vehicle_local_position >=10 Hz
+  3. /fmu/out/vehicle_status         >=1.5 Hz（PX4 Commander 实际 2Hz，
+     F-1——不要按 10Hz 要求）
+  4. /perception/observations_json   13-17 Hz
+  5. /debug/bridge_state             in_hz 13-17 且 last_stamp_age_ms<300
+  6. /debug/estimator_state          3s 窗 Δatt(姿态拒收) << Δobs
+     （启动期拒收正常，不要求 Δatt=0）
+  7. /fmu/in/vehicle_command         发布者数=0（rc_gated 红线，进程内
+     count_publishers 查询，不经 daemon）
+  8. timedatectl                     NTP 已同步——仅 WARN（外场离线）
 """
 
-import json
 import re
 import subprocess
 import sys
 import time
 
+try:
+    import rclpy
+    from rclpy.node import Node
+    from rclpy.qos import qos_profile_sensor_data
+    from px4_msgs.msg import VehicleAttitude, VehicleLocalPosition, VehicleStatus
+    from std_msgs.msg import String
+except ImportError as exc:
+    print("ROS 2 环境不可用（%s）：请先 source /opt/ros/humble/setup.bash 等" % exc)
+    sys.exit(2)
+
+T_ATT = "/fmu/out/vehicle_attitude"
+T_LP = "/fmu/out/vehicle_local_position"
+T_ST = "/fmu/out/vehicle_status"
+T_OBS = "/perception/observations_json"
+T_BRIDGE = "/debug/bridge_state"
+T_EST = "/debug/estimator_state"
+T_CMD = "/fmu/in/vehicle_command"
+
 results = []
 
 
-def check(name, ok, detail=""):
-    results.append((name, bool(ok), detail))
+def check(name, status, detail=""):
+    results.append((name, status, detail))
 
 
-def ros_env_ready():
-    try:
-        subprocess.run(["ros2", "--help"], capture_output=True, timeout=10)
-        return True
-    except (OSError, subprocess.TimeoutExpired):
-        return False
+def kv(text):
+    """key=value 单行 → dict（只取数值字段）。"""
+    out = {}
+    for key, value in re.findall(r"(\w+)=(-?[\d.]+)", text):
+        try:
+            out[key] = float(value)
+        except ValueError:
+            pass
+    return out
 
 
-def topic_hz(topic, timeout=6.0):
-    """用一次性 rclpy 订阅测频率（比 ros2 topic hz 快且稳）。"""
-    code = (
-        "import rclpy,time,sys\n"
-        "from rclpy.qos import qos_profile_sensor_data\n"
-        "rclpy.init()\n"
-        f"node=rclpy.create_node('pf')\n"
-        f"n=[0]\n"
-        f"node.create_subscription(sys.argv[1] if False else __import__('rosidl_runtime_py.utilities').__class__, 'x', lambda m: None, 1)\n"
-    )
-    return None  # 占位：实际用下方 subprocess 方式
+def spin_for(node, seconds):
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        rclpy.spin_once(node, timeout_sec=0.05)
 
 
-def hz_via_cli(topic, timeout=8.0):
-    try:
-        out = subprocess.run(
-            ["ros2", "topic", "hz", topic], capture_output=True,
-            text=True, timeout=timeout).stderr + ""
-        return out
-    except subprocess.TimeoutExpired as exc:
-        return (exc.stderr or "") + (exc.stdout or "")
+class PreflightNode(Node):
+    """只订阅不发布；各话题独立计数并保留最后一条负载。"""
+
+    def __init__(self):
+        super().__init__("preflight_check")
+        self.counts = {}
+        self.last = {}
+        for topic, msg_type in (
+            (T_ATT, VehicleAttitude),
+            (T_LP, VehicleLocalPosition),
+            (T_ST, VehicleStatus),
+            (T_OBS, String),
+            (T_BRIDGE, String),
+            (T_EST, String),
+        ):
+            self.counts[topic] = 0
+            self.last[topic] = None
+            self.create_subscription(
+                msg_type, topic, self._make_cb(topic), qos_profile_sensor_data)
+
+    def _make_cb(self, topic):
+        def cb(msg):
+            self.counts[topic] += 1
+            self.last[topic] = msg.data if hasattr(msg, "data") else msg
+        return cb
 
 
-def cli(*args, timeout=15):
-    return subprocess.run(["ros2", *args], capture_output=True,
-                          text=True, timeout=timeout)
+def measure_all_hz(node, topics, window_s=5.0):
+    """同一时间窗内测多个话题频率（各自计数差 / 窗长）。"""
+    start = {t: node.counts[t] for t in topics}
+    t0 = time.monotonic()
+    spin_for(node, window_s)
+    dt = time.monotonic() - t0
+    return {t: (node.counts[t] - start[t]) / dt for t in topics}
 
 
 def main():
-    if not ros_env_ready():
-        print("ROS 2 环境不可用：请先 source /opt/ros/humble/setup.bash 等")
-        return 2
-    # 1. 飞控数据流
-    for topic in ("/fmu/out/vehicle_attitude", "/fmu/out/vehicle_local_position",
-                  "/fmu/out/vehicle_status"):
-        hz = hz_via_cli(topic)
-        ok = "average rate" in hz
-        rate = ""
-        m = __import__("re").search(r"average rate: ([\d.]+)", hz)
-        if m:
-            rate = m.group(1) + " Hz"
-        check("飞控数据 " + topic, ok, rate or "无数据")
-    # 2. 感知 JSON 频率
-    hz = hz_via_cli("/perception/observations_json")
-    m = __import__("re").search(r"average rate: ([\d.]+)", hz)
-    rate = float(m.group(1)) if m else 0.0
-    check("感知观测 /perception/observations_json", 13.0 <= rate <= 17.0,
-          ("%.1f Hz" % rate) if rate else "无数据")
-    # 3. 桥状态
+    rclpy.init()
+    node = PreflightNode()
     try:
-        out = cli("topic", "echo", "/debug/bridge_state", "--once",
-                  "--field", "data", timeout=12).stdout
-        in_hz = __import__("re").search(r"in_hz=([\d.]+)", out)
-        stamp = __import__("re").search(r"last_stamp_age_ms=(-?[\d.]+)", out)
-        check("桥输入频率", in_hz and 13.0 <= float(in_hz.group(1)) <= 17.0,
-              in_hz.group(1) + " Hz" if in_hz else "无")
-        check("观测时间戳新鲜", stamp and float(stamp.group(1)) < 300,
-              (stamp.group(1) + " ms") if stamp else "无")
-    except subprocess.TimeoutExpired:
-        check("桥状态读取", False, "超时")
-    # 4. 估计器姿态接受
-    try:
-        out = cli("topic", "echo", "/debug/estimator_state", "--once",
-                  "--field", "data", timeout=12).stdout
-        miss = __import__("re").search(r"attmiss=(\d+)", out)
-        obs = __import__("re").search(r"obs=(\d+)", out)
-        ok = miss and obs and int(miss.group(1)) == 0
-        check("估计器姿态全部接受（attmiss=0）", bool(ok),
-              "attmiss=" + (miss.group(1) if miss else "?"))
-    except subprocess.TimeoutExpired:
-        check("估计器状态读取", False, "超时")
-    # 5. VehicleCommand 无发布者（rc_gated 红线）
-    try:
-        out = cli("topic", "info", "/fmu/in/vehicle_command", timeout=12).stdout
-        m = __import__("re").search(r"Publisher count: (\d+)", out)
-        n = int(m.group(1)) if m else -1
-        check("VehicleCommand 发布者数为 0", n == 0, str(n))
-    except subprocess.TimeoutExpired:
-        check("VehicleCommand 发布者检查", False, "超时")
-    # 6. 时钟同步
-    try:
-        out = subprocess.run(["timedatectl"], capture_output=True, text=True,
-                             timeout=8).stdout
-        synced = "synchronized: yes" in out
-        check("系统时钟已同步（NTP）", synced)
-    except (OSError, subprocess.TimeoutExpired):
-        check("时钟同步检查", False, "timedatectl 不可用")
+        # 1-4. 飞控数据流 + 感知观测频率（共用 5s 窗）
+        hz = measure_all_hz(node, [T_ATT, T_LP, T_ST, T_OBS], 5.0)
+        check("飞控姿态 %s" % T_ATT, "PASS" if hz[T_ATT] >= 20.0 else "FAIL",
+              "%.1f Hz" % hz[T_ATT])
+        check("飞控位置 %s" % T_LP, "PASS" if hz[T_LP] >= 10.0 else "FAIL",
+              "%.1f Hz" % hz[T_LP])
+        # PX4 1.15.4 Commander 2Hz 发布（F-1），阈值 1.5 容忍丢一包
+        check("飞控状态 %s" % T_ST, "PASS" if hz[T_ST] >= 1.5 else "FAIL",
+              "%.1f Hz" % hz[T_ST])
+        check("感知观测 %s" % T_OBS,
+              "PASS" if 13.0 <= hz[T_OBS] <= 17.0 else "FAIL",
+              "%.1f Hz" % hz[T_OBS])
 
+        # 5. 桥状态（1Hz，窗口内应已收到）
+        bridge = kv(node.last[T_BRIDGE]) if node.last[T_BRIDGE] else {}
+        if not bridge:
+            check("桥状态 %s" % T_BRIDGE, "FAIL", "无数据")
+        else:
+            in_hz = bridge.get("in_hz", -1.0)
+            stamp_age = bridge.get("last_stamp_age_ms", 1e9)
+            check("桥输入频率", "PASS" if 13.0 <= in_hz <= 17.0 else "FAIL",
+                  "%.1f Hz" % in_hz)
+            check("观测时间戳新鲜", "PASS" if stamp_age < 300.0 else "FAIL",
+                  "%.0f ms" % stamp_age)
+
+        # 6. 估计器姿态接受（Δatt=拒收增量 << Δobs=观测增量，3s 窗）
+        est0 = kv(node.last[T_EST]) if node.last[T_EST] else {}
+        spin_for(node, 3.0)
+        est1 = kv(node.last[T_EST]) if node.last[T_EST] else {}
+        if not est0 or not est1:
+            check("估计器状态 %s" % T_EST, "FAIL", "无数据")
+        else:
+            d_obs = est1.get("obs", 0.0) - est0.get("obs", 0.0)
+            d_att = est1.get("att", 0.0) - est0.get("att", 0.0)
+            # 允许启动期少量正常拒收：Δatt <= max(2, 10%·Δobs)
+            ok = d_obs > 0 and d_att <= max(2.0, 0.1 * d_obs)
+            check("估计器姿态接受（Δatt<<Δobs）",
+                  "PASS" if ok else "FAIL",
+                  "dobs=%.0f datt=%.0f" % (d_obs, d_att))
+
+        # 7. VehicleCommand 无发布者（rc_gated 红线，进程内图查询）
+        spin_for(node, 2.0)  # 留 DDS 发现收敛时间
+        n_pub = node.count_publishers(T_CMD)
+        check("VehicleCommand 发布者数为 0",
+              "PASS" if n_pub == 0 else "FAIL", str(n_pub))
+
+        # 8. 时钟同步（外场离线常态，WARN 不计 FAIL）
+        try:
+            out = subprocess.run(["timedatectl"], capture_output=True,
+                                 text=True, timeout=8).stdout
+            synced = "synchronized: yes" in out
+            check("系统时钟已同步（NTP）",
+                  "PASS" if synced else "WARN", "" if synced else "未同步")
+        except (OSError, subprocess.TimeoutExpired):
+            check("时钟同步检查", "WARN", "timedatectl 不可用")
+    finally:
+        node.destroy_node()
+        rclpy.try_shutdown()
+
+    print("=" * 56)
     failures = 0
-    print("=" * 56)
-    for name, ok, detail in results:
-        mark = "PASS" if ok else "FAIL"
-        if not ok:
+    for name, status, detail in results:
+        if status == "FAIL":
             failures += 1
-        print("[%s] %s %s" % (mark, name, ("· " + detail) if detail else ""))
+        print("[%s] %s %s" % (status, name, ("· " + detail) if detail else ""))
     print("=" * 56)
-    print("结果：%d/%d 通过" % (len(results) - failures, len(results)))
+    warns = sum(1 for _, s, _ in results if s == "WARN")
+    print("结果：%d/%d 通过（%d WARN）" %
+          (len(results) - failures - warns, len(results), warns))
     return 0 if failures == 0 else 1
 
 
