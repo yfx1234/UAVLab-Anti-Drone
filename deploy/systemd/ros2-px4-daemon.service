@@ -9,7 +9,9 @@ Type=oneshot
 User=uavlab
 WorkingDirectory=/home/uavlab/Jetson_ROS2_V0
 Environment=ROS_DOMAIN_ID=0
-Environment=ROS_LOCALHOST_ONLY=1
+# F-5（2026-10-18）：不再在此固定 ROS_LOCALHOST_ONLY=1——发现配置由
+# start/stop 脚本 source px4_ros2_environment.sh（=0，与拦截链一致）。
+# daemon 跑在 localhost-only 时 ros2 topic list/info/echo 看不到拦截链话题
 ExecStart=/bin/bash /home/uavlab/Jetson_ROS2_V0/deploy/start_ros2_px4_daemon.sh
 ExecStop=/bin/bash /home/uavlab/Jetson_ROS2_V0/deploy/stop_ros2_px4_daemon.sh
 RemainAfterExit=yes
