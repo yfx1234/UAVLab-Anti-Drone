@@ -21,6 +21,19 @@ struct RangeLateralSigma
 RangeLateralSigma sigma_range_lateral(
   const std::array<double, 81> & full_covariance, const double u[3]);
 
+/// H-5（2026-10-19）：枪口位置偏置修正。瞄准点在机体参考点（相对估计
+/// 原点）系下表达，弹丸从枪口出发——射击方向应由「瞄准点 − 枪口偏置
+/// （NED）」给出。offset_ned 为机体系偏置经姿态旋转后的 NED 向量。
+std::array<double, 3> apply_muzzle_offset(
+  const std::array<double, 3> & aim_point_ned,
+  const std::array<double, 3> & muzzle_offset_ned);
+
+/// H-5：枪管轴在机体系的单位向量。机体攻击轴默认 = body -Z（与双目
+/// 光轴同轴）；boresight_pitch/yaw 为枪管相对光轴的固定安装夹角
+///（先绕 body-y 俯仰、再绕 body-z 偏航）。(0,0) 时与旧口径逐位一致。
+std::array<double, 3> gun_axis_body(
+  double boresight_pitch_rad, double boresight_yaw_rad);
+
 /// 择时火控配置（方案 v4 §3/§4）。
 struct FireControlConfig
 {

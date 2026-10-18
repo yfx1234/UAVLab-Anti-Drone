@@ -208,4 +208,50 @@ TEST(SigmaRangeLateral, OffAxisMatchesAnalytic)
     1e-12);
 }
 
+// ---- H-5：枪口偏置与枪管轴安装角 ----
+
+using netgun_intercept::apply_muzzle_offset;
+using netgun_intercept::gun_axis_body;
+
+// 瞄准点平移量正好等于偏置（NED 各分量）。
+TEST(MuzzleOffset, AimPointShiftsExactlyByOffset)
+{
+  const std::array<double, 3> aim{7.0, -2.5, -6.0};
+  const std::array<double, 3> offset{0.10, -0.05, 0.20};
+  const auto shifted = apply_muzzle_offset(aim, offset);
+  EXPECT_NEAR(shifted[0], aim[0] - offset[0], 1e-12);
+  EXPECT_NEAR(shifted[1], aim[1] - offset[1], 1e-12);
+  EXPECT_NEAR(shifted[2], aim[2] - offset[2], 1e-12);
+  // 零偏置 = 旧口径逐位一致
+  const auto unshifted = apply_muzzle_offset(aim, {0.0, 0.0, 0.0});
+  EXPECT_EQ(unshifted[0], aim[0]);
+  EXPECT_EQ(unshifted[1], aim[1]);
+  EXPECT_EQ(unshifted[2], aim[2]);
+}
+
+// 枪管轴：默认与 body -Z 同轴；俯仰/偏航按 Rz(yaw)·Ry(pitch) 旋转。
+TEST(MuzzleOffset, GunAxisBodyDefaultAndTilted)
+{
+  const auto axis = gun_axis_body(0.0, 0.0);
+  EXPECT_NEAR(axis[0], 0.0, 1e-12);
+  EXPECT_NEAR(axis[1], 0.0, 1e-12);
+  EXPECT_NEAR(axis[2], -1.0, 1e-12);
+
+  const double pitch = 3.0 * M_PI / 180.0;
+  const double yaw = -2.0 * M_PI / 180.0;
+  const auto tilted = gun_axis_body(pitch, yaw);
+  const double sin_p = std::sin(pitch);
+  const double cos_p = std::cos(pitch);
+  const double sin_y = std::sin(yaw);
+  const double cos_y = std::cos(yaw);
+  EXPECT_NEAR(tilted[0], -sin_p * cos_y, 1e-12);
+  EXPECT_NEAR(tilted[1], -sin_p * sin_y, 1e-12);
+  EXPECT_NEAR(tilted[2], -cos_p, 1e-12);
+  // 单位向量
+  EXPECT_NEAR(
+    std::sqrt(tilted[0] * tilted[0] + tilted[1] * tilted[1] +
+      tilted[2] * tilted[2]),
+    1.0, 1e-12);
+}
+
 }  // namespace

@@ -152,6 +152,16 @@ public:
       declare_parameter<double>("vehicle_status_timeout_s", 1.5);
     attack_enable_delay_s_ =
       declare_parameter<double>("attack_enable_delay_s", 0.0);
+    // H-5（2026-10-19）：相机→枪口的杠杆臂与两轴夹角——10 cm 平行偏置
+    // 在 7 m 处约占 2° 主门脱靶预算（~0.24 m）的四成，1° 轴线夹角占
+    // ~0.12 m。默认 0=同轴旧口径不变；实测装订后自动进入瞄准修正。
+    muzzle_offset_body_m_ = {
+      declare_parameter<double>("muzzle_offset_body_x_m", 0.0),
+      declare_parameter<double>("muzzle_offset_body_y_m", 0.0),
+      declare_parameter<double>("muzzle_offset_body_z_m", 0.0)};
+    boresight_pitch_rad_ =
+      declare_parameter<double>("boresight_pitch_rad", 0.0);
+    boresight_yaw_rad_ = declare_parameter<double>("boresight_yaw_rad", 0.0);
     // 蒙射 B 支接口（默认关）：交战超时阈值，0=不启用。
     engagement_timeout_s_ =
       declare_parameter<double>("engagement_timeout_s", 0.0);
@@ -301,6 +311,11 @@ private:
       predicted[1] -= latest_local_position_->vy * lead_s;
       predicted[2] -= latest_local_position_->vz * lead_s;
     }
+    // H-5：枪口杠杆臂——射击方向由「瞄准点 − 枪口位置（NED）」给出；
+    // 偏置 0 时逐位等于旧口径
+    const std::array<double, 3> muzzle_offset_ned =
+      rotate_wxyz(latest_attitude_->q, muzzle_offset_body_m_);
+    predicted = apply_muzzle_offset(predicted, muzzle_offset_ned);
     const double predicted_norm = norm3(predicted[0], predicted[1], predicted[2]);
     std::array<double, 3> shot_direction{0.0, 0.0, 0.0};
     if (predicted_norm > 1e-6) {
@@ -309,9 +324,12 @@ private:
         predicted[2] / predicted_norm};
     }
 
-    // 机体攻击轴 = body -Z（竖直向上安装的双目光轴）在 NED 中的方向。
+    // 机体攻击轴 = 枪管轴（body 系）随当前姿态转到 NED。H-5：默认
+    // boresight (0,0) 时枪管轴 = body -Z，与"光轴同轴"旧口径逐位一致；
+    // 装订 pitch/yaw 后按实测夹角修正。
     const std::array<double, 3> attack_axis =
-      rotate_wxyz(latest_attitude_->q, {0.0, 0.0, -1.0});
+      rotate_wxyz(latest_attitude_->q,
+        gun_axis_body(boresight_pitch_rad_, boresight_yaw_rad_));
     input.axis_error_rad = angle_between(attack_axis, shot_direction);
 
     // LOS 率：射击方向角变化率（一阶差分 + 一阶低通 τ=0.2s）。
@@ -527,6 +545,10 @@ private:
   double attack_enable_delay_s_ = 0.0;
   double engagement_timeout_s_ = 0.0;
   bool pursuer_velocity_compensation_ = false;
+  // H-5：枪口杠杆臂（body FRD，m）与枪管-光轴安装角（rad）
+  std::array<double, 3> muzzle_offset_body_m_{0.0, 0.0, 0.0};
+  double boresight_pitch_rad_{0.0};
+  double boresight_yaw_rad_{0.0};
   double ready_time_s_ = -1.0;
   double disarmed_since_s_ = -1.0;  // R1-6：非 armed/offboard 持续时长
   double first_valid_estimate_s_ = -1.0;

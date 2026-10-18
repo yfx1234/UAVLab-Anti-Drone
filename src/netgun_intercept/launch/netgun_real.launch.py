@@ -216,6 +216,13 @@ def generate_launch_description():
                         "minimum_height_m": 1.5,
                         # F-1：姿态/位置 1.0s，vehicle_status 单独 1.5s（2Hz）
                         "vehicle_status_timeout_s": 1.5,
+                        # H-5：相机→枪口杠杆臂（body FRD, m）与枪管-光轴
+                        # 安装角（rad）——默认同轴 0；CAD/工装实测后装订
+                        "muzzle_offset_body_x_m": 0.0,
+                        "muzzle_offset_body_y_m": 0.0,
+                        "muzzle_offset_body_z_m": 0.0,
+                        "boresight_pitch_rad": 0.0,
+                        "boresight_yaw_rad": 0.0,
                         # 实机口径 2s（仿真 12s=与虚拟目标起跑对齐，仅仿真用）
                         "attack_enable_delay_s": LaunchConfiguration(
                             "attack_enable_delay_s"

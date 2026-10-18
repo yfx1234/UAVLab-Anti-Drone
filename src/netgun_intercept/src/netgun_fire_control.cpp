@@ -22,6 +22,28 @@ RangeLateralSigma sigma_range_lateral(
   return out;
 }
 
+std::array<double, 3> apply_muzzle_offset(
+  const std::array<double, 3> & aim_point_ned,
+  const std::array<double, 3> & muzzle_offset_ned)
+{
+  return {
+    aim_point_ned[0] - muzzle_offset_ned[0],
+    aim_point_ned[1] - muzzle_offset_ned[1],
+    aim_point_ned[2] - muzzle_offset_ned[2]};
+}
+
+std::array<double, 3> gun_axis_body(
+  double boresight_pitch_rad, double boresight_yaw_rad)
+{
+  // Rz(yaw)·Ry(pitch)·(0,0,-1)：先抬头/低头（绕 body-y），再水平偏
+  //（绕 body-z）。默认 (0,0) → (0,0,-1)，与"枪管同轴光轴"旧口径一致。
+  const double sin_pitch = std::sin(boresight_pitch_rad);
+  const double cos_pitch = std::cos(boresight_pitch_rad);
+  const double sin_yaw = std::sin(boresight_yaw_rad);
+  const double cos_yaw = std::cos(boresight_yaw_rad);
+  return {-sin_pitch * cos_yaw, -sin_pitch * sin_yaw, -cos_pitch};
+}
+
 NetgunFireControl::NetgunFireControl(const FireControlConfig & config)
 : config_(config)
 {
