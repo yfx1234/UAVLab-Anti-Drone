@@ -9,7 +9,9 @@
         /test/mock_px4/engage          std_msgs/Bool：true=armed+offboard
   发布  /fmu/out/vehicle_attitude     50Hz，板时戳（us），q 为 FRD body->NED
         /fmu/out/vehicle_local_position 30Hz（x/y/z NED，z 负为高）
-        /fmu/out/vehicle_status        10Hz（arming_state/nav_state）
+        /fmu/out/vehicle_status        2Hz（status_rate_hz 可调；PX4
+          Commander 同款 500ms 网格 + status_jitter_ms 随机抖动 + 丢包率
+          status_drop_prob——F-1 后超时/复位逻辑必须在真 2Hz 下验证）
         /test/mock_px4/state           30Hz JSON（供虚拟相机/编排器读取位姿）
 
 运动学：一阶位置/速度跟踪（max 10m/s、6.5m/s^2）+ yaw 伺服（3rad/s）+
@@ -19,6 +21,7 @@
 
 import json
 import math
+import random
 import time
 
 import rclpy
@@ -104,6 +107,10 @@ class MockPx4Node(Node):
         self.declare_parameter("start_height_m", 0.0)  # 初始悬停高度（0=地面）
         # 手动阶段模拟：armed 且未切 offboard 时，模拟飞手爬升到该高度悬停
         self.declare_parameter("manual_takeoff_height_m", 5.5)
+        # F-1：status 发布口径对齐 PX4 1.15.4 Commander（2Hz 网格+抖动）
+        self.declare_parameter("status_rate_hz", 2.0)
+        self.declare_parameter("status_jitter_ms", 5.0)
+        self.declare_parameter("status_drop_prob", 0.0)
 
         self._pos = [0.0, 0.0, -float(self.get_parameter("start_height_m").value)]
         self._vel = [0.0, 0.0, 0.0]
@@ -144,6 +151,15 @@ class MockPx4Node(Node):
 
         self._last_tick = time.monotonic()
         self._tick_count = 0
+        # F-1：status 按独立节奏发布（500ms 网格 + U(0,jitter) 延迟 + 丢包），
+        # 到达间隔与真 PX4 一致——10Hz 的旧口径测不出超时/复位问题
+        self._status_period_s = 1.0 / max(
+            0.1, float(self.get_parameter("status_rate_hz").value))
+        self._status_jitter_s = max(
+            0.0, float(self.get_parameter("status_jitter_ms").value)) / 1000.0
+        self._status_drop_prob = min(
+            1.0, max(0.0, float(self.get_parameter("status_drop_prob").value)))
+        self._next_status_t = time.monotonic() + self._status_period_s
         self.create_timer(0.02, self._tick)  # 50Hz 运动学
         self.get_logger().info(
             "mock_px4 ready (start_height=%.1fm)" % -self._pos[2])
@@ -190,8 +206,10 @@ class MockPx4Node(Node):
         if self._tick_count % 2 == 0:  # 25Hz
             self._publish_local_position()
             self._publish_state()
-        if self._tick_count % 5 == 0:  # 10Hz
-            self._publish_status()
+        if now >= self._next_status_t + random.uniform(0.0, self._status_jitter_s):
+            self._next_status_t += self._status_period_s
+            if random.random() >= self._status_drop_prob:
+                self._publish_status()
 
     def _step(self, dt):
         max_speed = float(self.get_parameter("max_speed_mps").value)

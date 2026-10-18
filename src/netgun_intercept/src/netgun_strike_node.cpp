@@ -145,7 +145,11 @@ public:
     fire_max_lateral_sigma_m_ =
       declare_parameter<double>("fire_max_lateral_sigma_m", 0.30);
     // 飞控消息接收超时（姿态/状态/位置各自计时；断链关火，见 on_timer）
+    // F-1：vehicle_status 实际 2Hz（PX4 Commander 500ms 网格+抖动），
+    // 与姿态/位置共用 1.0s 会因丢一包短暂关授权——单独放宽到 1.5s
     fcu_timeout_s_ = declare_parameter<double>("fcu_timeout_s", 1.0);
+    vehicle_status_timeout_s_ =
+      declare_parameter<double>("vehicle_status_timeout_s", 1.5);
     attack_enable_delay_s_ =
       declare_parameter<double>("attack_enable_delay_s", 0.0);
     // 蒙射 B 支接口（默认关）：交战超时阈值，0=不启用。
@@ -334,7 +338,7 @@ private:
     // 陈旧状态判授权）。授权门增加接收超时，掉链即关火并让 h/arm/ob 复位。
     const bool fcu_fresh =
       now_s - last_attitude_rx_s_ <= fcu_timeout_s_ &&
-      now_s - last_status_rx_s_ <= fcu_timeout_s_;
+      now_s - last_status_rx_s_ <= vehicle_status_timeout_s_;
     const bool position_fresh = latest_local_position_ &&
       now_s - last_local_position_rx_s_ <= fcu_timeout_s_;
     const bool armed_and_offboard = fcu_fresh &&
@@ -510,6 +514,7 @@ private:
   double stable_track_time_s_{2.0};
   double minimum_height_m_ = 1.5;
   double fcu_timeout_s_ = 1.0;
+  double vehicle_status_timeout_s_ = 1.5;
   double fire_max_depth_age_s_ = 0.25;
   double fire_max_range_sigma_m_ = 1.0;
   double fire_max_lateral_sigma_m_ = 0.30;

@@ -234,6 +234,11 @@ def generate_launch_description():
                         "relative_estimate_topic": ESTIMATE_TOPIC,
                         "local_position_topic": "/px4_1/fmu/out/vehicle_local_position",
                         "status_topic": "/px4_1/fmu/out/vehicle_status",
+                        # F-1：与实机同参（vehicle_status 实际 2Hz）
+                        "local_position_timeout_s": 0.5,
+                        "vehicle_status_timeout_s": 1.5,
+                        "fcu_stale_reset_s": 1.0,
+                        "post_shot_reengage": False,
                         "takeoff_height_m": 5.8,
                         "minimum_height_m": 1.6,
                         # 机动上限（2026-10-14 实机数据修订：80% 油门=
@@ -335,6 +340,8 @@ def generate_launch_description():
                         "maximum_los_rate_rad_s": 0.5,
                         "blind_shot_enabled": False,
                         "minimum_height_m": 1.5,
+                        # F-1：姿态/位置 1.0s，vehicle_status 单独 1.5s（2Hz）
+                        "vehicle_status_timeout_s": 1.5,
                         # 授权对齐镜像 SETTLE_S：目标在就位信号后 delay 10s 起跑，
                         # 火控授权同样延时 10s（自 TRACK 起），交战发生在机动中
                         "attack_enable_delay_s": LaunchConfiguration(

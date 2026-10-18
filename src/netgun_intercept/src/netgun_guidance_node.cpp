@@ -128,7 +128,21 @@ public:
       throw std::runtime_error("auto engage not enabled");
     }
     // 飞控数据/武器授权新鲜度（R0-2）：断链停发心跳与指令，PX4 失效保护接管
-    fcu_timeout_s_ = declare_parameter<double>("fcu_timeout_s", 0.5);
+    // F-1（2026-10-18）：本地位置与 vehicle_status 拆成两个超时。PX4
+    // 1.15.4 的 vehicle_status 每满 500ms（+循环抖动 0-10ms）或状态变化
+    // 才发布（Commander.cpp），共用 0.5s 超时会把正常间隔判成断链、
+    // 每约 2s 复位一次交战状态（切速度模式/AIM/开火全部被清）
+    local_position_timeout_s_ =
+      declare_parameter<double>("local_position_timeout_s", 0.5);
+    vehicle_status_timeout_s_ =
+      declare_parameter<double>("vehicle_status_timeout_s", 1.5);
+    // F-1：数据过期只停发（R0-2 语义），持续超过该窗才复位交战状态；
+    // 窗内恢复继续当前阶段（2Hz status 丢一包 ~0.5s 必须能自愈）。
+    // 1.0s 与 PX4 COM_OF_LOSS_T 默认一致
+    fcu_stale_reset_s_ = declare_parameter<double>("fcu_stale_reset_s", 1.0);
+    // F-1：开火后（shot_seen_ 闩锁不复位）重新进入 offboard 是否允许
+    // 再次追击。默认 false：直接进 DONE 原地保持
+    post_shot_reengage_ = declare_parameter<bool>("post_shot_reengage", false);
     weapon_auth_timeout_s_ =
       declare_parameter<double>("weapon_auth_timeout_s", 0.5);
     // R0-4：AIM 与火控统一瞄准口径——同一 muzzle/deployment、同一
@@ -310,8 +324,10 @@ private:
   // "飞控数据断"的显式信号（面板/interceptor_status.py 已同步该语义）。
   bool fcu_inputs_fresh(double now_s) const
   {
-    const bool lp_ok = lp_ && lp_valid_ && now_s - lp_rx_s_ <= fcu_timeout_s_;
-    const bool st_ok = st_ && now_s - st_rx_s_ <= fcu_timeout_s_;
+    // F-1：两个输入各自超时（vehicle_status 实际 2Hz，见参数区注释）
+    const bool lp_ok = lp_ && lp_valid_ &&
+      now_s - lp_rx_s_ <= local_position_timeout_s_;
+    const bool st_ok = st_ && now_s - st_rx_s_ <= vehicle_status_timeout_s_;
     return lp_ok && st_ok;
   }
   bool auth_effective(double now_s) const
@@ -321,13 +337,14 @@ private:
   // 交战状态复位（rc_gated 切出 / 飞控数据过期共用）。R0-3：覆盖全部
   // "第二次进入 offboard 会串场"的内部状态——保持点、斜率限幅种子、
   // 低通估计、积分、偏航锁定、授权/搜索计时、就位发布标志。
+  // F-1：shot_seen_ 不再清——单发已激发是物理事实（火控侧同样不解除），
+  // 复位后是否再追击由 post_shot_reengage 决定（默认直接 DONE 保持）。
   void reset_engagement_state(const char* reason)
   {
     const bool was_active = phase_ != Phase::WAITING || bearing_hold_;
     phase_ = Phase::WAITING;
     hold_mode_ = true;
     bearing_hold_ = false;
-    shot_seen_ = false;
     aim_stable_since_s_ = -1.0;
     aim_seeded_ = false;
     spin_accum_rad_ = 0.0;
@@ -375,9 +392,30 @@ private:
   void tick()
   {
     const double t_gate = now().seconds();
+    // F-1：数据过期先停发心跳/指令（R0-2 语义不变），持续超过
+    // fcu_stale_reset_s 才复位交战状态——2Hz vehicle_status 的正常
+    // 到达间隔 ≈500ms+抖动，宽限窗内恢复则继续当前阶段
     if (!fcu_inputs_fresh(t_gate)) {
-      reset_engagement_state("fcu data stale");
+      if (fcu_stale_since_s_ < 0.0) {
+        fcu_stale_since_s_ = t_gate;
+        RCLCPP_WARN(
+          get_logger(), "fcu data stale - heartbeat/setpoints halted");
+      } else if (t_gate - fcu_stale_since_s_ >= fcu_stale_reset_s_) {
+        reset_engagement_state("fcu data stale");
+        fcu_stale_since_s_ = -1.0;
+      }
       return;
+    }
+    if (fcu_stale_since_s_ > 0.0) {
+      // 宽限窗内恢复：继续当前阶段；斜率限幅种子用当前实际速度重置，
+      // 防停发期间的旧指令值在新一拍产生阶跃
+      RCLCPP_INFO(
+        get_logger(), "fcu data recovered after %.2fs (engagement kept)",
+        t_gate - fcu_stale_since_s_);
+      fcu_stale_since_s_ = -1.0;
+      last_vx_ = lp_->vx;
+      last_vy_ = lp_->vy;
+      last_vz_ = lp_->vz;
     }
     px4_msgs::msg::OffboardControlMode ob;
     ob.timestamp = static_cast<std::uint64_t>(now().nanoseconds() / 1000);
@@ -479,9 +517,21 @@ private:
     }
 
     if (phase_ == Phase::WAITING) {
-      on_engage_entry();
-      phase_ = Phase::TAKEOFF;
-      RCLCPP_INFO(get_logger(), "phase → TAKEOFF");
+      // F-1：单发已激发（shot_seen_ 不再被复位清掉）且未开再追击开关时，
+      // 二次进入 offboard 直接原地保持，不再重新 TAKEOFF 追击
+      if (shot_seen_ && !post_shot_reengage_) {
+        hold_target_[0] = lp_->x;
+        hold_target_[1] = lp_->y;
+        hold_target_[2] = lp_->z;
+        phase_ = Phase::DONE;
+        RCLCPP_INFO(
+          get_logger(),
+          "post-shot re-entry → DONE position hold (post_shot_reengage=false)");
+      } else {
+        on_engage_entry();
+        phase_ = Phase::TAKEOFF;
+        RCLCPP_INFO(get_logger(), "phase → TAKEOFF");
+      }
     }
 
     const double alt = -lp_->z;
@@ -1200,7 +1250,11 @@ private:
   std::string engage_mode_{"auto"};
   bool allow_auto_engage_{false};
   int vehicle_command_target_system_{2};
-  double fcu_timeout_s_{0.5};
+  double local_position_timeout_s_{0.5};
+  double vehicle_status_timeout_s_{1.5};
+  double fcu_stale_reset_s_{1.0};
+  double fcu_stale_since_s_{-1.0};
+  bool post_shot_reengage_{false};
   double weapon_auth_timeout_s_{0.5};
   double muzzle_speed_mps_{55.0};
   double deployment_time_s_{0.055};

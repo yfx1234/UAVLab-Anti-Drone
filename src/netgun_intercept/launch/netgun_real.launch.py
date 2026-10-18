@@ -137,6 +137,12 @@ def generate_launch_description():
                         "local_position_topic": "/fmu/out/vehicle_local_position",
                         "status_topic": "/fmu/out/vehicle_status",
                         "engage_mode": "rc_gated",
+                        # F-1：本地位置 0.5s / vehicle_status 1.5s（PX4 实际
+                        # 2Hz）；过期停发超过 1.0s 才复位；开火后不再追击
+                        "local_position_timeout_s": 0.5,
+                        "vehicle_status_timeout_s": 1.5,
+                        "fcu_stale_reset_s": 1.0,
+                        "post_shot_reengage": False,
                         # R0-4：AIM 与火控统一瞄准口径（与 strike 同参）
                         "muzzle_speed_mps": LaunchConfiguration(
                             "muzzle_speed_mps"),
@@ -208,6 +214,8 @@ def generate_launch_description():
                         "maximum_los_rate_rad_s": 0.5,
                         "blind_shot_enabled": False,
                         "minimum_height_m": 1.5,
+                        # F-1：姿态/位置 1.0s，vehicle_status 单独 1.5s（2Hz）
+                        "vehicle_status_timeout_s": 1.5,
                         # 实机口径 2s（仿真 12s=与虚拟目标起跑对齐，仅仿真用）
                         "attack_enable_delay_s": LaunchConfiguration(
                             "attack_enable_delay_s"
