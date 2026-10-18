@@ -117,8 +117,10 @@ cmd_start() {
   local stamp log_file
   stamp="$(date +%Y%m%d_%H%M%S)"
   log_file="$LOG_DIR/interceptor_stack_${stamp}.log"
+  # G-1（2026-10-18）：必须用追加模式——run_start_check 会 >> 同一文件
+  # 写告警，截断写会让 launch 按自己的旧偏移把追加行覆盖掉
   nohup setsid ros2 launch "$LAUNCH_PKG" "$LAUNCH_FILE" "${@:2}" \
-    >"$log_file" 2>&1 &
+    >>"$log_file" 2>&1 &
   local pid=$!
   echo "$pid" >"$PID_FILE"
   sleep 2

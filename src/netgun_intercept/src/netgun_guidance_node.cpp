@@ -398,11 +398,20 @@ private:
     if (!fcu_inputs_fresh(t_gate)) {
       if (fcu_stale_since_s_ < 0.0) {
         fcu_stale_since_s_ = t_gate;
+      }
+      // G-5：告警按 10s 节流——复位后每窗重新进入 stale 都打，飞控
+      // 未上电时每秒一条刷屏
+      if (t_gate - fcu_stale_logged_s_ >= 10.0) {
+        fcu_stale_logged_s_ = t_gate;
         RCLCPP_WARN(
-          get_logger(), "fcu data stale - heartbeat/setpoints halted");
-      } else if (t_gate - fcu_stale_since_s_ >= fcu_stale_reset_s_) {
+          get_logger(), "fcu data stale (%.1fs) - heartbeat/setpoints halted",
+          t_gate - fcu_stale_since_s_);
+      }
+      // G-5：复位只对仍有交战状态可清的情形执行一次；清完留在
+      // WAITING，不按窗口反复复位
+      if ((phase_ != Phase::WAITING || bearing_hold_) &&
+        t_gate - fcu_stale_since_s_ >= fcu_stale_reset_s_) {
         reset_engagement_state("fcu data stale");
-        fcu_stale_since_s_ = -1.0;
       }
       return;
     }
@@ -413,6 +422,7 @@ private:
         get_logger(), "fcu data recovered after %.2fs (engagement kept)",
         t_gate - fcu_stale_since_s_);
       fcu_stale_since_s_ = -1.0;
+      fcu_stale_logged_s_ = -1e9;
       last_vx_ = lp_->vx;
       last_vy_ = lp_->vy;
       last_vz_ = lp_->vz;
@@ -523,6 +533,10 @@ private:
         hold_target_[0] = lp_->x;
         hold_target_[1] = lp_->y;
         hold_target_[2] = lp_->z;
+        // G-4：航向锚定当前实际航向——reset 不清 yaw_sp_，重进后
+        // frozen_yaw() 返回接管前的旧值，飞机会自己转回旧航向
+        yaw_sp_ = lp_->heading;
+        yaw_sp_init_ = true;
         phase_ = Phase::DONE;
         RCLCPP_INFO(
           get_logger(),
@@ -1254,6 +1268,7 @@ private:
   double vehicle_status_timeout_s_{1.5};
   double fcu_stale_reset_s_{1.0};
   double fcu_stale_since_s_{-1.0};
+  double fcu_stale_logged_s_{-1e9};
   bool post_shot_reengage_{false};
   double weapon_auth_timeout_s_{0.5};
   double muzzle_speed_mps_{55.0};

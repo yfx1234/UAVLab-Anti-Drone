@@ -37,14 +37,28 @@ second Agent while this service is active. Interactive Bash shells source
 `/etc/profile.d/px4-ros2.sh`, preventing a CLI daemon from being created with
 discovery settings that differ from the boot services.
 
-After updating `deploy/systemd/ros2-px4-daemon.service` or the start/stop
-scripts on the board, reload and restart the daemon so it picks up the shared
-discovery environment (`px4_ros2_environment.sh`, `ROS_LOCALHOST_ONLY=0`,
-F-5 2026-10-18):
+After updating the unit or the start/stop scripts, deploy from the repo and
+restart (G-3 2026-10-18): the installer **copies** the unit to
+`/etc/systemd/system/` and the environment file to `/etc/profile.d/px4-ros2.sh`,
+so `daemon-reload + restart` alone leaves those copies stale. On the board the
+systemd-facing copy root is `/home/uavlab/Jetson_ROS2_V0` (the unit's
+`ExecStart` points there) while the source repo is `/home/uavlab/interceptor_ws`:
 
 ```bash
-sudo systemctl daemon-reload
-sudo systemctl restart ros2-px4-daemon
+git -C /home/uavlab/interceptor_ws pull
+cp /home/uavlab/interceptor_ws/deploy/*.sh \
+   /home/uavlab/Jetson_ROS2_V0/deploy/
+cp /home/uavlab/interceptor_ws/deploy/systemd/*.service \
+   /home/uavlab/Jetson_ROS2_V0/deploy/systemd/
+/home/uavlab/Jetson_ROS2_V0/deploy/install_px4_ros2_runtime.sh
+# 安装器内部已 sudo install 两个拷贝 + daemon-reload + restart
+```
+
+Acceptance now has one extra step (G-3): a **newly opened** login shell must
+carry the shared environment:
+
+```bash
+echo $ROS_LOCALHOST_ONLY    # 应输出 0（旧拷贝是 1）
 ```
 
 Connectivity acceptance for the CLI daemon (F-5): a login shell must see both

@@ -14,13 +14,17 @@
      F-1——不要按 10Hz 要求）
   4. /perception/observations_json   13-17 Hz
   5. /debug/bridge_state             in_hz 13-17 且 last_stamp_age_ms<300
-  6. /debug/estimator_state          3s 窗 Δatt(姿态拒收) << Δobs
-     （启动期拒收正常，不要求 Δatt=0）
+  6. /debug/estimator_state         3s 窗 Δatt(姿态拒收) << Δobs；
+     Δobs=0（视场内无目标）判 WARN 不判 FAIL
   7. /fmu/in/vehicle_command         发布者数=0（rc_gated 红线，进程内
      count_publishers 查询，不经 daemon）
   8. timedatectl                     NTP 已同步——仅 WARN（外场离线）
+
+环境门（G-2）：开头打印 ROS_DOMAIN_ID/ROS_LOCALHOST_ONLY；domain≠0 或
+LOCALHOST_ONLY=1 直接退出 1（与拦截链发现配置不一致时结果不可信）。
 """
 
+import os
 import re
 import subprocess
 import sys
@@ -105,6 +109,19 @@ def measure_all_hz(node, topics, window_s=5.0):
 
 
 def main():
+    # G-2：先亮明并核对自身 DDS 环境——domain 非 0 或 localhost-only 时
+    # 本脚本看到的是另一个 DDS 世界，后面所有结果都不可信
+    domain = os.environ.get("ROS_DOMAIN_ID", "0")
+    localhost = os.environ.get("ROS_LOCALHOST_ONLY", "未设置(=0)")
+    print("DDS 环境：ROS_DOMAIN_ID=%s ROS_LOCALHOST_ONLY=%s（拦截链要求 0 / 非 1）"
+          % (domain, localhost))
+    if localhost.strip() == "1":
+        print("环境不一致：ROS_LOCALHOST_ONLY=1 与拦截链(0)不同，检测结果不可信；"
+              "source deploy/px4_ros2_environment.sh 后重跑")
+        return 1
+    if domain.strip() not in ("0", ""):
+        print("环境不一致：ROS_DOMAIN_ID=%s 与拦截链(0)不同，检测结果不可信" % domain)
+        return 1
     rclpy.init()
     node = PreflightNode()
     try:
@@ -142,11 +159,17 @@ def main():
         else:
             d_obs = est1.get("obs", 0.0) - est0.get("obs", 0.0)
             d_att = est1.get("att", 0.0) - est0.get("att", 0.0)
-            # 允许启动期少量正常拒收：Δatt <= max(2, 10%·Δobs)
-            ok = d_obs > 0 and d_att <= max(2.0, 0.1 * d_obs)
-            check("估计器姿态接受（Δatt<<Δobs）",
-                  "PASS" if ok else "FAIL",
-                  "dobs=%.0f datt=%.0f" % (d_obs, d_att))
+            if d_obs <= 0:
+                # G-2：起飞前目标常不在视场，桥不转发观测——无法判定，
+                # 姿态链路健康以第 1-3 项的飞控频率为准
+                check("估计器姿态接受（Δatt<<Δobs）", "WARN",
+                      "无目标观测（Δobs=%.0f），姿态接受无法判定" % d_obs)
+            else:
+                # 允许启动期少量正常拒收：Δatt <= max(2, 10%·Δobs)
+                ok = d_att <= max(2.0, 0.1 * d_obs)
+                check("估计器姿态接受（Δatt<<Δobs）",
+                      "PASS" if ok else "FAIL",
+                      "dobs=%.0f datt=%.0f" % (d_obs, d_att))
 
         # 7. VehicleCommand 无发布者（rc_gated 红线，进程内图查询）
         spin_for(node, 2.0)  # 留 DDS 发现收敛时间
