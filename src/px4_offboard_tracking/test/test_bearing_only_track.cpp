@@ -194,19 +194,19 @@ TEST(BearingOnlyMeasurement, NominalRangePriorAndProjection)
     Vector3d{0.0, 0.0, 0.0});
   EXPECT_NEAR(uninitialized.nominal_range_m, 12.0, 1e-12);
 
-  const Vector3d predicted{1.0, 0.0, -5.0};
+  // 预测位置在目标视线上（30° 方向、距离 5 m）→ 名义距离 = 投影 = 5
+  const Vector3d predicted{
+    5.0 * std::sin(30.0 * M_PI / 180.0), 0.0,
+    -5.0 * std::cos(30.0 * M_PI / 180.0)};
   const auto initialized = make_bearing_only_measurement(
     camera, real_intrinsics(), identity(),
     projection.pixel_u, projection.pixel_v, 1.5, 12.0, 30.0, predicted);
-  // 视线方向 = 目标方向，预测在视线上 → 投影 ≈ |predicted|
-  EXPECT_NEAR(initialized.nominal_range_m, std::hypot(1.0, 5.0), 1e-9);
+  EXPECT_NEAR(initialized.nominal_range_m, 5.0, 1e-9);
   // 伪量测位置在目标视线上（名义距离缩放）
-  EXPECT_NEAR(
-    initialized.position_ned.x,
-    std::hypot(1.0, 5.0) * std::sin(30.0 * M_PI / 180.0), 0.05);
-  EXPECT_NEAR(
-    initialized.position_ned.z,
-    -std::hypot(1.0, 5.0) * std::cos(30.0 * M_PI / 180.0), 0.05);
+  EXPECT_NEAR(initialized.position_ned.x, 5.0 * std::sin(30.0 * M_PI / 180.0),
+    0.05);
+  EXPECT_NEAR(initialized.position_ned.z,
+    -5.0 * std::cos(30.0 * M_PI / 180.0), 0.05);
 }
 
 // T1：斜视 30°、7.5 m 静止目标，[BO, BO, DEPTH×20]——首帧深度被接受
