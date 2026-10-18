@@ -7,20 +7,20 @@ import importlib.util
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 
 WORKSPACE = Path(__file__).resolve().parents[3]
 SCRIPT = WORKSPACE / "scripts" / "run_interception_batch.py"
 # H-4：run_interception_batch.py 属纯拦截工作台脚本，不在本仓布局中——
-# 缺失时整模块跳过（commit 2318479 后分类），避免常红掩盖新回归。
-if not SCRIPT.is_file():
-    import pytest
-    pytest.skip(
-        "run_interception_batch.py 不属于本仓（纯拦截工作台脚本）",
-        allow_module_level=True)
-SPEC = importlib.util.spec_from_file_location("run_interception_batch", SCRIPT)
-assert SPEC is not None and SPEC.loader is not None
-BATCH = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(BATCH)
+# 缺失时全部用例 skipif 跳过（保留收集数，避免 pytest rc=5 被判失败）。
+RUNNER_AVAILABLE = SCRIPT.is_file()
+_SKIP_REASON = "run_interception_batch.py 不属于本仓（纯拦截工作台脚本）"
+
+if RUNNER_AVAILABLE:
+    SPEC = importlib.util.spec_from_file_location("run_interception_batch", SCRIPT)
+    assert SPEC is not None and SPEC.loader is not None
+    BATCH = importlib.util.module_from_spec(SPEC)
+    SPEC.loader.exec_module(BATCH)
 
 
 def _arguments(target_speed: float) -> SimpleNamespace:
@@ -47,6 +47,7 @@ def _case() -> dict:
     }
 
 
+@pytest.mark.skipif(not RUNNER_AVAILABLE, reason=_SKIP_REASON)
 def test_integral_target_speed_remains_a_ros_double() -> None:
     cases = BATCH.build_cases(_arguments(5.0))
     assert len(cases) == 6
@@ -57,6 +58,7 @@ def test_integral_target_speed_remains_a_ros_double() -> None:
     assert BATCH.ros_double(6.0) == "6.0"
 
 
+@pytest.mark.skipif(not RUNNER_AVAILABLE, reason=_SKIP_REASON)
 def test_speed_scan_uses_one_case_matrix_per_requested_speed() -> None:
     arguments = _arguments(5.0)
     arguments.preset = "encounters"
@@ -85,6 +87,7 @@ def test_speed_scan_uses_one_case_matrix_per_requested_speed() -> None:
     )
 
 
+@pytest.mark.skipif(not RUNNER_AVAILABLE, reason=_SKIP_REASON)
 def test_critical_launch_failure_stops_the_batch(tmp_path: Path) -> None:
     raw_directory = tmp_path / "原始数据"
     raw_directory.mkdir()
@@ -102,6 +105,7 @@ def test_critical_launch_failure_stops_the_batch(tmp_path: Path) -> None:
     assert "process has died" in result["failure_reason"]
 
 
+@pytest.mark.skipif(not RUNNER_AVAILABLE, reason=_SKIP_REASON)
 def test_valid_analysis_failure_is_not_mislabeled_as_infrastructure(
     tmp_path: Path,
 ) -> None:
