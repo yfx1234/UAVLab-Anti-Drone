@@ -96,7 +96,10 @@ TEST(RelativeImmEkf, KeepsModelProbabilitiesNormalized)
   ASSERT_TRUE(filter.update({0.0, 0.0, -7.0}, kMeasurementCovariance, 0.1));
   ASSERT_TRUE(filter.update({0.1, 0.0, -7.0}, kMeasurementCovariance, 0.2));
   const auto probabilities = filter.model_probabilities();
-  EXPECT_NEAR(probabilities[0] + probabilities[1], 1.0, 1e-12);
+  // H-4：IMM 为三模型（CV/CA/CT），归一化约束覆盖全部三个分量。
+  EXPECT_NEAR(
+    probabilities[0] + probabilities[1] + probabilities[2], 1.0, 1e-12);
   EXPECT_GT(probabilities[0], 0.0);
   EXPECT_GT(probabilities[1], 0.0);
+  EXPECT_GT(probabilities[2], 0.0);
 }

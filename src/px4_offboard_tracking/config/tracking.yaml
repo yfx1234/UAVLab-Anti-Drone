@@ -160,9 +160,10 @@ perception/target_observation:
     camera_translation_body_x_m: 0.0
     camera_translation_body_y_m: 0.0
     camera_translation_body_z_m: 0.0
+    # H-4：与 2026-10-13 实物定案一致（宽轴沿机头，(0,1,0,0)）
     camera_q_body_to_optical_w: 0.0
-    camera_q_body_to_optical_x: 0.7071067811865476
-    camera_q_body_to_optical_y: 0.7071067811865476
+    camera_q_body_to_optical_x: 1.0
+    camera_q_body_to_optical_y: 0.0
     camera_q_body_to_optical_z: 0.0
     enable_pixel_noise: false
     pixel_noise_stddev_px: 1.0
@@ -205,9 +206,10 @@ perception/relative_estimator:
     camera_translation_body_x_m: 0.0
     camera_translation_body_y_m: 0.0
     camera_translation_body_z_m: 0.0
+    # H-4：与 2026-10-13 实物定案一致（宽轴沿机头，(0,1,0,0)）
     camera_q_body_to_optical_w: 0.0
-    camera_q_body_to_optical_x: 0.7071067811865476
-    camera_q_body_to_optical_y: 0.7071067811865476
+    camera_q_body_to_optical_x: 1.0
+    camera_q_body_to_optical_y: 0.0
     camera_q_body_to_optical_z: 0.0
 
 perception/relative_kinematics:

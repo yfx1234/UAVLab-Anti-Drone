@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -703,6 +705,7 @@ def test_depth_contract_keeps_axial_depth_and_euclidean_range_separate():
     assert "bool depth_valid" in message
 
 
+@pytest.mark.skip(reason="H-4：校验路径 src/px4_msgs、src/px4_interceptor_bridge 属旧单体工作台布局，本仓不存在（commit 2318479 后分类）")
 def test_px4_messages_are_official_and_legacy_bridge_is_ignored():
     px4_message_directory = ROOT.parent / "px4_msgs" / "msg"
     forbidden = {
@@ -788,6 +791,7 @@ def test_recoil_exit_is_not_gated_by_reattack_cooldown():
     assert "PureMissionState::SEARCH" in egress
 
 
+@pytest.mark.skip(reason="H-4：依赖 scripts/run_predictive_shot_2mps_scenario.sh，该脚本属纯拦截工作台、不在本仓布局中（commit 2318479 后分类）")
 def test_predictive_sim_target_takeoff_height_is_thirty_metres():
     launch = (ROOT / "launch" / "pure_interceptor_sim.launch.py").read_text(
         encoding="utf-8"
@@ -799,6 +803,7 @@ def test_predictive_sim_target_takeoff_height_is_thirty_metres():
     assert "target_height_m:=30.0" in runner
 
 
+@pytest.mark.skip(reason="H-4：依赖 scripts/run_predictive_shot_2mps_scenario.sh，该脚本属纯拦截工作台、不在本仓布局中（commit 2318479 后分类）")
 def test_predictive_runner_exposes_signed_head_on_geometry_without_changing_defaults():
     runner = (
         ROOT.parents[1] / "scripts" / "run_predictive_shot_2mps_scenario.sh"
@@ -827,6 +832,7 @@ def test_predictive_runner_exposes_signed_head_on_geometry_without_changing_defa
     )
 
 
+@pytest.mark.skip(reason="H-4：依赖 scripts/run_predictive_shot_2mps_scenario.sh，该脚本属纯拦截工作台、不在本仓布局中（commit 2318479 后分类）")
 def test_predictive_runner_head_on_mode_removes_only_the_settling_delay():
     runner = (
         ROOT.parents[1] / "scripts" / "run_predictive_shot_2mps_scenario.sh"
@@ -866,6 +872,7 @@ def test_predictive_runner_head_on_mode_removes_only_the_settling_delay():
     assert "printf 'head_on_mode=%s\\n'" in runner
 
 
+@pytest.mark.skip(reason="H-4：依赖 scripts/run_predictive_shot_2mps_scenario.sh，该脚本属纯拦截工作台、不在本仓布局中（commit 2318479 后分类）")
 def test_known_direction_search_is_operator_cue_and_defaults_off():
     controller = (
         ROOT / "src" / "pure_interceptor_controller.cpp"
@@ -919,6 +926,7 @@ def test_terminal_alignment_uses_valid_depth_acquire_time_without_early_fire():
     assert "capture_event_ = true" not in depth_acquire_case
 
 
+@pytest.mark.skip(reason="H-4：依赖 scripts/record_unified_experiment.sh，该脚本属纯拦截工作台、不在本仓布局中（commit 2318479 后分类）")
 def test_unified_recorder_captures_real_session_and_completion_evidence():
     recorder = (
         ROOT.parents[1] / "scripts" / "record_unified_experiment.sh"

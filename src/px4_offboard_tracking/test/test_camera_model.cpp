@@ -34,21 +34,26 @@ TEST(CameraModel, TargetAboveLevelVehicleProjectsToImageCenter)
   EXPECT_TRUE(projection.visible);
 }
 
-TEST(CameraModel, OpticalAxesFollowRightDownForwardConvention)
+// H-4：三个用例的期望从旧安装四元数 (0,√2/2,√2/2,0) 更新到 2026-10-13
+// 实物定案 (0,1,0,0)——optical +Z = body -Z（朝上）、+X(u) = body +X
+//（机头/宽轴）、+Y(v) = body -Y（指向左舷）。
+
+TEST(CameraModel, OpticalAxesFollowForwardOnUAndRightOnNegativeV)
 {
   const auto right = upward_camera().project({0.0, 1.0, -5.0}, Quaterniond{});
   const auto body_forward = upward_camera().project({1.0, 0.0, -5.0}, Quaterniond{});
-  EXPECT_GT(right.pixel_u, 319.5);
-  EXPECT_NEAR(right.pixel_v, 239.5, 1e-12);
-  EXPECT_NEAR(body_forward.pixel_u, 319.5, 1e-12);
-  EXPECT_GT(body_forward.pixel_v, 239.5);
+  EXPECT_NEAR(right.pixel_u, 319.5, 1e-12);
+  EXPECT_LT(right.pixel_v, 239.5);   // body 右舷 → v 减小（图像上方）
+  EXPECT_GT(body_forward.pixel_u, 319.5);  // 机头 → u 增大（宽轴）
+  EXPECT_NEAR(body_forward.pixel_v, 239.5, 1e-12);
 }
 
 TEST(CameraModel, DepthOpticalCoordinatesMatchDeclaredBodyFrdMatrix)
 {
   const auto projection = upward_camera().project({1.0, 2.0, -5.0}, Quaterniond{});
-  EXPECT_NEAR(projection.position_camera.x, 2.0, 1e-12);
-  EXPECT_NEAR(projection.position_camera.y, 1.0, 1e-12);
+  // (x,y,z)_body → (x, -y, -z)_optical
+  EXPECT_NEAR(projection.position_camera.x, 1.0, 1e-12);
+  EXPECT_NEAR(projection.position_camera.y, -2.0, 1e-12);
   EXPECT_NEAR(projection.position_camera.z, 5.0, 1e-12);
 }
 
@@ -108,15 +113,28 @@ TEST(CameraModel, DepthCameraUsesSpecifiedAngularFieldOfView)
   const CameraModel model(
     intrinsics, extrinsics,
     CameraFieldOfView{8.5 * M_PI / 180.0, 10.0 * M_PI / 180.0});
+  // 新安装下 u 轴 = 机头：水平半角 8.5° 管机头方向，垂直半角 10° 管
+  // 右舷方向（v = -body_y）
   EXPECT_TRUE(model.project({0.0, 0.0, -10.0}, Quaterniond{}).visible);
   EXPECT_TRUE(model.project(
-      {10.0 * std::tan(9.9 * M_PI / 180.0), 0.0, -10.0}, Quaterniond{}).visible);
+      {10.0 * std::tan(8.4 * M_PI / 180.0), 0.0, -10.0}, Quaterniond{}).visible);
   EXPECT_FALSE(model.project(
-      {10.0 * std::tan(10.1 * M_PI / 180.0), 0.0, -10.0}, Quaterniond{}).visible);
+      {10.0 * std::tan(8.6 * M_PI / 180.0), 0.0, -10.0}, Quaterniond{}).visible);
   EXPECT_TRUE(model.project(
-      {0.0, 10.0 * std::tan(8.4 * M_PI / 180.0), -10.0}, Quaterniond{}).visible);
+      {0.0, 10.0 * std::tan(9.9 * M_PI / 180.0), -10.0}, Quaterniond{}).visible);
   EXPECT_FALSE(model.project(
-      {0.0, 10.0 * std::tan(8.6 * M_PI / 180.0), -10.0}, Quaterniond{}).visible);
+      {0.0, 10.0 * std::tan(10.1 * M_PI / 180.0), -10.0}, Quaterniond{}).visible);
+}
+
+// H-4：锁定实物安装四元数（2026-10-13 定案，宽轴沿机头）——库内函数、
+// 估计器参数默认值与 tracking.yaml 三处必须一致
+TEST(CameraModel, DefaultUpwardInstallationQuaternionMatchesHardwareDecision)
+{
+  const auto q = CameraModel::default_upward_optical_quaternion();
+  EXPECT_NEAR(q.w, 0.0, 1e-12);
+  EXPECT_NEAR(q.x, 1.0, 1e-12);
+  EXPECT_NEAR(q.y, 0.0, 1e-12);
+  EXPECT_NEAR(q.z, 0.0, 1e-12);
 }
 
 TEST(CameraModel, SearchCameraIsTiltedTenDegreesTowardBodyForward)
