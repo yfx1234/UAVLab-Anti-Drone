@@ -44,6 +44,10 @@ T_ATT = "/fmu/out/vehicle_attitude"
 T_LP = "/fmu/out/vehicle_local_position"
 T_ST = "/fmu/out/vehicle_status"
 T_OBS = "/perception/observations_json"
+# mock 全链路（fullchain）里 synthetic 发 /test/ 前缀话题、桥经
+# bridge_input_topic 参数指过去——生产布局没有该话题，两个都订，
+# 哪个有数据用哪个（板上实测 2026-10-18）
+T_OBS_ALT = "/test/perception/observations_json"
 T_BRIDGE = "/debug/bridge_state"
 T_EST = "/debug/estimator_state"
 T_CMD = "/fmu/in/vehicle_command"
@@ -84,6 +88,7 @@ class PreflightNode(Node):
             (T_LP, VehicleLocalPosition),
             (T_ST, VehicleStatus),
             (T_OBS, String),
+            (T_OBS_ALT, String),
             (T_BRIDGE, String),
             (T_EST, String),
         ):
@@ -126,7 +131,8 @@ def main():
     node = PreflightNode()
     try:
         # 1-4. 飞控数据流 + 感知观测频率（共用 5s 窗）
-        hz = measure_all_hz(node, [T_ATT, T_LP, T_ST, T_OBS], 5.0)
+        hz = measure_all_hz(
+            node, [T_ATT, T_LP, T_ST, T_OBS, T_OBS_ALT], 5.0)
         check("飞控姿态 %s" % T_ATT, "PASS" if hz[T_ATT] >= 20.0 else "FAIL",
               "%.1f Hz" % hz[T_ATT])
         check("飞控位置 %s" % T_LP, "PASS" if hz[T_LP] >= 10.0 else "FAIL",
@@ -134,9 +140,14 @@ def main():
         # PX4 1.15.4 Commander 2Hz 发布（F-1），阈值 1.5 容忍丢一包
         check("飞控状态 %s" % T_ST, "PASS" if hz[T_ST] >= 1.5 else "FAIL",
               "%.1f Hz" % hz[T_ST])
-        check("感知观测 %s" % T_OBS,
-              "PASS" if 13.0 <= hz[T_OBS] <= 17.0 else "FAIL",
-              "%.1f Hz" % hz[T_OBS])
+        # 感知观测：生产 /perception/...，mock 全链路 /test/perception/...
+        if hz[T_OBS] > 0.0 or hz[T_OBS_ALT] <= 0.0:
+            obs_topic, obs_hz = T_OBS, hz[T_OBS]
+        else:
+            obs_topic, obs_hz = T_OBS_ALT, hz[T_OBS_ALT]
+        check("感知观测 %s" % obs_topic,
+              "PASS" if 13.0 <= obs_hz <= 17.0 else "FAIL",
+              "%.1f Hz" % obs_hz)
 
         # 5. 桥状态（1Hz，窗口内应已收到）
         bridge = kv(node.last[T_BRIDGE]) if node.last[T_BRIDGE] else {}
