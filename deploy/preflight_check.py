@@ -12,8 +12,11 @@
   2. /fmu/out/vehicle_local_position >=10 Hz
   3. /fmu/out/vehicle_status         >=1.5 Hz（PX4 Commander 实际 2Hz，
      F-1——不要按 10Hz 要求）
-  4. /perception/observations_json   13-17 Hz
+  4. /perception/observations_json   13-17 Hz 且检测器已启用
+     （detector_enabled=true / detector_state=2，H-3）
   5. /debug/bridge_state             in_hz 13-17 且 last_stamp_age_ms<300
+  5b. 感知上报内参 vs 估计器 camera_fx/fy/cx/cy，|Δ|>0.5px FAIL（H-3；
+      桥未上报内参时 WARN）
   6. /debug/estimator_state         3s 窗 Δatt(姿态拒收) << Δobs；
      Δobs=0（视场内无目标）判 WARN 不判 FAIL
   7. /fmu/in/vehicle_command         发布者数=0（rc_gated 红线，进程内
@@ -24,6 +27,7 @@
 LOCALHOST_ONLY=1 直接退出 1（与拦截链发现配置不一致时结果不可信）。
 """
 
+import json
 import os
 import re
 import subprocess
@@ -32,6 +36,7 @@ import time
 
 try:
     import rclpy
+    from rcl_interfaces.srv import GetParameters
     from rclpy.node import Node
     from rclpy.qos import qos_profile_sensor_data
     from px4_msgs.msg import VehicleAttitude, VehicleLocalPosition, VehicleStatus
@@ -74,6 +79,35 @@ def spin_for(node, seconds):
     deadline = time.monotonic() + seconds
     while time.monotonic() < deadline:
         rclpy.spin_once(node, timeout_sec=0.05)
+
+
+def get_node_params(node, node_name, names, timeout_s=5.0):
+    """H-3：读目标节点参数（GetParameters 服务，不经 CLI daemon）。
+    失败/超时返回 None。"""
+    client = node.create_client(GetParameters, node_name + "/get_parameters")
+    try:
+        if not client.wait_for_service(timeout_sec=timeout_s):
+            return None
+        request = GetParameters.Request()
+        request.names = list(names)
+        future = client.call_async(request)
+        deadline = time.monotonic() + timeout_s
+        while not future.done() and time.monotonic() < deadline:
+            rclpy.spin_once(node, timeout_sec=0.05)
+        if not future.done():
+            return None
+        response = future.result()
+        out = {}
+        for name, value in zip(names, response.values):
+            if value.type == 3:  # PARAMETER_DOUBLE
+                out[name] = value.double_value
+            elif value.type == 2:  # PARAMETER_INTEGER
+                out[name] = float(value.integer_value)
+            else:
+                out[name] = None
+        return out
+    finally:
+        node.destroy_client(client)
 
 
 class PreflightNode(Node):
@@ -152,6 +186,23 @@ def main():
         check("感知观测 %s" % obs_topic,
               "PASS" if 13.0 <= obs_hz <= 17.0 else "FAIL",
               "%.1f Hz" % obs_hz)
+        # H-3：检测器必须真的在工作——YOLO 没加载/已崩溃时感知仍 15Hz
+        # 出帧（detector_enabled=false），桥全部丢弃，纯频率检查看不出来
+        obs_payload = None
+        try:
+            obs_payload = json.loads(node.last[obs_topic])
+        except (TypeError, ValueError):
+            obs_payload = None
+        detector_ok = (
+            isinstance(obs_payload, dict) and
+            obs_payload.get("detector_enabled") is True and
+            int(obs_payload.get("detector_state", -1)) == 2)
+        check("检测器已启用（detector_enabled/state）",
+              "PASS" if detector_ok else "FAIL",
+              "enabled=%s state=%s" % (
+                  obs_payload.get("detector_enabled"),
+                  obs_payload.get("detector_state"))
+              if isinstance(obs_payload, dict) else "无 JSON 负载")
 
         # 5. 桥状态（1Hz，窗口内应已收到）
         bridge = kv(node.last[T_BRIDGE]) if node.last[T_BRIDGE] else {}
@@ -164,6 +215,35 @@ def main():
                   "%.1f Hz" % in_hz)
             check("观测时间戳新鲜", "PASS" if stamp_age < 300.0 else "FAIL",
                   "%.0f ms" % stamp_age)
+            # H-3：感知上报内参 vs 估计器参数——标定/分辨率变了没人发现
+            # 会直接吃掉 2° 主门预算（历史上 cx 960 vs 1011.7 差 ~1.8°）
+            intr_keys = ("intrinsics_fx", "intrinsics_fy",
+                         "intrinsics_cx", "intrinsics_cy")
+            bridge_intr = {k: bridge.get(k) for k in intr_keys}
+            if any(v is None or v <= 0.0 for v in bridge_intr.values()):
+                check("感知/估计器内参一致", "WARN",
+                      "桥未上报完整内参，无法比对")
+            else:
+                est_params = get_node_params(
+                    node, "/pursuer/relative_estimator",
+                    ("camera_fx", "camera_fy", "camera_cx", "camera_cy"))
+                est_params = est_params or get_node_params(
+                    node, "/relative_estimator",
+                    ("camera_fx", "camera_fy", "camera_cx", "camera_cy"))
+                if not est_params or any(v is None for v in est_params.values()):
+                    check("感知/估计器内参一致", "FAIL",
+                          "无法读取估计器参数（节点未起或服务超时）")
+                else:
+                    pairs = (
+                        (bridge_intr["intrinsics_fx"], est_params["camera_fx"]),
+                        (bridge_intr["intrinsics_fy"], est_params["camera_fy"]),
+                        (bridge_intr["intrinsics_cx"], est_params["camera_cx"]),
+                        (bridge_intr["intrinsics_cy"], est_params["camera_cy"]))
+                    deltas = [abs(a - b) for a, b in pairs]
+                    worst = max(deltas)
+                    check("感知/估计器内参一致",
+                          "PASS" if worst <= 0.5 else "FAIL",
+                          "max|Δ|=%.2f px (fx/fy/cx/cy)" % worst)
 
         # 6. 估计器姿态接受（Δatt=拒收增量 << Δobs=观测增量，3s 窗）
         est0 = kv(node.last[T_EST]) if node.last[T_EST] else {}
