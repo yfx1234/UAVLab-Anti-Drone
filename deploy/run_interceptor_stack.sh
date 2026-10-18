@@ -6,6 +6,7 @@
 #   ./run_interceptor_stack.sh stop                     # 停止（SIGINT 优雅退出）
 #   ./run_interceptor_stack.sh status                   # 进程 + 最近日志
 #   ./run_interceptor_stack.sh log                      # 跟踪最新日志
+#   ./run_interceptor_stack.sh check                    # 立即跑一次启动自检
 #
 # 上电顺序（N-2，2026-10-17）：面板对时 → 启动感知+YOLO → 启动拦截链
 # → 飞控控制台 uxrce_dds_client status 确认 connected/timesync converged
@@ -27,6 +28,7 @@ set -euo pipefail
 INTERCEPTOR_WS="${INTERCEPTOR_WS:-$HOME/interceptor_ws}"
 LOG_DIR="${NETGUN_LOG_DIR:-$HOME/netgun_logs}"
 PID_FILE="$LOG_DIR/interceptor_stack.pid"
+CHECK_FILE="$LOG_DIR/last_start_check.txt"
 LAUNCH_PKG="netgun_intercept"
 LAUNCH_FILE="netgun_real.launch.py"
 
@@ -66,6 +68,42 @@ latest_log() {
   ls -t "$LOG_DIR"/interceptor_stack_*.log 2>/dev/null | head -1 || true
 }
 
+# N-1/F-6（2026-10-18）：启动自检——估计器 diag 里 attmiss 随 obs 增长
+# 即 DDS 发现不通（PTCFG/ROS_LOCALHOST_ONLY/域不一致）。结果追加到
+# $CHECK_FILE（面板/interceptor_status.py 可读），非 OK 同时追加进运行
+# 日志——原实现整个子 shell >/dev/null 2>&1，告警无人可见。
+run_start_check() {
+  local log_file="$1" pid="${2:-}"
+  local line obs miss status msg alive
+  if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+    alive="进程运行中"
+  else
+    alive="进程已退出"
+  fi
+  if ! grep -q "estimator diag" "$log_file" 2>/dev/null; then
+    status="UNKNOWN"
+    msg="15s 内未见 estimator diag 行（节点未起或日志未落盘；$alive）"
+  else
+    line="$(grep "estimator diag" "$log_file" 2>/dev/null | tail -1)"
+    obs="$(echo "$line" | grep -o "obs=[0-9]*" | cut -d= -f2)"
+    miss="$(echo "$line" | grep -o "attmiss=[0-9]*" | cut -d= -f2)"
+    if [ -n "$obs" ] && [ -n "$miss" ] && [ "$obs" -gt 30 ] &&
+      [ "$miss" -eq "$obs" ]; then
+      status="WARN"
+      msg="拦截链未收到飞控姿态（attmiss=obs=$miss）——检查 UXRCE_DDS_PTCFG/UXRCE_DDS_DOM_ID 与本机 ROS_LOCALHOST_ONLY 是否一致"
+    else
+      status="OK"
+      msg="estimator diag 正常（obs=${obs:-0} attmiss=${miss:-0}；$alive）"
+    fi
+  fi
+  printf '[%s] %s %s (log: %s)\n' \
+    "$(date '+%F %T')" "$status" "$msg" "$log_file" >>"$CHECK_FILE"
+  if [ "$status" != "OK" ]; then
+    printf '%s：%s\n' "$status" "$msg" >>"$log_file"
+  fi
+  echo "$status $msg"
+}
+
 cmd_start() {
   if pid="$(running_pid)"; then
     echo "拦截链已在运行 (pid $pid)，日志 $(latest_log)"
@@ -91,19 +129,19 @@ cmd_start() {
     exit 1
   fi
   echo "已启动 pid $pid，日志 $log_file"
-  # N-1：15s 后检查估计器是否收到飞控姿态——attmiss 随 obs 增长即
-  # DDS 发现不通（PTCFG/ROS_LOCALHOST_ONLY/域不一致），只 WARN 不退出
-  (
-    sleep 15
-    if grep -q "guidance alive" "$log_file" 2>/dev/null || kill -0 "$pid" 2>/dev/null; then
-      line=$(grep "estimator diag" "$log_file" 2>/dev/null | tail -1)
-      obs=$(echo "$line" | grep -o "obs=[0-9]*" | cut -d= -f2)
-      miss=$(echo "$line" | grep -o "attmiss=[0-9]*" | cut -d= -f2)
-      if [ -n "$obs" ] && [ -n "$miss" ] && [ "$obs" -gt 30 ] && [ "$miss" -eq "$obs" ]; then
-        echo "WARN：拦截链未收到飞控姿态（attmiss=obs=$miss）——检查 UXRCE_DDS_PTCFG/UXRCE_DDS_DOM_ID 与本机 ROS_LOCALHOST_ONLY 是否一致"
-      fi
-    fi
-  ) >/dev/null 2>&1 &
+  # 15s 后自检（run_start_check 内部落 CHECK_FILE 与运行日志）
+  ( sleep 15; run_start_check "$log_file" "$pid" >/dev/null 2>&1 ) &
+}
+
+cmd_check() {
+  local log_file pid
+  log_file="$(latest_log)"
+  if [ -z "$log_file" ]; then
+    echo "暂无日志" >&2
+    exit 1
+  fi
+  pid="$(cat "$PID_FILE" 2>/dev/null || true)"
+  run_start_check "$log_file" "$pid"
 }
 
 cmd_stop() {
@@ -139,6 +177,10 @@ cmd_status() {
     echo "---- 最近日志（$log_file）----"
     tail -5 "$log_file" || true
   fi
+  if [ -f "$CHECK_FILE" ]; then
+    echo "---- 最近启动自检（$CHECK_FILE）----"
+    tail -3 "$CHECK_FILE"
+  fi
 }
 
 cmd_log() {
@@ -156,8 +198,9 @@ case "${1:-start}" in
   stop) cmd_stop ;;
   status) cmd_status ;;
   log) cmd_log ;;
+  check) cmd_check ;;
   *)
-    echo "用法：$0 {start|stop|status|log}" >&2
+    echo "用法：$0 {start|stop|status|log|check}" >&2
     exit 2
     ;;
 esac
