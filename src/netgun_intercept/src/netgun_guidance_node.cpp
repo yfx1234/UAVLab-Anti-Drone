@@ -629,7 +629,12 @@ private:
 
     // 估计状态：只看 valid+时效（镜像语义）。不逐帧要求
     // measurement_accepted——瞬态期 IMM 拒帧会闪烁，造成模式抖动。
+    // H-1b：est_ok（方向级）与 est_pos_ok（位置级）拆分——感知对同一
+    // track 连续 3 帧确认才给深度，之前的估计 data_age=+inf（从未有
+    // 深度），位置是 12 m 名义距离伪轨，只有方向可信。方向级管停自
+    // 旋/航向伺服；位置级管站位/前馈/模式切换/AIM。
     bool est_ok = false;
+    bool est_pos_ok = false;
     double tvx = 0.0, tvy = 0.0, tax = 0.0, tay = 0.0;
     if (est_ && est_->valid) {
       const double now_s = now().seconds();
@@ -637,6 +642,9 @@ private:
       const double est_age = now_s - est_->header.stamp.sec -
         est_->header.stamp.nanosec * 1e-9;
       est_ok = est_age >= -0.05 && est_age <= est_timeout_;
+      // data_age 有限 = 自初始化以来接受过深度（R0-5 语义）；深度短暂
+      // 丢失时 data_age 有限但增长，仍算位置级（值来自上一锚定）
+      est_pos_ok = est_ok && std::isfinite(est_->data_age);
     }
     if (est_ok) {
       // R1-2：目标速度/加速度按参数选坐标系。absolute=相对量+本机量
@@ -665,7 +673,8 @@ private:
     // 双向滞回会造成模式抖动（2026-10-12 探针实测）。
     const bool switch_allowed =
       hold_mode_ && track_entry_s_ > 0.0 && now().seconds() - track_entry_s_ >= 5.0;
-    if (switch_allowed && target_speed > track_engage_speed_mps_) {
+    // H-1b：纯方位伪轨速度是编造的（不可观测），不得触发模式切换
+    if (switch_allowed && est_pos_ok && target_speed > track_engage_speed_mps_) {
       // 持续 0.5s 确认：IMM 悬停速度噪声实测 ~0.3 m/s，TRACK 入口瞬间
       // 会冲过 0.3 阈值造成误切换（2026-10-12 探针实测，位置保持从未运行）
       const double now_s2 = now().seconds();
@@ -688,7 +697,9 @@ private:
     // 摆动抑制（清单§八-4）：控制反馈项用一阶低通估计（τ 参数，0=关）。
     // 只滤反馈（P/积分/保持点），前馈速度保持原始——摆动来自位置环
     // 对 IMM 噪声的响应（±0.23m@1.1s=1.8° 轴误差贴 2° 主门）
-    if (est_ok) {
+    // H-1b：低通输入只认位置级有效估计——纯方位期不 seed/不更新，
+    // 且清除种子标志（首帧深度重锚后当拍直接 seed，不从错误值低通过去）
+    if (est_pos_ok) {
       if (!est_lp_seeded_) {
         // R0-3：第一条有效估计直接赋值——从 0 起低通会把反馈项拖 ~1s
         est_lp_[0] = est_->position.x;
@@ -720,12 +731,12 @@ private:
     // 时火控互锁亦同步闭门）。
     if (phase_ == Phase::AIM) {
       const double now_s5 = now().seconds();
-      if (!est_ok || now_s5 - aim_since_s_ > aim_timeout_s_) {
+      if (!est_pos_ok || now_s5 - aim_since_s_ > aim_timeout_s_) {
         phase_ = Phase::TRACK;
         aim_stable_since_s_ = -1.0;
         RCLCPP_INFO(
           get_logger(), "aim %s → resume velocity track",
-          est_ok ? "timeout" : "est lost");
+          est_pos_ok ? "timeout" : "est lost");
       } else {
         if (!aim_seeded_) {
           aim_vx_ = lp_->vx;
@@ -907,7 +918,7 @@ private:
     // 恒卡 5-6°无法瞄准）。BEARING_HOLD/估计失效/授权未到重置稳定计时；
     // 本拍照常发跟踪指令，AIM 控制自下一拍起。
     if (phase_ == Phase::TRACK && aim_mode_enabled_ && !bearing_hold_) {
-      const bool aim_ready = est_ok && auth_effective(now().seconds()) &&
+      const bool aim_ready = est_pos_ok && auth_effective(now().seconds()) &&
         target_speed <= aim_max_target_speed_mps_;
       const double now_s6 = now().seconds();
       if (aim_ready) {
@@ -928,7 +939,9 @@ private:
 
     if (hold_mode_) {
       // below-target 点 = 本机位置 + 低通估计；估计失效时锁定旧目标。
-      if (est_ok) {
+      // H-1b：纯方位期（位置级无效）保持当前位置/高度——旧逻辑会朝
+      // 12 m 名义距离伪轨站位并爬升 1 m，把目标甩出视场
+      if (est_pos_ok) {
         hold_target_[0] = lp_->x + est_lp_[0];
         hold_target_[1] = lp_->y + est_lp_[1];
       }
@@ -939,7 +952,7 @@ private:
       // NED z 向下为正：est_z=-5.9（间距 5.9）要拉大到 6.5 需【下降】
       // 0.6m（z_target = lp_z + (6.5 + est_z) = lp_z + 0.6）。
       // 首版符号写反导致追踪机抬头逼近目标（range 压到 4.1m）。
-      hold_target_[2] = est_ok ?
+      hold_target_[2] = est_pos_ok ?
         lp_->z + clampd(
         standoff_target_m_ + est_lp_[2], -1.0, 1.0) : -takeoff_h_;
       // 前馈清零：入轨初期 IMM 速度残值可达 ~4 m/s（爬升穿越不稳定区），
@@ -992,7 +1005,9 @@ private:
         vx = approach_speed_mps_ * decay * std::cos(bearing_hold_yaw_);
         vy = approach_speed_mps_ * decay * std::sin(bearing_hold_yaw_);
       }
-    } else if (est_ok) {
+      // H-1b：速度跟踪控制律（P/积分/预测/前馈）只用位置级估计——
+      // 纯方位期的位置/速度不可信，指令经 slew 自然衰减到 0 原地等
+    } else if (est_pos_ok) {
       double pred_x = est_lp_[0] + est_->velocity.x * prediction_horizon_s_;
       double pred_y = est_lp_[1] + est_->velocity.y * prediction_horizon_s_;
       const double pred_mag = std::hypot(pred_x, pred_y);
@@ -1179,11 +1194,13 @@ private:
     const double t = now().seconds();
     const bool fcu_ok = fcu_inputs_fresh(t);
     bool est_ok = false;
+    bool est_pos_ok = false;
     double tspd = 0.0;
     if (est_ && est_->valid) {
       const double age = t -
         est_->header.stamp.sec - est_->header.stamp.nanosec * 1e-9;
       est_ok = age >= -0.05 && age <= est_timeout_;
+      est_pos_ok = est_ok && std::isfinite(est_->data_age);
       if (est_ok) {
         tspd = std::hypot(est_->velocity.x, est_->velocity.y);
       }
@@ -1191,14 +1208,15 @@ private:
     std_msgs::msg::String msg;
     char buf[640];
     std::snprintf(buf, sizeof(buf),
-      "phase=%s hold=%d bh=%d aim=%d auth=%d est=%d tspd=%.2f "
+      "phase=%s hold=%d bh=%d aim=%d auth=%d est=%d epos=%d tspd=%.2f "
       "stab=%.1f aim_t=%.2f | pos=%.2f,%.2f,%.2f vel=%.2f,%.2f "
       "yaw=%.1f tgt=%.2f,%.2f,%.2f | spv=%.2f,%.2f spa=%.2f,%.2f "
       "spin=%.2f srch=%d to=%d fcu=%d lpms=%.0f stms=%.0f authms=%.0f",
       phase_name(phase_), static_cast<int>(hold_mode_),
       static_cast<int>(bearing_hold_ && !hold_mode_),
       static_cast<int>(phase_ == Phase::AIM),
-      static_cast<int>(auth_effective(t)), static_cast<int>(est_ok), tspd,
+      static_cast<int>(auth_effective(t)), static_cast<int>(est_ok),
+      static_cast<int>(est_pos_ok), tspd,
       aim_stable_since_s_ > 0.0 ? t - aim_stable_since_s_ : -1.0,
       phase_ == Phase::AIM ? t - aim_since_s_ : -1.0,
       lp_->x, lp_->y, lp_->z, lp_->vx, lp_->vy,

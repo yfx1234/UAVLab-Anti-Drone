@@ -64,6 +64,14 @@ target_include_directories(relative_ekf PUBLIC
   $<INSTALL_INTERFACE:include>)
 target_link_libraries(relative_ekf Eigen3::Eigen)
 
+# H-1：bearing-only 伪量测构造（节点与 gtest 共用的纯函数库）
+add_library(bearing_only_measurement src/bearing_only_measurement.cpp)
+target_compile_features(bearing_only_measurement PUBLIC cxx_std_17)
+target_include_directories(bearing_only_measurement PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>)
+target_link_libraries(bearing_only_measurement camera_model)
+
 add_library(estimator_evaluation src/estimator_evaluation.cpp)
 target_compile_features(estimator_evaluation PUBLIC cxx_std_17)
 target_include_directories(estimator_evaluation PUBLIC
@@ -259,7 +267,8 @@ target_include_directories(relative_estimator PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
 ament_target_dependencies(relative_estimator anti_drone_interfaces px4_msgs rclcpp)
-target_link_libraries(relative_estimator camera_model relative_ekf Eigen3::Eigen
+target_link_libraries(relative_estimator camera_model bearing_only_measurement
+  relative_ekf Eigen3::Eigen
   sample_time_sync "${cpp_typesupport_target}")
 
 add_executable(simulation_truth_bridge src/simulation_truth_bridge.cpp)
@@ -462,6 +471,13 @@ if(BUILD_TESTING)
   target_include_directories(test_relative_ekf PRIVATE include)
   target_compile_features(test_relative_ekf PUBLIC cxx_std_17)
   target_link_libraries(test_relative_ekf relative_ekf Eigen3::Eigen)
+
+  # H-1：bearing-only 建轨 + 首帧深度重锚回归（T1-T5）
+  ament_add_gtest(test_bearing_only_track test/test_bearing_only_track.cpp)
+  target_include_directories(test_bearing_only_track PRIVATE include)
+  target_compile_features(test_bearing_only_track PUBLIC cxx_std_17)
+  target_link_libraries(test_bearing_only_track bearing_only_measurement
+    relative_ekf Eigen3::Eigen)
 
   ament_add_gtest(test_imm_scenarios test/test_imm_scenarios.cpp)
   target_include_directories(test_imm_scenarios PRIVATE include)

@@ -69,6 +69,8 @@ public:
     camera_rate_hz_(declare_parameter<double>("camera_rate_hz", 30.0)),
     pixel_stddev_px_(declare_parameter<double>("pixel_noise_stddev_px", 0.0)),
     depth_stddev_m_(declare_parameter<double>("depth_noise_stddev_m", 0.0)),
+    depth_confirm_frames_(
+      declare_parameter<int>("depth_confirm_frames", 3)),  // H-1c：对齐板端 3 帧确认
     depth_intrinsics_{
       declare_parameter<double>("depth_camera_fx", 12847.019977569425),
       declare_parameter<double>("depth_camera_fy", 6124.984365187126),
@@ -305,8 +307,20 @@ private:
     // 检测/深度分离区（2026-10-14）：>depth_valid_max_m 时 depth_valid=
     // false 而 visible/像素保留（复现实机 YOLO 检测在、估深无输出的
     // bearing-only 情形；默认 -1 = 关闭，维持 2026-10-13 定案行为）
-    output.depth_valid = measurement_valid &&
+    const bool depth_in_range = measurement_valid &&
       (depth_valid_max_m_ < 0.0 || observation->depth <= depth_valid_max_m_);
+    // H-1c（2026-10-19）：模拟真机 perception_quality 的连续帧深度确认
+    //（同一 track streak>=depth_confirm_frames 才输出实测深度）——新
+    // track 或深度中断恢复的前 N-1 帧 depth_valid=false（bearing-only
+    // 建轨），与板端时序一致，否则仿真测不出 H-1 瞬态
+    if (depth_in_range) {
+      ++depth_streak_;
+    } else {
+      depth_streak_ = 0;
+    }
+    const bool depth_confirmed =
+      depth_in_range && depth_streak_ >= depth_confirm_frames_;
+    output.depth_valid = depth_confirmed;
     const double sigma_x = std::max(
       1e-3, std::abs(observation->depth / depth_intrinsics_.fx) *
       std::max(0.5, pixel_stddev_px_));
@@ -314,7 +328,7 @@ private:
       1e-3, std::abs(observation->depth / depth_intrinsics_.fy) *
       std::max(0.5, pixel_stddev_px_));
     const double sigma_z = std::max(1e-3, std::max(0.02, depth_stddev_m_) * depth_noise_mult);
-    output.position_covariance = measurement_valid ?
+    output.position_covariance = depth_confirmed ?
       std::array<double, 9>{
       sigma_x * sigma_x, 0.0, 0.0,
       0.0, sigma_y * sigma_y, 0.0,
@@ -368,6 +382,8 @@ private:
   double depth_camera_maximum_depth_m_{1e9};
   double depth_reliable_max_m_{15.0};
   double depth_valid_max_m_{-1.0};
+  int depth_confirm_frames_{3};
+  int depth_streak_{0};  // H-1c：连续深度帧计数（可见即累计，中断清零）
   std::mt19937 rng_{std::random_device{}()};
   CameraIntrinsics search_intrinsics_;
   CameraModel depth_camera_;

@@ -57,6 +57,9 @@ class SyntheticPerceptionNode(Node):
         self.declare_parameter("image_width", 1920)
         self.declare_parameter("image_height", 1080)
         self.declare_parameter("run_id", "fullchain-test")
+        # H-1c：模拟真机 perception_quality 的连续帧深度确认——同一 track
+        # 前 N-1 帧 depth_valid=False（bearing_only 建轨），对齐板端时序
+        self.declare_parameter("depth_confirm_frames", 3)
         self.declare_parameter(
             "topic", "/test/perception/observations_json")
 
@@ -66,6 +69,7 @@ class SyntheticPerceptionNode(Node):
         self._seq = 0
         self._state = None
         self._state_time_s = -1e9
+        self._depth_streak = 0
 
         self.create_subscription(
             String, "/test/mock_px4/state", self._on_state, 10)
@@ -118,6 +122,15 @@ class SyntheticPerceptionNode(Node):
                 nx = rel_opt[0] / z
                 ny = rel_opt[1] / z
                 depth_ok = 0.35 < z < 10.0
+                # H-1c：连续帧深度确认（对齐真机 streak>=N 才输出实测深度）
+                if depth_ok:
+                    self._depth_streak += 1
+                else:
+                    self._depth_streak = 0
+                confirm_frames = int(
+                    self.get_parameter("depth_confirm_frames").value)
+                depth_confirmed = depth_ok and (
+                    self._depth_streak >= confirm_frames)
                 targets.append({
                     "track_id": 1,
                     "class_id": 0,
@@ -136,18 +149,21 @@ class SyntheticPerceptionNode(Node):
                     "horizontal_angle_rad": math.atan2(nx, 1.0),
                     "vertical_angle_rad": math.atan2(
                         ny, math.sqrt(1.0 + nx * nx)),
-                    "mode": "depth" if depth_ok else "bearing_only",
-                    "position_valid": depth_ok,
-                    "depth_measured_valid": depth_ok,
+                    "mode": "depth" if depth_confirmed else "bearing_only",
+                    "position_valid": depth_confirmed,
+                    "depth_measured_valid": depth_confirmed,
                     "covariance_valid": False,
-                    "depth_z_m": z if depth_ok else None,
+                    "depth_z_m": z if depth_confirmed else None,
                     "estimated_depth_z_m": None,
-                    "distance_m": distance if depth_ok else None,
-                    "position_camera": list(rel_opt) if depth_ok else None,
+                    "distance_m": distance if depth_confirmed else None,
+                    "position_camera": list(rel_opt) if depth_confirmed else None,
                     "depth_valid_pixels": 500,
                     "depth_valid_ratio": 0.6,
                     "depth_iqr_m": 0.05,
-                    "reason": "accepted",
+                    # H-1c：确认窗内 reason 与真机 perception_quality 对齐
+                    "reason": (
+                        "accepted" if depth_confirmed else
+                        ("depth_temporal_warmup" if depth_ok else "bearing_only")),
                     "calibration_id": "initial_prior",
                     "size_estimate_calibrated": False,
                     "position_definition": "supported_surface_center_ray",

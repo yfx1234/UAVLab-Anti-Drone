@@ -71,6 +71,7 @@ def main(args=None):
             self.declare_parameter("angular_rate", 0.5)
             self.declare_parameter("detect_rate_hz", 15.0)
             self.declare_parameter("depth_max_m", 10.5)
+            self.declare_parameter("depth_confirm_frames", 3)
             self.declare_parameter("dropout_rate", 0.05)
             self.declare_parameter("depth_noise_base_m", 0.05)
             self.declare_parameter("depth_noise_scale", 0.03)
@@ -84,6 +85,9 @@ def main(args=None):
             self._rate_rad = number("angular_rate")
             self._rate_hz = max(1.0, number("detect_rate_hz"))
             self._depth_max = number("depth_max_m")
+            # H-1c：连续帧深度确认（对齐真机 streak>=N），默认 3
+            self._depth_confirm = max(1, int(number("depth_confirm_frames")))
+            self._depth_streak = 0
             self._dropout = max(0.0, min(0.9, number("dropout_rate")))
             self._noise_base = number("depth_noise_base_m")
             self._noise_scale = number("depth_noise_scale")
@@ -140,7 +144,13 @@ def main(args=None):
             rel_frd = rotate_transpose(rotation, rel_ned)
             body_flu = [rel_frd[0], -rel_frd[1], -rel_frd[2]]
             # 距离/方向加噪。
-            if distance <= self._depth_max:
+            raw_depth = distance <= self._depth_max
+            # H-1c：连续帧确认——新 track/深度中断后前 N-1 帧降级 pseudo
+            if raw_depth:
+                self._depth_streak += 1
+            else:
+                self._depth_streak = 0
+            if raw_depth and self._depth_streak >= self._depth_confirm:
                 mode = "depth"
                 measured_range = distance + self._random.gauss(
                     0.0, self._noise_base + self._noise_scale * distance)
