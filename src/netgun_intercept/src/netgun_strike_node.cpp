@@ -444,10 +444,15 @@ private:
       const bool g_los = input.los_rate_rad_s < fc.maximum_los_rate_rad_s;
       std_msgs::msg::String msg;
       char buf[512];
+      // I-1：fmode/fready 供面板/发射按钮助手就绪判定（auth+est+深度
+      // 硬门；与日志行同名同义）
+      const bool manual_ready = fire_mode_ == "manual" &&
+        !fire_control_.latched() && input.authorization_passed &&
+        input.estimate_valid && depth_age_s_ <= 1e18;
       std::snprintf(buf, sizeof(buf),
         "est=%d auth=%d arm=%d ob=%d h=%d rdy=%.1f/%.1f stb=%.1f/%.1f | "
         "range=%.2f[%.1f,%.1f] axis=%.2fdeg(p=%.1f w=%.1f) los=%.3f/%.2f | "
-        "gates r=%d p=%d w=%d l=%d shots=%d",
+        "gates r=%d p=%d w=%d l=%d shots=%d fmode=%s fready=%d",
         static_cast<int>(input.estimate_valid),
         static_cast<int>(input.authorization_passed),
         static_cast<int>(armed_and_offboard),
@@ -465,7 +470,8 @@ private:
         input.los_rate_rad_s, fc.maximum_los_rate_rad_s,
         static_cast<int>(g_range), static_cast<int>(g_axis_p),
         static_cast<int>(g_axis_w), static_cast<int>(g_los),
-        fire_control_.shot_count());
+        fire_control_.shot_count(),
+        fire_mode_.c_str(), static_cast<int>(manual_ready));
       msg.data = buf;
       debug_pub_->publish(msg);
     }
