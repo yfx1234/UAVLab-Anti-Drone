@@ -25,9 +25,11 @@ OUTPUT=pathlib.Path(os.environ.get('UAVLAB_OUTPUT_DIRECTORY',str(BASE.parents[1]
 BOARD_ACTIONS={'check_device','start_capture','stop_capture','set_detector','start_raw_record','stop_raw_record',
                'list_sessions','list_models','test_model','select_model','save_calibration','export_session','export_diagnostics','prepare_dataset','rename_session','delete_session','save_session_metadata'}
 LOCAL_ACTIONS={'connect','disconnect','start_preview_record','stop_preview_record','download_session','download_asset','extract_local_frames','cancel_job','open_media_folder','delete_local_media',
-               'interceptor_start','interceptor_stop','annotate_session'}
+               'interceptor_start','interceptor_stop','interceptor_fire','annotate_session'}
 INTERCEPTOR_STATUS_CMD='python3 /home/uavlab/interceptor_ws/deploy/interceptor_status.py'
 INTERCEPTOR_CONTROL_CMD='bash /home/uavlab/interceptor_ws/deploy/run_interceptor_stack.sh'
+# I-1：网枪发射按钮（板上助手先校验就绪再发布 /netgun/fire_command，单发闭锁在火控侧）
+INTERCEPTOR_FIRE_CMD='python3 /home/uavlab/interceptor_ws/deploy/netgun_fire_button.py fire'
 
 def valid_request(host,origin,token,expected):
     return host in ('127.0.0.1:8767','localhost:8767') and origin=='http://'+host and isinstance(token,str) and hmac.compare_digest(token,expected)
@@ -168,6 +170,13 @@ class Panel:
                     INTERCEPTOR_CONTROL_CMD+' '+action.removeprefix('interceptor_'),timeout=45)
                 lines=[line for line in out.splitlines() if line.strip()]
                 return {'output':lines[-3:]}
+            if action=='interceptor_fire':
+                # I-1：发射网枪（单发）——板上助手校验就绪（授权/估计/
+                # 深度硬门在 strike 侧逐拍计算）后发布一次发射指令；
+                # 未就绪/已发射时返回拒绝原因，按钮可重试
+                out=self.board.exec_command(INTERCEPTOR_FIRE_CMD,timeout=20)
+                lines=[line for line in out.splitlines() if line.strip()]
+                return json.loads(lines[-1])
             if action=='annotate_session':
                 def annotation_progress(value):
                     with self.lock:self.progress[rid]=value
