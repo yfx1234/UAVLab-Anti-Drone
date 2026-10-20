@@ -223,6 +223,13 @@ def generate_launch_description():
                         "muzzle_offset_body_z_m": 0.0,
                         "boresight_pitch_rad": 0.0,
                         "boresight_yaw_rad": 0.0,
+                        # I-1：实物单发枪口径——开火由面板"发射"按钮驱动
+                        # （/netgun/fire_command）；授权/估计/深度硬门与
+                        # 单发闭锁仍生效。仿真矩阵沿用 auto。
+                        "fire_mode": "manual",
+                        # 实物击发钩子（PWM/GPIO 脉冲命令），接实物时装订；
+                        # 空 = 纯虚拟事件
+                        "trigger_command": "",
                         # 实机口径 2s（仿真 12s=与虚拟目标起跑对齐，仅仿真用）
                         "attack_enable_delay_s": LaunchConfiguration(
                             "attack_enable_delay_s"

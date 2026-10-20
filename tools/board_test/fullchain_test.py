@@ -58,6 +58,7 @@ class Orchestrator(Node):
         self.mock_state = None
         self.engage_on = False
         self.last_engage_cli_s = -1e9
+        self.last_fire_cli_s = -1e9
         self.phase = "P0"
         self.phase_since = time.monotonic()
         self.shot_line = None
@@ -147,6 +148,23 @@ class Orchestrator(Node):
             pass
         self._log("engage -> %s (cli)" % value)
 
+    def _fire_button_cli(self):
+        """I-1：模拟面板发射按钮——/netgun/fire_command 一次性发布，
+        5s 内不重复（strike 侧授权/估计/深度硬门未就绪时安全拒绝）。"""
+        now = time.monotonic()
+        if now - self.last_fire_cli_s < 5.0:
+            return
+        self.last_fire_cli_s = now
+        try:
+            subprocess.run(
+                ["ros2", "topic", "pub", "--once", "/netgun/fire_command",
+                 "std_msgs/msg/Bool", "{data: true}"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                timeout=12)
+        except subprocess.TimeoutExpired:
+            pass
+        self._log("fire_button -> pressed (cli)")
+
     def _read_log(self):
         try:
             with open(self.stack_log_path, "r", errors="replace") as f:
@@ -202,6 +220,10 @@ class Orchestrator(Node):
                 self._finish()
         elif self.phase == "P3":
             self._engage_cli(True)
+            # I-1：netgun_real 现为 manual 开火模式——编排器在此阶段周期
+            # 性"按下发射按钮"（/netgun/fire_command），火控侧授权/估计/
+            # 深度硬门与单发闭锁仍生效；模拟操作手看到就绪后按键
+            self._fire_button_cli()
             fire = re.findall(r"NETGUN FIRE (.+)", log_text)
             if fire:
                 self.shot_line = fire[-1]

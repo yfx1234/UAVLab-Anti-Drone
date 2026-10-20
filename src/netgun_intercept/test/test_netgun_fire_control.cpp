@@ -254,4 +254,35 @@ TEST(MuzzleOffset, GunAxisBodyDefaultAndTilted)
     1.0, 1e-12);
 }
 
+// ---- I-1：手动发射（单发闭锁与自动路径共用一把锁） ----
+
+// 首次手动请求即开火+闭锁；第二次请求返回 LATCHED；自动门此后也不再开。
+TEST(ManualFire, RequestFiresOnceAndLatches)
+{
+  NetgunFireControl control;
+  const auto first = control.request_manual();
+  EXPECT_TRUE(first.fire);
+  EXPECT_EQ(first.reason, FireDecisionReason::MANUAL);
+  EXPECT_EQ(first.shot_id, 1);
+  EXPECT_TRUE(control.latched());
+
+  const auto second = control.request_manual();
+  EXPECT_FALSE(second.fire);
+  EXPECT_EQ(second.reason, FireDecisionReason::LATCHED);
+
+  // 自动门在闭锁后同样不开（发布过的授权输入也不再触发）
+  EXPECT_FALSE(control.update(make_input(10.0, 0.5)).fire);
+}
+
+// 先自动开火再手动请求：同样返回 LATCHED（单发不分来源）。
+TEST(ManualFire, AutoFireThenManualIsLatched)
+{
+  NetgunFireControl control;
+  EXPECT_TRUE(control.update(make_input(1.0, 0.5)).fire);
+  const auto manual = control.request_manual();
+  EXPECT_FALSE(manual.fire);
+  EXPECT_EQ(manual.reason, FireDecisionReason::LATCHED);
+  EXPECT_EQ(manual.shot_id, 1);
+}
+
 }  // namespace

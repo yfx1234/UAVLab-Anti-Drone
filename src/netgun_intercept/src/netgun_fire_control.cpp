@@ -56,6 +56,22 @@ bool NetgunFireControl::distance_gate_passed(const FireControlInput & input) con
          input.range_m <= config_.effective_range_max_m;
 }
 
+FireDecision NetgunFireControl::request_manual()
+{
+  FireDecision decision;
+  if (latched_) {
+    decision.reason = FireDecisionReason::LATCHED;
+    decision.shot_id = shot_count_;
+    return decision;
+  }
+  latched_ = true;
+  ++shot_count_;
+  decision.fire = true;
+  decision.reason = FireDecisionReason::MANUAL;
+  decision.shot_id = shot_count_;
+  return decision;
+}
+
 FireDecision NetgunFireControl::update(const FireControlInput & input)
 {
   FireDecision decision;
@@ -164,6 +180,7 @@ std::string NetgunFireControl::reason_name(FireDecisionReason reason)
     case FireDecisionReason::WINDOW_HOLD: return "WINDOW_HOLD";
     case FireDecisionReason::BLIND_SHOT_EXIT: return "BLIND_SHOT_EXIT";
     case FireDecisionReason::BLIND_SHOT_TIMEOUT: return "BLIND_SHOT_TIMEOUT";
+    case FireDecisionReason::MANUAL: return "MANUAL";
     case FireDecisionReason::LATCHED: return "LATCHED";
     case FireDecisionReason::NONE: break;
   }

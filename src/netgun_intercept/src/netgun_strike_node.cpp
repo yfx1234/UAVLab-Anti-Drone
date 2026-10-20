@@ -1,7 +1,9 @@
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <string>
 
 #include "netgun_intercept/netgun_fire_control.hpp"
@@ -162,6 +164,28 @@ public:
     boresight_pitch_rad_ =
       declare_parameter<double>("boresight_pitch_rad", 0.0);
     boresight_yaw_rad_ = declare_parameter<double>("boresight_yaw_rad", 0.0);
+    // I-1（2026-10-19）：开火模式——auto=火控门自动开火（原口径，
+    // 仿真矩阵沿用）；manual=面板"发射"按钮驱动（实物单发枪口径），
+    // 自动瞄准质量门不参与开火决策，但授权/估计/深度硬门与单发闭锁
+    // 仍然生效
+    fire_mode_ = declare_parameter<std::string>("fire_mode", "auto");
+    if (fire_mode_ != "auto" && fire_mode_ != "manual") {
+      RCLCPP_FATAL(
+        get_logger(), "fire_mode '%s' 不合法（只接受 auto / manual）",
+        fire_mode_.c_str());
+      throw std::runtime_error("invalid fire_mode");
+    }
+    // I-1：实物击发钩子（PWM/GPIO）——开火瞬间执行的外部命令（如
+    // PWM 脉冲脚本）；默认空 = 纯虚拟事件，不触任何硬件
+    trigger_command_ = declare_parameter<std::string>("trigger_command", "");
+    fire_command_sub_ = create_subscription<std_msgs::msg::Bool>(
+      declare_parameter<std::string>("fire_command_topic", "/netgun/fire_command"),
+      rclcpp::QoS(1),
+      [this](std_msgs::msg::Bool::ConstSharedPtr msg) {
+        if (msg->data) {
+          manual_fire_requested_ = true;
+        }
+      });
     // 蒙射 B 支接口（默认关）：交战超时阈值，0=不启用。
     engagement_timeout_s_ =
       declare_parameter<double>("engagement_timeout_s", 0.0);
@@ -446,7 +470,36 @@ private:
       debug_pub_->publish(msg);
     }
 
-    const FireDecision decision = fire_control_.update(input);
+    FireDecision decision;
+    if (fire_mode_ == "manual") {
+      // I-1：手动模式——自动瞄准质量门（轴误差/判窗/LOS/距离/σ）不参与
+      // 开火决策；开火只来自 /netgun/fire_command（面板按钮），在下一拍
+      // 随全量输入处理：授权/估计/深度硬门与单发闭锁仍然生效
+      decision.reason = FireDecisionReason::NONE;
+      if (manual_fire_requested_.exchange(false)) {
+        const bool hard_gates_ok = input.authorization_passed &&
+          input.estimate_valid && depth_age_s_ <= 1e18;
+        if (hard_gates_ok) {
+          decision = fire_control_.request_manual();
+          if (!decision.fire) {
+            RCLCPP_WARN(
+              get_logger(), "manual fire rejected: already fired (shots=%d)",
+              fire_control_.shot_count());
+          }
+        } else {
+          ++diag_manual_rejected_;
+          RCLCPP_WARN(
+            get_logger(),
+            "manual fire rejected: 授权/估计/深度未就绪 (auth=%d est=%d dage=%.2f, %llu 次)",
+            static_cast<int>(input.authorization_passed),
+            static_cast<int>(input.estimate_valid),
+            depth_age_s_ <= 1e18 ? depth_age_s_ : -1.0,
+            static_cast<unsigned long long>(diag_manual_rejected_));
+        }
+      }
+    } else {
+      decision = fire_control_.update(input);
+    }
     // 节流诊断：估计有效性/距离/轴误差/LOS率/授权（不开火时排查用）。
     // arm/ob/h：授权门分量（2026-10-15 加入 stdout，PC 面板飞控状态显示用）。
     if (now_s - last_diagnostic_s_ >= 2.0) {
@@ -457,7 +510,7 @@ private:
         "fcu=%d arm=%d ob=%d h=%d "
         "[t_ready=%.1f t_delay=%.1f t_since_valid=%.1f t_stable=%.1f] "
         "range=%.2f axis_err=%.2fdeg los_rate=%.3f shots=%d "
-        "dage=%.2f sr=%.2f sl=%.2f mq=%d",
+        "dage=%.2f sr=%.2f sl=%.2f mq=%d fmode=%s fready=%d",
         static_cast<int>(input.estimate_valid),
         static_cast<int>(latest_estimate_->valid),
         static_cast<int>(latest_estimate_->measurement_accepted),
@@ -479,7 +532,11 @@ private:
         input.los_rate_rad_s, fire_control_.shot_count(),
         depth_age_s_ <= 1e18 ? depth_age_s_ : -1.0,
         sigma_range_m_, sigma_lateral_m_,
-        static_cast<int>(input.measurement_quality_ok));
+        static_cast<int>(input.measurement_quality_ok),
+        fire_mode_.c_str(),
+        static_cast<int>(fire_mode_ == "manual" &&
+          !fire_control_.latched() && input.authorization_passed &&
+          input.estimate_valid && depth_age_s_ <= 1e18));
     }
     if (decision.fire) {
       publish_shot(decision, shot_direction, predicted, lead_s, input.range_m);
@@ -520,6 +577,14 @@ private:
       get_logger(), "NETGUN FIRE shot_id=%d reason=%s range=%.2fm tof=%.3fs",
       decision.shot_id,
       NetgunFireControl::reason_name(decision.reason).c_str(), range_m, tof_s);
+    // I-1：实物击发钩子——trigger_command 非空时在开火瞬间执行
+    // （PWM/GPIO 脉冲脚本等，接实物时装订）；默认空 = 纯虚拟事件。
+    if (!trigger_command_.empty()) {
+      const int trigger_rc = std::system(trigger_command_.c_str());
+      RCLCPP_WARN(
+        get_logger(), "trigger command executed rc=%d (%s)", trigger_rc,
+        trigger_command_.c_str());
+    }
   }
 
   NetgunModel model_;
@@ -549,6 +614,11 @@ private:
   std::array<double, 3> muzzle_offset_body_m_{0.0, 0.0, 0.0};
   double boresight_pitch_rad_{0.0};
   double boresight_yaw_rad_{0.0};
+  // I-1：开火模式与手动发射
+  std::string fire_mode_{"auto"};
+  std::string trigger_command_;
+  std::atomic<bool> manual_fire_requested_{false};
+  std::uint64_t diag_manual_rejected_{0};
   double ready_time_s_ = -1.0;
   double disarmed_since_s_ = -1.0;  // R1-6：非 armed/offboard 持续时长
   double first_valid_estimate_s_ = -1.0;
@@ -579,6 +649,7 @@ private:
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr weapon_auth_pub_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr debug_pub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr ready_sub_;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr fire_command_sub_;
   rclcpp::TimerBase::SharedPtr timer_;
 };
 

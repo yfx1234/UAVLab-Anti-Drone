@@ -76,6 +76,7 @@ enum class FireDecisionReason
   WINDOW_HOLD,           // 兜底：2° 窗持续 0.2s
   BLIND_SHOT_EXIT,       // 蒙射 A：窗口即将穿出
   BLIND_SHOT_TIMEOUT,    // 蒙射 B：任务超时
+  MANUAL,                // I-1：面板/操作手手动发射（安全门控仍生效）
   LATCHED,               // 单发已用
 };
 
@@ -95,6 +96,12 @@ public:
   explicit NetgunFireControl(const FireControlConfig & config = FireControlConfig());
 
   FireDecision update(const FireControlInput & input);
+
+  // I-1（2026-10-19）：手动发射请求——绕过瞄准质量门（轴误差/判窗/
+  // LOS/距离/σ，由操作手依据面板状态决定时机），但保留单发闭锁：
+  // 首次调用即闭锁并返回 fire=true，此后返回 LATCHED。
+  // 授权门（armed/offboard/高度/稳定跟踪）不在本类内，由节点侧把关。
+  FireDecision request_manual();
 
   bool latched() const;
   int shot_count() const;

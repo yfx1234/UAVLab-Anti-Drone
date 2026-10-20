@@ -52,7 +52,8 @@ def stack_pid():
 
 def parse_estimator(line):
     fields = {}
-    for key in ("obs", "inv", "attmiss", "acc", "bo", "reset", "init", "valid"):
+    for key in ("obs", "inv", "attmiss", "acc", "bo", "reset", "ren", "init",
+                "valid"):
         match = re.search(r"\b%s=(-?\d+)" % key, line)
         if match:
             fields[key] = int(match.group(1))
@@ -71,6 +72,14 @@ def parse_strike(line):
     match = re.search(r"axis=([\d.]+)deg", line)
     if match:
         fields["axis_deg"] = float(match.group(1))
+    # I-1：开火模式与手动发射就绪（netgun diag 尾部 fmode=auto|manual、
+    # fready=0|1；旧格式无这两个字段时不产出，面板按缺省处理）
+    match = re.search(r"fmode=(\w+)", line)
+    if match:
+        fields["fire_mode"] = match.group(1)
+    match = re.search(r"\bfready=(\d)", line)
+    if match:
+        fields["fire_ready"] = int(match.group(1))
     return fields
 
 
