@@ -17,7 +17,9 @@ fire：ready 时向 /netgun/fire_command 发布一次 true（strike 在授权/�
 """
 
 import json
+import os
 import re
+import subprocess
 import sys
 import time
 
@@ -31,6 +33,17 @@ FIRE_TOPIC = "/netgun/fire_command"
 # 本板 FastDDS 晚加入订阅者匹配延迟 1-2s+（H-4/preflight 同款经验），
 # 采样窗取 8s：先等匹配，再取最新一条
 SAMPLE_SECONDS = 8.0
+
+
+def stack_running():
+    """拦截链 launch 是否存活（与 interceptor_status.py 同判据）。"""
+    try:
+        out = subprocess.run(
+            ["pgrep", "-f", "netgun_real[.]launch"],
+            capture_output=True, text=True, timeout=5).stdout.strip()
+        return bool(out)
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return False
 
 
 def parse_state(text):
@@ -71,8 +84,12 @@ def main():
     try:
         state = sample_state(node)
         if not state:
-            emit({"ok": False, "running": False,
-                  "reason": "未收到火控状态（拦截链未运行或未就绪）"})
+            running = stack_running()
+            emit({"ok": False, "running": running,
+                  "reason": ("拦截链在运行但火控状态不可用——估计器/火控无完整输入"
+                             "（飞控数据缺失或感知无目标），发射条件不可能就绪"
+                             if running else
+                             "拦截链未运行")})
             return 1
         # 手动就绪 = 火控 diag 的 fready=1（授权+估计+深度硬门与单发闭锁
         # 在 strike 侧逐拍计算）；旧格式无 fready 时按 auth&est 近似。
