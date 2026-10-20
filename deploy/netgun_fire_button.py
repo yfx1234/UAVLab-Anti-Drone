@@ -28,7 +28,9 @@ from std_msgs.msg import Bool, String
 
 STRIKE_TOPIC = "/debug/strike_state"
 FIRE_TOPIC = "/netgun/fire_command"
-SAMPLE_SECONDS = 2.5
+# 本板 FastDDS 晚加入订阅者匹配延迟 1-2s+（H-4/preflight 同款经验），
+# 采样窗取 8s：先等匹配，再取最新一条
+SAMPLE_SECONDS = 8.0
 
 
 def parse_state(text):
