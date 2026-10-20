@@ -29,7 +29,8 @@ LOCAL_ACTIONS={'connect','disconnect','start_preview_record','stop_preview_recor
 INTERCEPTOR_STATUS_CMD='python3 /home/uavlab/interceptor_ws/deploy/interceptor_status.py'
 INTERCEPTOR_CONTROL_CMD='bash /home/uavlab/interceptor_ws/deploy/run_interceptor_stack.sh'
 # I-1：网枪发射按钮（板上助手先校验就绪再发布 /netgun/fire_command，单发闭锁在火控侧）
-INTERCEPTOR_FIRE_CMD='python3 /home/uavlab/interceptor_ws/deploy/netgun_fire_button.py fire'
+# 助手需 rclpy（status 脚本只读日志不需要）——SSH exec 非登录 shell，命令内显式 source humble
+INTERCEPTOR_FIRE_CMD='bash -c "source /opt/ros/humble/setup.bash && python3 /home/uavlab/interceptor_ws/deploy/netgun_fire_button.py fire"'
 
 def valid_request(host,origin,token,expected):
     return host in ('127.0.0.1:8767','localhost:8767') and origin=='http://'+host and isinstance(token,str) and hmac.compare_digest(token,expected)
