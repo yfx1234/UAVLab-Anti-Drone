@@ -33,15 +33,13 @@ SAMPLE_SECONDS = 2.5
 
 def parse_state(text):
     fields = {}
-    for key, value in re.findall(r"(\w+)=(?:([\d.+-]+)|(\w+))", text):
-        if value:
-            try:
-                fields[key] = int(value) if re.fullmatch(r"[+-]?\d+", value) \
-                    else float(value)
-            except ValueError:
-                fields[key] = value
-        else:
-            fields[key] = value
+    for match in re.finditer(r"(\w+)=([\w.+-]+)", text):
+        key, raw = match.group(1), match.group(2)
+        try:
+            fields[key] = int(raw) if re.fullmatch(r"[+-]?\d+", raw) \
+                else float(raw)
+        except ValueError:
+            fields[key] = raw
     return fields
 
 
