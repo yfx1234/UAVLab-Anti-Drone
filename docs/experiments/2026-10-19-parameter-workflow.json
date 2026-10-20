@@ -1,0 +1,1246 @@
+{
+  "scope": "perception producer only; no external task implementation inspected",
+  "production_sources_match": [
+    {
+      "path": "board\\zed_tracking\\src\\zed_perception_standalone.cpp",
+      "local_sha256": "d9dd67d743e87a02551815c5576a74741fb373b0c29ea4484ab91b2838d9942f",
+      "deployed_sha256": "d9dd67d743e87a02551815c5576a74741fb373b0c29ea4484ab91b2838d9942f",
+      "match": true
+    },
+    {
+      "path": "board\\zed_tracking\\include\\zed_tracking\\perception_quality.hpp",
+      "local_sha256": "ac65fc0d888120cdb227725f61dd6455e5581e3f0bfb6462dfd93ede90cce69c",
+      "deployed_sha256": "ac65fc0d888120cdb227725f61dd6455e5581e3f0bfb6462dfd93ede90cce69c",
+      "match": true
+    },
+    {
+      "path": "board\\zed_tracking\\tools\\perception_supervisor.py",
+      "local_sha256": "11a5b1abd0816d0230318718282e257223bb90a07c020946455944bba125e9cb",
+      "deployed_sha256": "11a5b1abd0816d0230318718282e257223bb90a07c020946455944bba125e9cb",
+      "match": true
+    },
+    {
+      "path": "panel/index.html",
+      "local_sha256": "937858e82d69f070b9caac775dfeaa90e3ee8b4db656766f377ec416ca94258b",
+      "deployed_sha256": "937858e82d69f070b9caac775dfeaa90e3ee8b4db656766f377ec416ca94258b",
+      "match": true
+    }
+  ],
+  "live_cases": [
+    {
+      "model": "glad-384x640.engine",
+      "model_id": "fd66aabe3ad0ab5b6b7ea7dff2fe3ee17efafac414cca6a4d47ff805e7f5403c",
+      "input_nchw": [
+        1,
+        3,
+        384,
+        640
+      ],
+      "confidence": 0.35,
+      "size": 0.247,
+      "passed": true,
+      "stages": {
+        "paused": {
+          "counts": {
+            "typed_frames": 38,
+            "json_frames": 37
+          },
+          "errors": {},
+          "modes": {},
+          "discovery_wait_s": null
+        },
+        "active": {
+          "counts": {
+            "typed_frames": 38,
+            "json_frames": 37,
+            "fresh_frames": 37
+          },
+          "errors": {},
+          "modes": {},
+          "discovery_wait_s": null
+        },
+        "second_reader_window": {
+          "counts": {
+            "typed_frames": 39,
+            "json_frames": 38,
+            "fresh_frames": 38
+          },
+          "errors": {},
+          "modes": {},
+          "discovery_wait_s": null
+        },
+        "paused_after": {
+          "counts": {
+            "typed_frames": 38,
+            "json_frames": 37
+          },
+          "errors": {},
+          "modes": {},
+          "discovery_wait_s": null
+        }
+      },
+      "concurrent_readers": []
+    },
+    {
+      "model": "glad-384x640.engine",
+      "model_id": "fd66aabe3ad0ab5b6b7ea7dff2fe3ee17efafac414cca6a4d47ff805e7f5403c",
+      "input_nchw": [
+        1,
+        3,
+        384,
+        640
+      ],
+      "confidence": 0.85,
+      "size": 0.3,
+      "passed": true,
+      "stages": {
+        "paused": {
+          "counts": {
+            "typed_frames": 39,
+            "json_frames": 38
+          },
+          "errors": {},
+          "modes": {},
+          "discovery_wait_s": null
+        },
+        "active": {
+          "counts": {
+            "typed_frames": 39,
+            "json_frames": 38,
+            "fresh_frames": 38
+          },
+          "errors": {},
+          "modes": {},
+          "discovery_wait_s": null
+        },
+        "second_reader_window": {
+          "counts": {
+            "typed_frames": 38,
+            "json_frames": 37,
+            "fresh_frames": 37
+          },
+          "errors": {},
+          "modes": {},
+          "discovery_wait_s": null
+        },
+        "paused_after": {
+          "counts": {
+            "typed_frames": 38,
+            "json_frames": 37
+          },
+          "errors": {},
+          "modes": {},
+          "discovery_wait_s": null
+        }
+      },
+      "concurrent_readers": []
+    },
+    {
+      "model": "glad-736x1280.engine",
+      "model_id": "aee5bfcdadb44e2df08bfe96e2a5047c987d28add941789c7ca66c752a3a914a",
+      "input_nchw": [
+        1,
+        3,
+        736,
+        1280
+      ],
+      "confidence": 0.35,
+      "size": 0.247,
+      "passed": true,
+      "stages": {
+        "paused": {
+          "counts": {
+            "typed_frames": 38,
+            "json_frames": 37
+          },
+          "errors": {},
+          "modes": {},
+          "discovery_wait_s": null
+        },
+        "active": {
+          "counts": {
+            "typed_frames": 38,
+            "json_frames": 37,
+            "fresh_frames": 37,
+            "targets": 1,
+            "positions": 1
+          },
+          "errors": {},
+          "modes": {
+            "size_estimate": 1
+          },
+          "discovery_wait_s": null
+        },
+        "second_reader_window": {
+          "counts": {
+            "typed_frames": 38,
+            "json_frames": 37,
+            "fresh_frames": 37
+          },
+          "errors": {},
+          "modes": {},
+          "discovery_wait_s": null
+        },
+        "paused_after": {
+          "counts": {
+            "typed_frames": 39,
+            "json_frames": 38
+          },
+          "errors": {},
+          "modes": {},
+          "discovery_wait_s": null
+        }
+      },
+      "concurrent_readers": []
+    },
+    {
+      "model": "glad-736x1280.engine",
+      "model_id": "aee5bfcdadb44e2df08bfe96e2a5047c987d28add941789c7ca66c752a3a914a",
+      "input_nchw": [
+        1,
+        3,
+        736,
+        1280
+      ],
+      "confidence": 0.85,
+      "size": 0.3,
+      "passed": true,
+      "stages": {
+        "paused": {
+          "counts": {
+            "typed_frames": 38,
+            "json_frames": 37
+          },
+          "errors": {},
+          "modes": {},
+          "discovery_wait_s": null
+        },
+        "active": {
+          "counts": {
+            "typed_frames": 38,
+            "json_frames": 37,
+            "fresh_frames": 37
+          },
+          "errors": {},
+          "modes": {},
+          "discovery_wait_s": null
+        },
+        "second_reader_window": {
+          "counts": {
+            "typed_frames": 7,
+            "json_frames": 6,
+            "fresh_frames": 6
+          },
+          "errors": {},
+          "modes": {},
+          "discovery_wait_s": null
+        },
+        "paused_after": {
+          "counts": {
+            "typed_frames": 29,
+            "json_frames": 28
+          },
+          "errors": {},
+          "modes": {},
+          "discovery_wait_s": null
+        }
+      },
+      "concurrent_readers": []
+    },
+    {
+      "model": "exp_nx16_1080_fp16.engine",
+      "model_id": "5ab47073e9c5b7afa55a4da617d58318d911c8d2765d0e744662227b9a4d21f9",
+      "input_nchw": [
+        1,
+        3,
+        1088,
+        1920
+      ],
+      "confidence": 0.35,
+      "size": 0.247,
+      "passed": true,
+      "stages": {
+        "paused": {
+          "counts": {
+            "typed_frames": 38,
+            "json_frames": 37
+          },
+          "errors": {},
+          "modes": {},
+          "discovery_wait_s": null
+        },
+        "active": {
+          "counts": {
+            "typed_frames": 38,
+            "json_frames": 37,
+            "fresh_frames": 37,
+            "targets": 421,
+            "positions": 384
+          },
+          "errors": {},
+          "modes": {
+            "size_estimate": 318,
+            "depth": 66,
+            "bearing_only": 37
+          },
+          "discovery_wait_s": null
+        },
+        "second_reader_window": {
+          "counts": {
+            "typed_frames": 38,
+            "json_frames": 37,
+            "fresh_frames": 37,
+            "targets": 424,
+            "positions": 387
+          },
+          "errors": {},
+          "modes": {
+            "depth": 66,
+            "size_estimate": 321,
+            "bearing_only": 37
+          },
+          "discovery_wait_s": null
+        },
+        "paused_after": {
+          "counts": {
+            "typed_frames": 39,
+            "json_frames": 38
+          },
+          "errors": {},
+          "modes": {},
+          "discovery_wait_s": null
+        }
+      },
+      "concurrent_readers": []
+    },
+    {
+      "model": "exp_nx16_1080_fp16.engine",
+      "model_id": "5ab47073e9c5b7afa55a4da617d58318d911c8d2765d0e744662227b9a4d21f9",
+      "input_nchw": [
+        1,
+        3,
+        1088,
+        1920
+      ],
+      "confidence": 0.85,
+      "size": 0.3,
+      "passed": true,
+      "stages": {
+        "paused": {
+          "counts": {
+            "typed_frames": 39,
+            "json_frames": 38
+          },
+          "errors": {},
+          "modes": {},
+          "discovery_wait_s": 0.00584367999999813
+        },
+        "active": {
+          "counts": {
+            "typed_frames": 39,
+            "json_frames": 38,
+            "fresh_frames": 38,
+            "targets": 31,
+            "positions": 31
+          },
+          "errors": {},
+          "modes": {
+            "size_estimate": 22,
+            "depth": 9
+          },
+          "discovery_wait_s": 0.05320528000015656
+        },
+        "second_reader_window": {
+          "counts": {
+            "typed_frames": 39,
+            "json_frames": 38,
+            "fresh_frames": 38,
+            "targets": 29,
+            "positions": 29
+          },
+          "errors": {},
+          "modes": {
+            "size_estimate": 18,
+            "depth": 11
+          },
+          "discovery_wait_s": 0.016845952000039688
+        },
+        "paused_after": {
+          "counts": {
+            "typed_frames": 39,
+            "json_frames": 38
+          },
+          "errors": {},
+          "modes": {},
+          "discovery_wait_s": 0.02859881599988512
+        }
+      },
+      "concurrent_readers": []
+    },
+    {
+      "model": "exp_nx16_fp16.engine",
+      "model_id": "817e1709350e806e7ab261a3fe4d62acfa4828b6c2062b581ac51e9eea3d7712",
+      "input_nchw": [
+        1,
+        3,
+        736,
+        1280
+      ],
+      "confidence": 0.35,
+      "size": 0.247,
+      "passed": true,
+      "stages": {
+        "paused": {
+          "counts": {
+            "typed_frames": 39,
+            "json_frames": 38
+          },
+          "errors": {},
+          "modes": {},
+          "discovery_wait_s": 0.031810144000019136
+        },
+        "active": {
+          "counts": {
+            "typed_frames": 39,
+            "json_frames": 38,
+            "fresh_frames": 38,
+            "targets": 218,
+            "positions": 214
+          },
+          "errors": {},
+          "modes": {
+            "size_estimate": 209,
+            "bearing_only": 4,
+            "depth": 5
+          },
+          "discovery_wait_s": 0.4186683840000569
+        },
+        "second_reader_window": {
+          "counts": {
+            "typed_frames": 39,
+            "json_frames": 38,
+            "fresh_frames": 38,
+            "targets": 209,
+            "positions": 201
+          },
+          "errors": {},
+          "modes": {
+            "size_estimate": 201,
+            "bearing_only": 8
+          },
+          "discovery_wait_s": 0.042652736000036384
+        },
+        "paused_after": {
+          "counts": {
+            "typed_frames": 39,
+            "json_frames": 38
+          },
+          "errors": {},
+          "modes": {},
+          "discovery_wait_s": 0.06386415999986639
+        }
+      },
+      "concurrent_readers": []
+    },
+    {
+      "model": "exp_nx16_fp16.engine",
+      "model_id": "817e1709350e806e7ab261a3fe4d62acfa4828b6c2062b581ac51e9eea3d7712",
+      "input_nchw": [
+        1,
+        3,
+        736,
+        1280
+      ],
+      "confidence": 0.85,
+      "size": 0.3,
+      "passed": true,
+      "stages": {
+        "paused": {
+          "counts": {
+            "typed_frames": 39,
+            "json_frames": 38
+          },
+          "errors": {},
+          "modes": {},
+          "discovery_wait_s": 0.009750303999908283
+        },
+        "active": {
+          "counts": {
+            "typed_frames": 39,
+            "json_frames": 38,
+            "fresh_frames": 38,
+            "targets": 49,
+            "positions": 49
+          },
+          "errors": {},
+          "modes": {
+            "size_estimate": 49
+          },
+          "discovery_wait_s": 0.06296755199991821
+        },
+        "second_reader_window": {
+          "counts": {
+            "typed_frames": 39,
+            "json_frames": 38,
+            "fresh_frames": 38,
+            "targets": 51,
+            "positions": 51
+          },
+          "errors": {},
+          "modes": {
+            "size_estimate": 51
+          },
+          "discovery_wait_s": 1.9468172159999995
+        },
+        "paused_after": {
+          "counts": {
+            "typed_frames": 39,
+            "json_frames": 38
+          },
+          "errors": {},
+          "modes": {},
+          "discovery_wait_s": 0.007356448000109594
+        }
+      },
+      "concurrent_readers": []
+    }
+  ],
+  "svo_cases": [
+    {
+      "model": "glad-384x640.engine",
+      "model_id": "fd66aabe3ad0ab5b6b7ea7dff2fe3ee17efafac414cca6a4d47ff805e7f5403c",
+      "input_nchw": [
+        1,
+        3,
+        384,
+        640
+      ],
+      "confidence": 0.35,
+      "size": 0.247,
+      "passed": true,
+      "stages": {
+        "paused": {
+          "counts": {
+            "typed_frames": 24,
+            "json_frames": 23
+          },
+          "errors": {},
+          "modes": {},
+          "discovery_wait_s": 0.014760256000045047
+        },
+        "active": {
+          "counts": {
+            "typed_frames": 40,
+            "json_frames": 39,
+            "fresh_frames": 39,
+            "targets": 39,
+            "positions": 39
+          },
+          "errors": {},
+          "modes": {
+            "size_estimate": 39
+          },
+          "discovery_wait_s": 0.039744416000075944
+        },
+        "second_reader_window": {
+          "counts": {
+            "typed_frames": 39,
+            "json_frames": 38,
+            "fresh_frames": 38,
+            "targets": 38,
+            "positions": 38
+          },
+          "errors": {},
+          "modes": {
+            "size_estimate": 38
+          },
+          "discovery_wait_s": 0.04678800000010597
+        },
+        "paused_after": {
+          "counts": {
+            "typed_frames": 24,
+            "json_frames": 23
+          },
+          "errors": {},
+          "modes": {},
+          "discovery_wait_s": 0.05986780800003544
+        }
+      },
+      "concurrent_readers": [
+        {
+          "counts": {
+            "typed_frames": 30,
+            "json_frames": 30,
+            "fresh_frames": 30,
+            "targets": 30,
+            "positions": 30
+          },
+          "errors": {},
+          "modes": {
+            "size_estimate": 30
+          },
+          "first": 149,
+          "last": 178
+        },
+        {
+          "counts": {
+            "typed_frames": 30,
+            "json_frames": 30,
+            "fresh_frames": 30,
+            "targets": 30,
+            "positions": 30
+          },
+          "errors": {},
+          "modes": {
+            "size_estimate": 30
+          },
+          "first": 149,
+          "last": 178
+        }
+      ]
+    },
+    {
+      "model": "glad-384x640.engine",
+      "model_id": "fd66aabe3ad0ab5b6b7ea7dff2fe3ee17efafac414cca6a4d47ff805e7f5403c",
+      "input_nchw": [
+        1,
+        3,
+        384,
+        640
+      ],
+      "confidence": 0.85,
+      "size": 0.3,
+      "passed": true,
+      "stages": {
+        "paused": {
+          "counts": {
+            "typed_frames": 24,
+            "json_frames": 23
+          },
+          "errors": {},
+          "modes": {},
+          "discovery_wait_s": 0.027722719999928813
+        },
+        "active": {
+          "counts": {
+            "typed_frames": 39,
+            "json_frames": 39,
+            "fresh_frames": 39
+          },
+          "errors": {},
+          "modes": {},
+          "discovery_wait_s": 0.08201001600014024
+        },
+        "second_reader_window": {
+          "counts": {
+            "typed_frames": 38,
+            "json_frames": 37,
+            "fresh_frames": 37
+          },
+          "errors": {},
+          "modes": {},
+          "discovery_wait_s": 0.009305695999955788
+        },
+        "paused_after": {
+          "counts": {
+            "typed_frames": 25,
+            "json_frames": 23
+          },
+          "errors": {},
+          "modes": {},
+          "discovery_wait_s": 0.06957750400010809
+        }
+      },
+      "concurrent_readers": [
+        {
+          "counts": {
+            "typed_frames": 28,
+            "json_frames": 28,
+            "fresh_frames": 28
+          },
+          "errors": {},
+          "modes": {},
+          "first": 179,
+          "last": 206
+        },
+        {
+          "counts": {
+            "typed_frames": 29,
+            "json_frames": 28,
+            "fresh_frames": 28
+          },
+          "errors": {},
+          "modes": {},
+          "first": 154,
+          "last": 181
+        }
+      ]
+    },
+    {
+      "model": "glad-736x1280.engine",
+      "model_id": "aee5bfcdadb44e2df08bfe96e2a5047c987d28add941789c7ca66c752a3a914a",
+      "input_nchw": [
+        1,
+        3,
+        736,
+        1280
+      ],
+      "confidence": 0.35,
+      "size": 0.247,
+      "passed": true,
+      "stages": {
+        "paused": {
+          "counts": {
+            "typed_frames": 24,
+            "json_frames": 23
+          },
+          "errors": {},
+          "modes": {},
+          "discovery_wait_s": 0.037179327999865563
+        },
+        "active": {
+          "counts": {
+            "typed_frames": 41,
+            "json_frames": 40,
+            "fresh_frames": 40,
+            "targets": 41,
+            "positions": 41
+          },
+          "errors": {},
+          "modes": {
+            "size_estimate": 41
+          },
+          "discovery_wait_s": 0.17346831999998358
+        },
+        "second_reader_window": {
+          "counts": {
+            "typed_frames": 37,
+            "json_frames": 37,
+            "fresh_frames": 37,
+            "targets": 38,
+            "positions": 37
+          },
+          "errors": {},
+          "modes": {
+            "size_estimate": 37,
+            "bearing_only": 1
+          },
+          "discovery_wait_s": 1.3671664959999816
+        },
+        "paused_after": {
+          "counts": {
+            "typed_frames": 24,
+            "json_frames": 23
+          },
+          "errors": {},
+          "modes": {},
+          "discovery_wait_s": 0.06360825600017961
+        }
+      },
+      "concurrent_readers": [
+        {
+          "counts": {
+            "typed_frames": 30,
+            "json_frames": 30,
+            "fresh_frames": 30,
+            "targets": 31,
+            "positions": 31
+          },
+          "errors": {},
+          "modes": {
+            "size_estimate": 31
+          },
+          "first": 183,
+          "last": 212
+        },
+        {
+          "counts": {
+            "typed_frames": 29,
+            "json_frames": 28,
+            "fresh_frames": 28,
+            "targets": 29,
+            "positions": 29
+          },
+          "errors": {},
+          "modes": {
+            "size_estimate": 29
+          },
+          "first": 171,
+          "last": 198
+        }
+      ]
+    },
+    {
+      "model": "glad-736x1280.engine",
+      "model_id": "aee5bfcdadb44e2df08bfe96e2a5047c987d28add941789c7ca66c752a3a914a",
+      "input_nchw": [
+        1,
+        3,
+        736,
+        1280
+      ],
+      "confidence": 0.85,
+      "size": 0.3,
+      "passed": true,
+      "stages": {
+        "paused": {
+          "counts": {
+            "typed_frames": 24,
+            "json_frames": 23
+          },
+          "errors": {},
+          "modes": {},
+          "discovery_wait_s": 0.005629247999877407
+        },
+        "active": {
+          "counts": {
+            "typed_frames": 44,
+            "json_frames": 43,
+            "fresh_frames": 43
+          },
+          "errors": {},
+          "modes": {},
+          "discovery_wait_s": 0.0614247680000517
+        },
+        "second_reader_window": {
+          "counts": {
+            "typed_frames": 42,
+            "json_frames": 42,
+            "fresh_frames": 42
+          },
+          "errors": {},
+          "modes": {},
+          "discovery_wait_s": 0.055627552000032665
+        },
+        "paused_after": {
+          "counts": {
+            "typed_frames": 24,
+            "json_frames": 23
+          },
+          "errors": {},
+          "modes": {},
+          "discovery_wait_s": 0.028918943999997282
+        }
+      },
+      "concurrent_readers": [
+        {
+          "counts": {
+            "typed_frames": 32,
+            "json_frames": 31,
+            "fresh_frames": 31
+          },
+          "errors": {},
+          "modes": {},
+          "first": 166,
+          "last": 196
+        },
+        {
+          "counts": {
+            "typed_frames": 32,
+            "json_frames": 31,
+            "fresh_frames": 31
+          },
+          "errors": {},
+          "modes": {},
+          "first": 166,
+          "last": 196
+        }
+      ]
+    },
+    {
+      "model": "exp_nx16_1080_fp16.engine",
+      "model_id": "5ab47073e9c5b7afa55a4da617d58318d911c8d2765d0e744662227b9a4d21f9",
+      "input_nchw": [
+        1,
+        3,
+        1088,
+        1920
+      ],
+      "confidence": 0.35,
+      "size": 0.247,
+      "passed": true,
+      "stages": {
+        "paused": {
+          "counts": {
+            "typed_frames": 24,
+            "json_frames": 23
+          },
+          "errors": {},
+          "modes": {},
+          "discovery_wait_s": 0.00884054399989509
+        },
+        "active": {
+          "counts": {
+            "typed_frames": 51,
+            "json_frames": 50,
+            "fresh_frames": 50,
+            "targets": 50,
+            "positions": 50
+          },
+          "errors": {},
+          "modes": {
+            "size_estimate": 50
+          },
+          "discovery_wait_s": 0.013505344000122932
+        },
+        "second_reader_window": {
+          "counts": {
+            "typed_frames": 49,
+            "json_frames": 48,
+            "fresh_frames": 48,
+            "targets": 48,
+            "positions": 48
+          },
+          "errors": {},
+          "modes": {
+            "size_estimate": 48
+          },
+          "discovery_wait_s": 0.06901904000005743
+        },
+        "paused_after": {
+          "counts": {
+            "typed_frames": 24,
+            "json_frames": 23
+          },
+          "errors": {},
+          "modes": {},
+          "discovery_wait_s": 1.7321791360000134
+        }
+      },
+      "concurrent_readers": [
+        {
+          "counts": {
+            "typed_frames": 40,
+            "json_frames": 39,
+            "fresh_frames": 39,
+            "targets": 39,
+            "positions": 39
+          },
+          "errors": {},
+          "modes": {
+            "size_estimate": 39
+          },
+          "first": 182,
+          "last": 220
+        },
+        {
+          "counts": {
+            "typed_frames": 40,
+            "json_frames": 39,
+            "fresh_frames": 39,
+            "targets": 39,
+            "positions": 39
+          },
+          "errors": {},
+          "modes": {
+            "size_estimate": 39
+          },
+          "first": 181,
+          "last": 219
+        }
+      ]
+    },
+    {
+      "model": "exp_nx16_1080_fp16.engine",
+      "model_id": "5ab47073e9c5b7afa55a4da617d58318d911c8d2765d0e744662227b9a4d21f9",
+      "input_nchw": [
+        1,
+        3,
+        1088,
+        1920
+      ],
+      "confidence": 0.85,
+      "size": 0.3,
+      "passed": true,
+      "stages": {
+        "paused": {
+          "counts": {
+            "typed_frames": 24,
+            "json_frames": 23
+          },
+          "errors": {},
+          "modes": {},
+          "discovery_wait_s": 0.06894860800002789
+        },
+        "active": {
+          "counts": {
+            "typed_frames": 50,
+            "json_frames": 49,
+            "fresh_frames": 49
+          },
+          "errors": {},
+          "modes": {},
+          "discovery_wait_s": 0.015651616000013746
+        },
+        "second_reader_window": {
+          "counts": {
+            "typed_frames": 51,
+            "json_frames": 50,
+            "fresh_frames": 50
+          },
+          "errors": {},
+          "modes": {},
+          "discovery_wait_s": 1.5127054080001017
+        },
+        "paused_after": {
+          "counts": {
+            "typed_frames": 24,
+            "json_frames": 23
+          },
+          "errors": {},
+          "modes": {},
+          "discovery_wait_s": 0.04354217599984622
+        }
+      },
+      "concurrent_readers": [
+        {
+          "counts": {
+            "typed_frames": 38,
+            "json_frames": 37,
+            "fresh_frames": 37
+          },
+          "errors": {},
+          "modes": {},
+          "first": 201,
+          "last": 237
+        },
+        {
+          "counts": {
+            "typed_frames": 38,
+            "json_frames": 37,
+            "fresh_frames": 37
+          },
+          "errors": {},
+          "modes": {},
+          "first": 201,
+          "last": 237
+        }
+      ]
+    },
+    {
+      "model": "exp_nx16_fp16.engine",
+      "model_id": "817e1709350e806e7ab261a3fe4d62acfa4828b6c2062b581ac51e9eea3d7712",
+      "input_nchw": [
+        1,
+        3,
+        736,
+        1280
+      ],
+      "confidence": 0.35,
+      "size": 0.247,
+      "passed": true,
+      "stages": {
+        "paused": {
+          "counts": {
+            "typed_frames": 24,
+            "json_frames": 23
+          },
+          "errors": {},
+          "modes": {},
+          "discovery_wait_s": 0.02081257600002573
+        },
+        "active": {
+          "counts": {
+            "typed_frames": 42,
+            "json_frames": 41,
+            "fresh_frames": 41,
+            "targets": 41,
+            "positions": 41
+          },
+          "errors": {},
+          "modes": {
+            "size_estimate": 41
+          },
+          "discovery_wait_s": 0.16462159999991854
+        },
+        "second_reader_window": {
+          "counts": {
+            "typed_frames": 38,
+            "json_frames": 38,
+            "fresh_frames": 38,
+            "targets": 38,
+            "positions": 38
+          },
+          "errors": {},
+          "modes": {
+            "size_estimate": 38
+          },
+          "discovery_wait_s": 0.04575267200016242
+        },
+        "paused_after": {
+          "counts": {
+            "typed_frames": 24,
+            "json_frames": 23
+          },
+          "errors": {},
+          "modes": {},
+          "discovery_wait_s": 0.03313465599990195
+        }
+      },
+      "concurrent_readers": [
+        {
+          "counts": {
+            "typed_frames": 29,
+            "json_frames": 29,
+            "fresh_frames": 29,
+            "targets": 29,
+            "positions": 29
+          },
+          "errors": {},
+          "modes": {
+            "size_estimate": 29
+          },
+          "first": 159,
+          "last": 187
+        },
+        {
+          "counts": {
+            "typed_frames": 29,
+            "json_frames": 29,
+            "fresh_frames": 29,
+            "targets": 29,
+            "positions": 29
+          },
+          "errors": {},
+          "modes": {
+            "size_estimate": 29
+          },
+          "first": 159,
+          "last": 187
+        }
+      ]
+    },
+    {
+      "model": "exp_nx16_fp16.engine",
+      "model_id": "817e1709350e806e7ab261a3fe4d62acfa4828b6c2062b581ac51e9eea3d7712",
+      "input_nchw": [
+        1,
+        3,
+        736,
+        1280
+      ],
+      "confidence": 0.85,
+      "size": 0.3,
+      "passed": true,
+      "stages": {
+        "paused": {
+          "counts": {
+            "typed_frames": 24,
+            "json_frames": 23
+          },
+          "errors": {},
+          "modes": {},
+          "discovery_wait_s": 0.02758182399998077
+        },
+        "active": {
+          "counts": {
+            "typed_frames": 45,
+            "json_frames": 44,
+            "fresh_frames": 44
+          },
+          "errors": {},
+          "modes": {},
+          "discovery_wait_s": 0.021957120000024588
+        },
+        "second_reader_window": {
+          "counts": {
+            "typed_frames": 43,
+            "json_frames": 42,
+            "fresh_frames": 42
+          },
+          "errors": {},
+          "modes": {},
+          "discovery_wait_s": 0.01250467199997729
+        },
+        "paused_after": {
+          "counts": {
+            "typed_frames": 24,
+            "json_frames": 23
+          },
+          "errors": {},
+          "modes": {},
+          "discovery_wait_s": 0.0237473280001268
+        }
+      },
+      "concurrent_readers": [
+        {
+          "counts": {
+            "typed_frames": 31,
+            "json_frames": 30,
+            "fresh_frames": 30
+          },
+          "errors": {},
+          "modes": {},
+          "first": 193,
+          "last": 222
+        },
+        {
+          "counts": {
+            "typed_frames": 31,
+            "json_frames": 31,
+            "fresh_frames": 31
+          },
+          "errors": {},
+          "modes": {},
+          "first": 166,
+          "last": 196
+        }
+      ]
+    }
+  ],
+  "unit_tests": {
+    "modules": [
+      "test_parameter_workflow",
+      "test_frontend_range_size",
+      "test_frontend_annotation",
+      "test_operator_notes_models",
+      "test_observation_contract",
+      "test_transport_freshness",
+      "test_frontend_hardware_state",
+      "test_frontend_operator_notes",
+      "test_frontend_workspace",
+      "test_native_video_board"
+    ],
+    "tests": 36,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "passed": true
+  },
+  "native_ctest": {
+    "passed": 7,
+    "failed": 0,
+    "environment": "ROS humble and install_perception setup sourced"
+  },
+  "restored": {
+    "camera_state": "running",
+    "model_id": "5ab47073e9c5b7afa55a4da617d58318d911c8d2765d0e744662227b9a4d21f9",
+    "pipeline": {
+      "detector_enabled": false,
+      "yolo_confidence": 0.55,
+      "target_size_m": 0.3,
+      "camera_resolution": "HD1080",
+      "record_state": "idle"
+    },
+    "production_calibration_unchanged": true,
+    "production_binary_unchanged": true
+  },
+  "test_build": {
+    "production_source_sha256": "d9dd67d743e87a02551815c5576a74741fb373b0c29ea4484ab91b2838d9942f",
+    "test_source_sha256": "4fc5eff50990c87e8f818727229b3475e0004d95f1e0f3fb6ee84ded5136ab75",
+    "substitutions": {
+      "root_{\"/tmp/zed_perception\"}": "root_{\"/tmp/zed_parameter_acceptance_20261019/runtime\"}",
+      "records_{\"/home/uavlab/Jetson_ROS2_V0/perception_records\"}": "records_{\"/tmp/zed_parameter_acceptance_20261019/records\"}",
+      "calibration_file_{\"/home/uavlab/Jetson_ROS2_V0/perception_config/range_calibration.json\"}": "calibration_file_{\"/tmp/zed_parameter_acceptance_20261019/range_calibration.json\"}",
+      "source.open(cfg);": "cfg.input_svo=\"/home/uavlab/Jetson_ROS2_V0/perception_records/session_b99666df-ec5d-4c5f-b820-ad900250b072/segments/segment_2.svo2\";cfg.svo_real_time=true;source.open(cfg);"
+    },
+    "test_binary_sha256": "5bde19f21377eb1ecdbf7a87aa730f9cea788be966b9bd3ed5ee6d01a0420afd",
+    "production_source_unchanged": true
+  },
+  "limitations": [
+    "bounded_bench_test_not_long_duration_field_accuracy",
+    "external_consumers_not_inspected",
+    "one_initial_2_5s_observer_window_received_no_messages_then_repeated_with_discovery_readiness"
+  ],
+  "svo": "session_b99666df-ec5d-4c5f-b820-ad900250b072/segments/segment_2.svo2"
+}
