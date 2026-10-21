@@ -168,7 +168,7 @@ const missionStepIndex={WAITING:0,TAKEOFF:1,TRACK:2,AIM:3,SETTLE:5,SPIN:6,DONE:7
 const fireModeNames={auto_manual:'自动单发 + 手动兜底',auto:'仅自动开火',manual:'仅手动发射'};
 const fireBlockText={FCU_STALE:'飞控数据缺失',NOT_ARMED:'未解锁',LOW_HEIGHT:'高度不足',TILT:'倾角过大',NOT_AUTHORIZED:'需授权+有效估计',LATCHED:'已发射',DISABLED:'按钮未启用'};
 const fireRangeWindow=[4.0,9.8],missionChecks=['chkFlow','chkHeartbeat','chkFcu','chkArm','chkMode','chkEstimate','chkRange','chkHeight','chkTilt','chkAuth'];
-let interceptorHistory=[],fireSummary='连接板子后可用';
+let interceptorHistory=[],heartbeatHalt=null,fireSummary='连接板子后可用';
 function setStatus(id,text,tone='',title=''){const el=byId(id);if(el.textContent!==text)el.textContent=text;for(const name of ['good','bad','warn','idle'])el.classList.toggle(name,name===tone);if(el.title!==title)el.title=title;}
 function syncFireDialog(){if(!byId('fireDialog').open)return;byId('fireSummary').textContent=fireSummary;byId('confirmFire').disabled=byId('netgunFire').disabled;}
 function renderInterceptor(interceptorRunning){
@@ -176,6 +176,7 @@ function renderInterceptor(interceptorRunning){
  const linked=state.connected===true&&!state.error,known=linked&&!state.interceptor_error&&'running' in it&&typeof age==='number'&&age<=8,running=known&&it.running===true;
  const est=running?it.estimator||{}:{},strike=running?it.strike||{}:{},gd=running?it.guidance||{}:{};
  const shots=Number(it.shots)||0,phase=gd.phase||(it.phases||[]).slice(-1)[0]||'WAITING',phaseName=interceptorStageNames[phase]||phase;
+ const estimateOk=strike.est!==undefined?strike.est===1:est.valid!==0;
  // ---- 标题状态与工具条摘要 ----
  let title='未连接',tone='',detail='连接板子后显示拦截链状态';
  if(state.connected&&state.interceptor_error){title='读取失败';tone='bad';detail=String(state.interceptor_error);}
@@ -191,6 +192,11 @@ function renderInterceptor(interceptorRunning){
  // 否则轮询落在同一日志行上会误报"停滞"；停止或换 pid 后清空，重启不与旧计数比较 ----
  const nowS=performance.now()/1000;
  if(running){interceptorHistory=interceptorHistory.filter(x=>nowS-x.t<25&&x.pid===it.pid);interceptorHistory.push({t:nowS,pid:it.pid,ob:gd.ob_sent,obs:est.obs});}else interceptorHistory=[];
+ // 制导节点飞控数据不可用时停发心跳并按 10s 打 WARN；尾部 8 行不一定每次都含该行，按进程记忆 25s
+ const haltLine=running?(it.tail||[]).slice().reverse().find(line=>/heartbeat\/setpoints halted/.test(line)):null;
+ if(!running||heartbeatHalt&&heartbeatHalt.pid!==it.pid)heartbeatHalt=null;
+ if(haltLine)heartbeatHalt={pid:it.pid,t:nowS};
+ const halted=!!heartbeatHalt&&nowS-heartbeatHalt.t<25;
  const oldSample=interceptorHistory.find(x=>nowS-x.t>=6),growth={};
  if(oldSample){if(typeof gd.ob_sent==='number'&&typeof oldSample.ob==='number')growth.ob=gd.ob_sent>oldSample.ob;if(typeof est.obs==='number'&&typeof oldSample.obs==='number')growth.obs=est.obs>oldSample.obs;}
  // ---- 就绪检查：行固定，未知显示 — ----
@@ -202,14 +208,19 @@ function renderInterceptor(interceptorRunning){
  if(!running)for(const id of missionChecks)setStatus(id,'—','idle');
  else{
   const watch=(id,value,okText,badText)=>setStatus(id,value===undefined?'监测中':value?okText:badText,value===undefined?'':value?'good':'bad');
-  watch('chkFlow',growth.obs,'数据正常','无观测');watch('chkHeartbeat',growth.ob,'正常','停滞');
+  watch('chkFlow',growth.obs,'数据正常','无观测');
+  if(growth.ob===true)setStatus('chkHeartbeat','正常','good');
+  else if(halted)setStatus('chkHeartbeat','已停发 · 飞控数据不可用','bad','制导节点需要有效本地位置与新鲜飞控状态（vehicle_local_position / vehicle_status），否则停发 Offboard 心跳与设定点；室内无定位时属预期');
+  else if(growth.ob===false)setStatus('chkHeartbeat','停滞','bad');
+  else if(oldSample&&typeof gd.ob_sent!=='number')setStatus('chkHeartbeat','未发送','warn','运行 6 s 以上仍无制导心跳日志（guidance alive）');
+  else setStatus('chkHeartbeat','监测中','');
   const fcuOn=strike.fcu===1||(strike.fcu===undefined&&est.obs>30&&est.attmiss===0),fcuOff=!fcuOn&&(strike.fcu===0||(est.obs>30&&est.attmiss>0));
   setStatus('chkFcu',fcuOn?'在线':fcuOff?'无数据':'待判',fcuOn?'good':fcuOff?'bad':'',fcuOff?'飞控未上电或链路断开':'');
   setStatus('chkArm',strike.arm===1?'已解锁':strike.arm===0?'未解锁':'—',strike.arm===1?'good':strike.arm===0?'':'idle');
   setStatus('chkMode',strike.ob===1?'Offboard 已接管':strike.ob===0?'手动':'—',strike.ob===1?'good':strike.ob===0?'':'idle');
   setStatus('chkEstimate',est.init===1?(est.valid===1?'跟踪有效':'距离未确认'):est.obs>0?'初始化中':'等待观测',est.init===1?(est.valid===1?'good':'warn'):'');
   const range=strike.range_m,rangeKnown=typeof range==='number'&&range>0,inWindow=rangeKnown&&range>=fireRangeWindow[0]&&range<=fireRangeWindow[1];
-  setStatus('chkRange',rangeKnown?number(range,1)+' m · '+(inWindow?'窗口内':'窗口外'):'—',rangeKnown?(inWindow?'good':''):'idle','开火距离窗 '+fireRangeWindow.join('–')+' m');
+  setStatus('chkRange',rangeKnown?number(range,1)+' m · '+(estimateOk?(inWindow?'窗口内':'窗口外'):'估计无效'):'—',rangeKnown?(estimateOk&&inWindow?'good':''):'idle','开火距离窗 '+fireRangeWindow.map(v=>v.toFixed(1)).join('–')+' m'+(estimateOk?'':'；目标估计无效时距离仅供参考'));
   setStatus('chkHeight',strike.h===1?'满足':strike.h===0?'不足':'—',strike.h===1?'good':strike.h===0?'warn':'idle','手动兜底需有效高度 ≥1.5 m');
   const tilt=strike.tilt_deg,tiltKnown=typeof tilt==='number'&&tilt>=0;
   setStatus('chkTilt',tiltKnown?number(tilt,0)+'°'+(tilt<=45?'':' · 超限'):'—',tiltKnown?(tilt<=45?'good':'bad'):'idle','手动兜底需机体倾角 ≤45°');
@@ -229,7 +240,7 @@ function renderInterceptor(interceptorRunning){
  const fireAllowed=interceptorRunning&&modeKnown&&manualOn&&!latched,armed=fireAllowed&&fireReady;
  disable('netgunFire',!state.connected||!fireAllowed);
  byId('netgunFire').classList.toggle('danger-fill',armed);byId('netgunFire').classList.toggle('danger',!armed);
- const facts=[typeof strike.range_m==='number'&&strike.range_m>0?'距离 '+number(strike.range_m,1)+' m':'',typeof strike.tilt_deg==='number'&&strike.tilt_deg>=0?'倾角 '+number(strike.tilt_deg,0)+'°':''].filter(Boolean);
+ const facts=[estimateOk&&typeof strike.range_m==='number'&&strike.range_m>0?'距离 '+number(strike.range_m,1)+' m':'',typeof strike.tilt_deg==='number'&&strike.tilt_deg>=0?'倾角 '+number(strike.tilt_deg,0)+'°':''].filter(Boolean);
  fireSummary=(fireAllowed?fireText+(fireReady?'':'；板上将拒绝并返回原因'):'当前不可发射：'+fireText)+(facts.length?' · '+facts.join(' · '):'');
  syncFireDialog();
  // ---- 原始日志（调试）----
