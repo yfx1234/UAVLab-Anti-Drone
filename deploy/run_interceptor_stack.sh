@@ -64,6 +64,21 @@ running_pid() {
   echo "$pid"
 }
 
+# I-3（2026-10-21）：兜底清理只认生产域（ROS_DOMAIN_ID 为空或 0）的
+# netgun_real.launch.py——隔离域（如 42）的 fullchain/rehearsal 测试栈不归
+# 本脚本管（原 pkill -f 会把正在跑的测试栈一并 SIGINT 掉）
+production_launch_pids() {
+  local p dom
+  for p in $(pgrep -f "netgun_real[.]launch[.]py" 2>/dev/null || true); do
+    # set -euo pipefail 下进程刚退出读不到 environ 不能让脚本整体退出
+    dom="$(tr '\0' '\n' 2>/dev/null <"/proc/$p/environ" |
+      sed -n 's/^ROS_DOMAIN_ID=//p' | head -1 || true)"
+    if [ -z "$dom" ] || [ "$dom" = "0" ]; then
+      echo "$p"
+    fi
+  done
+}
+
 latest_log() {
   ls -t "$LOG_DIR"/interceptor_stack_*.log 2>/dev/null | head -1 || true
 }
@@ -150,8 +165,11 @@ cmd_stop() {
   local pid
   if ! pid="$(running_pid)"; then
     echo "拦截链未运行"
-    # 兜底清理残留节点（PID 文件丢失场景）
-    pkill -INT -f "netgun_real[.]launch[.]py" 2>/dev/null || true
+    # 兜底清理残留节点（PID 文件丢失场景；只清生产域，见 production_launch_pids）
+    local p
+    for p in $(production_launch_pids); do
+      kill -INT "$p" 2>/dev/null || true
+    done
     exit 0
   fi
   # setsid 后 pid 即进程组号；SIGINT 让 ros2 launch 优雅收节点

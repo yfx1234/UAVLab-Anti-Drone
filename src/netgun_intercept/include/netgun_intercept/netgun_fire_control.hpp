@@ -34,6 +34,44 @@ std::array<double, 3> apply_muzzle_offset(
 std::array<double, 3> gun_axis_body(
   double boresight_pitch_rad, double boresight_yaw_rad);
 
+/// I-3（2026-10-21）：枪管轴（NED）偏离竖直向上（NED -Z）的夹角，
+/// 取值 [0, π]。零向量/非有限输入返回 NaN（调用方按"不通过"处理）。
+/// 开火倾角门用：网弹不得朝近水平方向（人员/地面）射出。
+double tilt_from_vertical_rad(const std::array<double, 3> & axis_ned);
+
+/// I-3：手动兜底发射门控输入（节点侧逐拍汇总，判定为纯逻辑可离线单测）。
+/// 默认口径（require_authorization=false）只保留物理安全门：飞控数据
+/// 新鲜 + 已解锁 + 高度达标 + 倾角达标——不要求 offboard/稳定跟踪/
+/// 有效估计，保证"自动一直不发"时操作手仍能人工发射（含遥控接管后）。
+struct ManualFireGateInput
+{
+  bool manual_enabled = false;         // fire_mode 含 manual
+  bool latched = false;                // 单发已用
+  bool fcu_fresh = false;              // 姿态/状态/本地位置均在超时内
+  bool armed = false;
+  bool height_ok = false;              // 相对起飞原点高度 ≥ minimum_height_m
+  bool tilt_ok = false;                // 枪管轴偏离竖直 ≤ fire_max_tilt_rad
+  bool require_authorization = false;  // 严格口径：再要求武器授权+有效估计
+  bool authorization_passed = false;
+  bool estimate_valid = false;
+};
+
+/// 手动发射被拦下的首个原因（按判定顺序）；NONE = 可发射。
+enum class ManualFireBlock
+{
+  NONE = 0,
+  DISABLED,        // fire_mode=auto：按钮不生效
+  LATCHED,         // 已发射（单发）
+  FCU_STALE,       // 飞控姿态/状态/位置缺失或过期
+  NOT_ARMED,       // 未解锁
+  LOW_HEIGHT,      // 高度不足（或本地高度无效）
+  TILT,            // 机体倾角过大
+  NOT_AUTHORIZED,  // 严格口径下授权/估计未就绪
+};
+
+ManualFireBlock manual_fire_block(const ManualFireGateInput & input);
+std::string manual_fire_block_name(ManualFireBlock block);
+
 /// 择时火控配置（方案 v4 §3/§4）。
 struct FireControlConfig
 {
@@ -100,7 +138,8 @@ public:
   // I-1（2026-10-19）：手动发射请求——绕过瞄准质量门（轴误差/判窗/
   // LOS/距离/σ，由操作手依据面板状态决定时机），但保留单发闭锁：
   // 首次调用即闭锁并返回 fire=true，此后返回 LATCHED。
-  // 授权门（armed/offboard/高度/稳定跟踪）不在本类内，由节点侧把关。
+  // 物理安全门（I-3：解锁/高度/倾角，严格口径再加授权+估计）不在本类
+  // 内，由节点侧按 manual_fire_block() 把关后再调用。
   FireDecision request_manual();
 
   bool latched() const;

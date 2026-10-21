@@ -34,6 +34,38 @@
 | `netgun_strike_node` | 骨架 | 匀速外推预测；授权门简化为 armed+offboard |
 | 裁判 3×3 / IMM CT / 12m 参数档 | 待做 | 方案 WP-C / WP-D / WP-A 剩余项 |
 
+## 开火模式与实物击发（I-3，2026-10-21）
+
+`netgun_strike_node` 参数 `fire_mode`：
+
+| 取值 | 行为 | 使用场景 |
+|---|---|---|
+| `auto`（节点默认） | 火控门满足即自动单发 | 仿真矩阵/联仿 |
+| `auto_manual`（`netgun_real.launch.py` 默认） | 自动单发 + `/netgun/fire_command` 手动兜底，两路共享单发闭锁 | 实机 |
+| `manual` | 只认按钮（I-1 口径） | 特殊测试 |
+
+- 手动兜底门（`manual_fire_block()` 纯函数，单测覆盖）按顺序报首因：
+  `DISABLED → LATCHED → FCU_STALE → NOT_ARMED → LOW_HEIGHT → TILT →
+  (NOT_AUTHORIZED)`。默认 `manual_fire_require_authorization=false`：
+  只看物理安全门（飞控姿态/状态/位置新鲜、已解锁、高度有效（z_valid）且 ≥ `minimum_height_m`、
+  枪管轴偏离竖直 ≤ `fire_max_tilt_rad`=45°），不要求 offboard/稳定跟踪/
+  有效估计——自动一直不发或遥控接管后操作手仍可发射；设 true 恢复 I-1 的
+  "授权+有效估计"口径。
+- 倾角门同时约束自动开火（自动另需 `t=1`）；对外发布的武器授权
+  `/tracking/weapon_authorization` 不含倾角（避免 AIM 进出振荡）。
+- 手动请求逐拍消费不积压：门不通过立即拒绝并记日志
+  `manual fire rejected: <首因>`；已发射后再按记 `already fired`。
+- 无估计时手动兜底仍可发射：事件 `solution_valid=false`、方向记枪管轴；
+  手动发射一律记枪管实际指向（自动沿用预测射击方向）。
+- 实物击发钩子 `trigger_command`（launch 参数，默认空=仅虚拟事件）：开火瞬间
+  在独立线程 `posix_spawn("/bin/sh -c <cmd>")` 异步执行，不阻塞 50Hz 火控环；
+  环境变量 `NETGUN_SHOT_ID`、`NETGUN_SHOT_REASON`；退出码 0 记
+  `trigger command done rc=0`，否则 `trigger command FAILED`。单发闭锁保证
+  每任务至多执行一次。PWM 脚本按此契约实现即可，干跑替身见
+  `tools/board_test/netgun_trigger_dryrun.sh`。
+- 制导收到开火事件：TRACK/AIM → SETTLE→SPIN→DONE（原逻辑）；TAKEOFF 中 →
+  原地 DONE 保持；WAITING（未切 offboard）→ 闩锁，之后进 offboard 直接 DONE。
+
 ## 骨架边界（TODO 清单）
 
 - 授权门完善：接入高度门 / 任务时间授权 / attack_enable_delay（上游主控状态）；

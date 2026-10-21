@@ -285,4 +285,73 @@ TEST(ManualFire, AutoFireThenManualIsLatched)
   EXPECT_EQ(manual.shot_id, 1);
 }
 
+// I-3：倾角门几何——竖直向上 0°，水平 90°，竖直向下 180°；零向量 NaN
+TEST(TiltGate, TiltFromVerticalGeometry)
+{
+  using netgun_intercept::tilt_from_vertical_rad;
+  EXPECT_NEAR(tilt_from_vertical_rad({0.0, 0.0, -1.0}), 0.0, 1e-12);
+  EXPECT_NEAR(tilt_from_vertical_rad({1.0, 0.0, 0.0}), M_PI / 2.0, 1e-12);
+  EXPECT_NEAR(tilt_from_vertical_rad({0.0, 0.0, 2.0}), M_PI, 1e-12);
+  EXPECT_NEAR(
+    tilt_from_vertical_rad({std::sin(30.0 * kDeg), 0.0, -std::cos(30.0 * kDeg)}),
+    30.0 * kDeg, 1e-12);
+  // 非单位长度不影响结果
+  EXPECT_NEAR(tilt_from_vertical_rad({0.0, 3.0, -3.0}), 45.0 * kDeg, 1e-12);
+  EXPECT_TRUE(std::isnan(tilt_from_vertical_rad({0.0, 0.0, 0.0})));
+  // 默认枪管轴（body -Z）在水平姿态下倾角为 0
+  EXPECT_NEAR(
+    tilt_from_vertical_rad(netgun_intercept::gun_axis_body(0.0, 0.0)), 0.0, 1e-12);
+}
+
+// I-3：手动兜底门——默认（宽松）口径只看物理安全门，按固定顺序报首因
+TEST(ManualGate, DefaultBlocksInOrderAndPassesWithoutEstimate)
+{
+  using netgun_intercept::ManualFireBlock;
+  using netgun_intercept::ManualFireGateInput;
+  using netgun_intercept::manual_fire_block;
+  using netgun_intercept::manual_fire_block_name;
+
+  ManualFireGateInput gate;  // 全默认：手动未启用
+  EXPECT_EQ(manual_fire_block(gate), ManualFireBlock::DISABLED);
+  gate.manual_enabled = true;
+  gate.latched = true;
+  EXPECT_EQ(manual_fire_block(gate), ManualFireBlock::LATCHED);
+  gate.latched = false;
+  EXPECT_EQ(manual_fire_block(gate), ManualFireBlock::FCU_STALE);
+  gate.fcu_fresh = true;
+  EXPECT_EQ(manual_fire_block(gate), ManualFireBlock::NOT_ARMED);
+  gate.armed = true;
+  EXPECT_EQ(manual_fire_block(gate), ManualFireBlock::LOW_HEIGHT);
+  gate.height_ok = true;
+  EXPECT_EQ(manual_fire_block(gate), ManualFireBlock::TILT);
+  gate.tilt_ok = true;
+  // 宽松口径：无授权、无有效估计也可发射（自动一直不发时的兜底）
+  EXPECT_EQ(manual_fire_block(gate), ManualFireBlock::NONE);
+  EXPECT_EQ(manual_fire_block_name(manual_fire_block(gate)), "NONE");
+  EXPECT_EQ(manual_fire_block_name(ManualFireBlock::TILT), "TILT");
+}
+
+TEST(ManualGate, StrictModeRequiresAuthorizationAndEstimate)
+{
+  using netgun_intercept::ManualFireBlock;
+  using netgun_intercept::ManualFireGateInput;
+  using netgun_intercept::manual_fire_block;
+
+  ManualFireGateInput gate;
+  gate.manual_enabled = true;
+  gate.fcu_fresh = true;
+  gate.armed = true;
+  gate.height_ok = true;
+  gate.tilt_ok = true;
+  gate.require_authorization = true;
+  EXPECT_EQ(manual_fire_block(gate), ManualFireBlock::NOT_AUTHORIZED);
+  gate.authorization_passed = true;
+  EXPECT_EQ(manual_fire_block(gate), ManualFireBlock::NOT_AUTHORIZED);
+  gate.estimate_valid = true;
+  EXPECT_EQ(manual_fire_block(gate), ManualFireBlock::NONE);
+  // 物理安全门在严格口径下仍优先报出
+  gate.armed = false;
+  EXPECT_EQ(manual_fire_block(gate), ManualFireBlock::NOT_ARMED);
+}
+
 }  // namespace

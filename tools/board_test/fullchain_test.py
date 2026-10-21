@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
-"""无硬件全链路测试编排器（2026-10-15，日志驱动版）。
+"""无硬件全链路测试编排器（2026-10-15，日志驱动版；I-3 2026-10-21 增补开火模式）。
 
-在 domain 0（生产域）里，用真实 netgun_real.launch.py 四节点（桥+估计器+
-制导+火控）+ mock_px4 + 合成感知跑完整感知→拦截流程，以
+在隔离 domain（默认要求非 0，见下）里，用真实 netgun_real.launch.py 四节点
+（桥+估计器+制导+火控）+ mock_px4 + 合成感知跑完整感知→拦截流程，以
 /tracking/virtual_shot_event（开火软事件）为终点判据。
+
+I-3 安全约束：真飞控接上后 uXRCE agent 就在 domain 0——在 domain 0 跑本测试
+会让 mock_px4 与真飞控话题混流、制导心跳/setpoint 进入真飞控。因此
+ROS_DOMAIN_ID 未设置或为 0 时拒绝运行（--allow-domain0 仅限确认飞控已断开）。
 
 设计说明（为什么是日志/CLI 驱动而非订阅驱动）：本板 FastDDS 对"先建订阅、
 后加入发布者"的若干端点组合存在匹配迟滞（mock/CLI 这类后加入参与者可靠，
@@ -15,14 +19,24 @@
 
 阶段与判据：
   P0 四节点进程启动且估计器开始打印 diag（≤45s）
-  P1 估计器 init=1（≤20s）
+  P1 估计器 init=1（≤20s）；期间按一次发射按钮（未解锁）→ 必须被拒
+     （NOT_ARMED/FCU_STALE），且不得开火
   P2 engage 后制导 phase → TAKEOFF/TRACK（≤90s，含爬升与收敛）
-  P3 火控 NETGUN FIRE（≤120s）
+  P3 火控 NETGUN FIRE（≤120s）：
+     --fire auto（默认）  不按按钮，等火控门自动开火（PRIMARY_WINDOW/WINDOW_HOLD）
+     --fire manual        launch 把自动门限设为负值（自动永不开火），制导进
+                          TRACK 后用面板同款助手 deploy/netgun_fire_button.py
+                          fire 按钮兜底（reason=MANUAL）
+  P4 开火后再按一次（原始话题）→ 必须 "already fired"；助手 status 报 latched
   不变量：mock 全程收到 VehicleCommand=0（rc_gated 承诺）
+  单发：stack.log 恰 1 条 NETGUN FIRE，bag 恰 1 个 VirtualShotEvent
+  --trigger-hook：trigger_command 装订为干跑脚本 netgun_trigger_dryrun.sh
+     （只写日志不碰硬件），验证恰执行 1 次且 "trigger command done rc=0"
 
 用法（板上，已 source 全部环境；生产拦截栈必须先停止）：
-  export ROS_DOMAIN_ID=0 && unset ROS_LOCALHOST_ONLY
-  python3 fullchain_test.py [--target-ned 0.0,0.0,-11.6]
+  export ROS_DOMAIN_ID=42 && unset ROS_LOCALHOST_ONLY
+  python3 fullchain_test.py [--fire auto|manual] [--trigger-hook] \\
+      [--target-ned 0.0,0.0,-11.6]
 
 产物：~/netgun_logs/fullchain_<stamp>/（各进程日志、bag、summary.json）
 """
@@ -41,7 +55,21 @@ from rclpy.node import Node
 from std_msgs.msg import String
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.dirname(os.path.dirname(HERE))
+FIRE_BUTTON = os.path.join(REPO_ROOT, "deploy", "netgun_fire_button.py")
+TRIGGER_DRYRUN = os.path.join(HERE, "netgun_trigger_dryrun.sh")
 LOG_ROOT = os.path.expanduser("~/netgun_logs")
+
+
+def domain_guard(allow_domain0):
+    """I-3：真飞控在 domain 0——mock/制导输出不得进入生产域。"""
+    domain = os.environ.get("ROS_DOMAIN_ID", "").strip()
+    if domain in ("", "0") and not allow_domain0:
+        print("拒绝运行：ROS_DOMAIN_ID=%s 是生产域，真飞控（uXRCE agent）也在 "
+              "domain 0——mock_px4 会与真飞控话题混流、制导心跳/setpoint 会进入"
+              "真飞控。请 export ROS_DOMAIN_ID=42 后重跑；确认飞控已断开时可加 "
+              "--allow-domain0" % (domain or "未设置(=0)"), flush=True)
+        sys.exit(2)
 
 
 class Orchestrator(Node):
@@ -49,6 +77,7 @@ class Orchestrator(Node):
     def __init__(self, args):
         super().__init__("fullchain_orchestrator")
         self.args = args
+        self.done = False
         self.stamp = time.strftime("%Y%m%d_%H%M%S")
         self.run_dir = os.path.join(LOG_ROOT, "fullchain_%s" % self.stamp)
         os.makedirs(self.run_dir, exist_ok=True)
@@ -62,6 +91,10 @@ class Orchestrator(Node):
         self.phase = "P0"
         self.phase_since = time.monotonic()
         self.shot_line = None
+        self.pre_engage_pressed = False
+        self.post_shot_checked = False
+        self.button_results = []
+        self.trigger_log_path = os.path.join(self.run_dir, "trigger_dryrun.log")
 
         self.create_subscription(
             String, "/test/mock_px4/state", self._on_mock, 10)
@@ -89,16 +122,28 @@ class Orchestrator(Node):
         self._log("environment ROS_DOMAIN_ID=%s" %
                   os.environ.get("ROS_DOMAIN_ID", "?"))
         if os.environ.get("ROS_DOMAIN_ID") in (None, "", "0"):
-            self._log("NOTE: 在生产 domain 0 运行——确认拦截栈已停止")
+            self._log("WARNING: 在生产 domain 0 运行（--allow-domain0）——"
+                      "确认拦截栈已停止且飞控已断开")
+        self._log("fire=%s trigger_hook=%s" % (
+            self.args.fire, self.args.trigger_hook))
         self._spawn("mock_px4", [
             "python3", os.path.join(HERE, "mock_px4_node.py")])
         self._spawn("synthetic", [
             "python3", os.path.join(HERE, "synthetic_perception_node.py"),
             "--ros-args", "-p",
             "target_ned:=%s" % self.args.target_ned])
-        self._spawn("stack", [
+        stack_cmd = [
             "ros2", "launch", "netgun_intercept", "netgun_real.launch.py",
-            "bridge_input_topic:=/test/perception/observations_json"])
+            "bridge_input_topic:=/test/perception/observations_json"]
+        if self.args.fire == "manual":
+            # 自动门限设负值 = 自动永不开火，只验证手动兜底路径
+            # （fire_mode 保持生产默认 auto_manual）
+            stack_cmd += ["primary_axis_error_rad:=-1.0",
+                          "window_axis_error_rad:=-1.0"]
+        if self.args.trigger_hook:
+            os.environ["NETGUN_TRIGGER_LOG"] = self.trigger_log_path
+            stack_cmd.append("trigger_command:=bash %s" % TRIGGER_DRYRUN)
+        self._spawn("stack", stack_cmd)
         self._spawn("bag", [
             "ros2", "bag", "record", "--all",
             "-o", os.path.join(self.run_dir, "bag")])
@@ -148,22 +193,42 @@ class Orchestrator(Node):
             pass
         self._log("engage -> %s (cli)" % value)
 
-    def _fire_button_cli(self):
-        """I-1：模拟面板发射按钮——/netgun/fire_command 一次性发布，
-        5s 内不重复（strike 侧授权/估计/深度硬门未就绪时安全拒绝）。"""
-        now = time.monotonic()
-        if now - self.last_fire_cli_s < 5.0:
-            return
-        self.last_fire_cli_s = now
+    def _fire_raw_cli(self, note):
+        """原始话题按键（绕过助手的就绪预判）：直接考 strike 侧门控/闭锁。
+        发 3 次：--once 默认只等 1 个匹配订阅者，bag 录制器（record --all）
+        先匹配时单发会在火控匹配前发出而丢失（实测 2 轮各丢 1 次）。"""
         try:
             subprocess.run(
-                ["ros2", "topic", "pub", "--once", "/netgun/fire_command",
+                ["ros2", "topic", "pub", "-t", "3", "-r", "2",
+                 "--keep-alive", "1.0", "/netgun/fire_command",
                  "std_msgs/msg/Bool", "{data: true}"],
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 timeout=12)
         except subprocess.TimeoutExpired:
             pass
-        self._log("fire_button -> pressed (cli)")
+        self._log("fire_command raw -> pressed (%s)" % note)
+
+    def _fire_button_helper(self, action):
+        """面板同款助手（deploy/netgun_fire_button.py），返回其 JSON。"""
+        try:
+            out = subprocess.run(
+                ["python3", FIRE_BUTTON, action], capture_output=True,
+                text=True, timeout=40).stdout.strip().splitlines()
+            payload = json.loads(out[-1]) if out else {}
+        except (subprocess.TimeoutExpired, ValueError, IndexError) as exc:
+            payload = {"ok": False, "reason": "助手调用失败：%s" % exc}
+        self.button_results.append({"action": action, "result": payload})
+        self._log("fire_button %s -> %s" % (
+            action, json.dumps(payload, ensure_ascii=False)))
+        return payload
+
+    def _fire_button_press(self):
+        """模拟操作手：≥5s 一次用助手按键（助手只在 fready=1 时才发布）。"""
+        now = time.monotonic()
+        if now - self.last_fire_cli_s < 5.0:
+            return
+        self.last_fire_cli_s = now
+        self._fire_button_helper("fire")
 
     def _read_log(self):
         try:
@@ -201,6 +266,10 @@ class Orchestrator(Node):
                     "P0 超时：started=%d diag=%s" % (started, diag != ""))
                 self._finish()
         elif self.phase == "P1":
+            if not self.pre_engage_pressed:
+                # 未解锁时按键：strike 必须拒绝（NOT_ARMED/FCU_STALE）
+                self.pre_engage_pressed = True
+                self._fire_raw_cli("pre-engage, expect reject")
             diag = self._latest_estimator_diag(log_text)
             if re.search(r"\binit=1\b", diag):
                 self._advance("P2", "估计器 init=1（%s）" % diag)
@@ -220,11 +289,14 @@ class Orchestrator(Node):
                 self._finish()
         elif self.phase == "P3":
             self._engage_cli(True)
-            # I-1：netgun_real 现为 manual 开火模式——编排器在此阶段周期
-            # 性"按下发射按钮"（/netgun/fire_command），火控侧授权/估计/
-            # 深度硬门与单发闭锁仍生效；模拟操作手看到就绪后按键
-            self._fire_button_cli()
             fire = re.findall(r"NETGUN FIRE (.+)", log_text)
+            if (not fire and self.args.fire == "manual" and
+                    re.search(r"phase → TRACK", log_text)):
+                # I-3：自动门限已置负（自动永不开火）——制导进 TRACK 后
+                # 模拟操作手用面板按钮兜底
+                self._fire_button_press()
+                log_text = self._read_log()
+                fire = re.findall(r"NETGUN FIRE (.+)", log_text)
             if fire:
                 self.shot_line = fire[-1]
                 self.result["phases"]["P3"] = {
@@ -237,6 +309,11 @@ class Orchestrator(Node):
                     self._latest_estimator_diag(log_text))
                 self._finish()
         elif self.phase == "P4":
+            if not self.post_shot_checked:
+                # 开火后再按：strike 必须报 already fired；助手须报 latched
+                self.post_shot_checked = True
+                self._fire_raw_cli("post-shot, expect already fired")
+                self._fire_button_helper("status")
             if elapsed > 6.0:  # 观察 SETTLE/SPIN
                 self._engage_cli(False)
                 self._advance("DONE", "测试完成")
@@ -291,6 +368,9 @@ class Orchestrator(Node):
         if getattr(self, "_finished", False):
             return
         self._finished = True
+        # 先停子进程（bag 录制器 SIGINT 后才写 metadata.yaml、关闭 sqlite），
+        # 再读日志终稿与 bag——录制中读 bag 会报 "disk I/O error"
+        self._stop_children()
         log_text = self._read_log()
         mock = self.mock_state or {}
         diags = re.findall(r"estimator diag: (.+)", log_text)
@@ -313,12 +393,12 @@ class Orchestrator(Node):
             self.result["pass"] = any(s.get("solution_valid") for s in shots)
         else:
             self.result["pass"] = bool(self.shot_line)
+        self._check_fire_contract(log_text, shots)
         if mock.get("cmd_count"):
             self.result["errors"].append(
                 "rc_gated 不变量被违反：mock 收到 VehicleCommand x%d"
                 % mock["cmd_count"])
             self.result["pass"] = False
-        self._stop_children()
         summary_path = os.path.join(self.run_dir, "summary.json")
         with open(summary_path, "w") as f:
             json.dump(self.result, f, ensure_ascii=False, indent=2)
@@ -330,23 +410,80 @@ class Orchestrator(Node):
         self._log("est=%s" % (diags[-1] if diags else ""))
         self._log("summary: %s" % summary_path)
         self._log("=" * 60)
-        rclpy.try_shutdown()
+        # 不在回调里 rclpy.shutdown()：Humble 全局执行器的 on_shutdown 会
+        # executor.shutdown() 等本回调结束 → 自锁（进程挂死到 timeout）。
+        # 由 main() 的 spin_once 循环看到 done 后在回调外收尾。
+        self.done = True
+
+    def _check_fire_contract(self, log_text, shots):
+        """I-3：开火契约——单发、原因、按键门控/闭锁、击发钩子恰一次。"""
+        errors = self.result["errors"]
+        fires = re.findall(r"NETGUN FIRE (.+)", log_text)
+        checks = {"fire_lines": len(fires), "bag_shots": len(shots)}
+        if len(fires) != 1:
+            errors.append("单发违反/未开火：NETGUN FIRE 行数=%d" % len(fires))
+        if shots and len(shots) != 1:
+            errors.append("单发违反：bag 中 VirtualShotEvent=%d" % len(shots))
+        expected = ("MANUAL",) if self.args.fire == "manual" else (
+            "PRIMARY_WINDOW", "WINDOW_HOLD")
+        reason = re.search(r"reason=(\w+)", fires[0]).group(1) if fires else None
+        checks["reason"] = reason
+        if fires and reason not in expected:
+            errors.append("开火原因 %s 不在期望 %s 内" % (reason, expected))
+        rejects = re.findall(r"manual fire rejected: (\w+)", log_text)
+        checks["manual_rejects"] = rejects
+        if not any(r in ("NOT_ARMED", "FCU_STALE") for r in rejects):
+            errors.append("未解锁按键未见拒绝日志（期望 NOT_ARMED/FCU_STALE）：%s"
+                          % rejects)
+        if self.post_shot_checked and "already" not in rejects:
+            errors.append("开火后按键未见 already fired 拒绝：%s" % rejects)
+        status = [b["result"] for b in self.button_results
+                  if b["action"] == "status"]
+        checks["helper_status_latched"] = bool(status) and bool(
+            status[-1].get("latched"))
+        if self.post_shot_checked and not checks["helper_status_latched"]:
+            errors.append("开火后助手 status 未报 latched：%s"
+                          % (status[-1] if status else None))
+        if self.args.trigger_hook:
+            try:
+                with open(self.trigger_log_path) as f:
+                    hook_lines = [ln for ln in f.read().splitlines() if ln]
+            except OSError:
+                hook_lines = []
+            checks["trigger_hook_lines"] = hook_lines
+            done = re.findall(r"trigger command done rc=0", log_text)
+            checks["trigger_done"] = len(done)
+            if len(hook_lines) != 1 or len(done) != 1:
+                errors.append("击发钩子应恰执行 1 次：脚本记录 %d 行、done %d 次"
+                              % (len(hook_lines), len(done)))
+            elif "shot_id=1" not in hook_lines[0] or (
+                    reason and ("reason=%s" % reason) not in hook_lines[0]):
+                errors.append("击发钩子环境变量不符：%s" % hook_lines[0])
+        self.result["fire_contract"] = checks
+        if errors:
+            self.result["pass"] = False
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--target-ned", default="0.0,0.0,-11.6")
+    parser.add_argument("--fire", choices=("auto", "manual"), default="auto")
+    parser.add_argument("--trigger-hook", action="store_true")
+    parser.add_argument("--allow-domain0", action="store_true")
     args, _ = parser.parse_known_args()
+    domain_guard(args.allow_domain0)
 
     rclpy.init()
     node = Orchestrator(args)
     try:
-        rclpy.spin(node)
+        while rclpy.ok() and not node.done:
+            rclpy.spin_once(node, timeout_sec=0.2)
     except KeyboardInterrupt:
         node._finish()
     finally:
         passed = node.result.get("pass", False)
         node.destroy_node()
+        rclpy.try_shutdown()
         sys.exit(0 if passed else 1)
 
 

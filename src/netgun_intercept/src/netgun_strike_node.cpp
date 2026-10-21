@@ -1,10 +1,21 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <cerrno>
+#include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
+#include <stdexcept>
 #include <string>
+#include <thread>
+#include <vector>
+
+#include <spawn.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 #include "netgun_intercept/netgun_fire_control.hpp"
 #include "netgun_intercept/netgun_model.hpp"
@@ -18,6 +29,8 @@
 #include <std_msgs/msg/bool.hpp>
 #include <std_msgs/msg/string.hpp>
 #include <virtual_interception_interfaces/msg/virtual_shot_event.hpp>
+
+extern char ** environ;
 
 namespace netgun_intercept
 {
@@ -56,6 +69,80 @@ double angle_between(const std::array<double, 3> & a, const std::array<double, 3
 double norm3(double x, double y, double z)
 {
   return std::sqrt(x * x + y * y + z * z);
+}
+
+/// I-3（2026-10-21）：异步执行实物击发钩子（PWM 脉冲脚本等）。
+/// /bin/sh -c <command>，环境追加 NETGUN_SHOT_ID / NETGUN_SHOT_REASON；
+/// 独立线程等待退出码并记日志——不阻塞 50Hz 火控环（旧 std::system
+/// 同步执行，脚本耗时多久火控环就卡多久）。
+void run_trigger_command_async(
+  const rclcpp::Logger & logger, const std::string & command,
+  int shot_id, const std::string & reason)
+{
+  std::vector<std::string> env_storage;
+  for (char ** entry = environ; entry != nullptr && *entry != nullptr; ++entry) {
+    const std::string text(*entry);
+    if (text.rfind("NETGUN_SHOT_ID=", 0) == 0 ||
+      text.rfind("NETGUN_SHOT_REASON=", 0) == 0)
+    {
+      continue;
+    }
+    env_storage.push_back(text);
+  }
+  env_storage.push_back("NETGUN_SHOT_ID=" + std::to_string(shot_id));
+  env_storage.push_back("NETGUN_SHOT_REASON=" + reason);
+  RCLCPP_WARN(
+    logger, "trigger command start shot_id=%d reason=%s (%s)", shot_id,
+    reason.c_str(), command.c_str());
+  try {
+    std::thread(
+      [logger, command, env_storage]() {
+        std::vector<char *> envp;
+        envp.reserve(env_storage.size() + 1);
+        for (const auto & text : env_storage) {
+          envp.push_back(const_cast<char *>(text.c_str()));
+        }
+        envp.push_back(nullptr);
+        std::string arg0 = "sh";
+        std::string arg1 = "-c";
+        std::string arg2 = command;
+        char * argv[] = {arg0.data(), arg1.data(), arg2.data(), nullptr};
+        const auto start = std::chrono::steady_clock::now();
+        pid_t pid = 0;
+        const int spawn_rc =
+          posix_spawn(&pid, "/bin/sh", nullptr, nullptr, argv, envp.data());
+        if (spawn_rc != 0) {
+          RCLCPP_ERROR(
+            logger, "trigger command FAILED to start: %s (%s)",
+            std::strerror(spawn_rc), command.c_str());
+          return;
+        }
+        int status = 0;
+        pid_t waited = -1;
+        do {
+          waited = waitpid(pid, &status, 0);
+        } while (waited < 0 && errno == EINTR);
+        const double elapsed_ms = std::chrono::duration<double, std::milli>(
+          std::chrono::steady_clock::now() - start).count();
+        if (waited < 0) {
+          RCLCPP_ERROR(
+            logger, "trigger command FAILED: waitpid %s (%s)",
+            std::strerror(errno), command.c_str());
+        } else if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
+          RCLCPP_WARN(logger, "trigger command done rc=0 (%.0f ms)", elapsed_ms);
+        } else {
+          RCLCPP_ERROR(
+            logger, "trigger command FAILED rc=%d signal=%d (%.0f ms): %s",
+            WIFEXITED(status) ? WEXITSTATUS(status) : -1,
+            WIFSIGNALED(status) ? WTERMSIG(status) : 0, elapsed_ms,
+            command.c_str());
+        }
+      }).detach();
+  } catch (const std::exception & error) {
+    RCLCPP_ERROR(
+      logger, "trigger command FAILED: thread start %s (%s)", error.what(),
+      command.c_str());
+  }
 }
 
 NetgunModelConfig read_model_config(rclcpp::Node & node)
@@ -168,16 +255,46 @@ public:
     // 仿真矩阵沿用）；manual=面板"发射"按钮驱动（实物单发枪口径），
     // 自动瞄准质量门不参与开火决策，但授权/估计/深度硬门与单发闭锁
     // 仍然生效
+    // I-3（2026-10-21）：auto_manual = 自动开火 + 手动兜底按钮（实机默认），
+    // 两路共享同一单发闭锁
     fire_mode_ = declare_parameter<std::string>("fire_mode", "auto");
-    if (fire_mode_ != "auto" && fire_mode_ != "manual") {
+    if (fire_mode_ == "auto") {
+      auto_fire_enabled_ = true;
+      manual_fire_enabled_ = false;
+    } else if (fire_mode_ == "manual") {
+      auto_fire_enabled_ = false;
+      manual_fire_enabled_ = true;
+    } else if (fire_mode_ == "auto_manual") {
+      auto_fire_enabled_ = true;
+      manual_fire_enabled_ = true;
+    } else {
       RCLCPP_FATAL(
-        get_logger(), "fire_mode '%s' 不合法（只接受 auto / manual）",
+        get_logger(),
+        "fire_mode '%s' 不合法（只接受 auto / manual / auto_manual）",
         fire_mode_.c_str());
       throw std::runtime_error("invalid fire_mode");
     }
-    // I-1：实物击发钩子（PWM/GPIO）——开火瞬间执行的外部命令（如
-    // PWM 脉冲脚本）；默认空 = 纯虚拟事件，不触任何硬件
+    // I-3：手动兜底门口径——false（默认）只保留物理安全门（飞控新鲜+
+    // 解锁+高度+倾角），"自动一直不发"或遥控接管后仍可人工发射；
+    // true 再要求武器授权（offboard+就位+稳定跟踪）与有效估计（I-1 口径）
+    manual_fire_require_authorization_ =
+      declare_parameter<bool>("manual_fire_require_authorization", false);
+    // I-3：开火倾角门——枪管轴偏离竖直的上限（自动/手动共用，默认 45°）
+    fire_max_tilt_rad_ =
+      declare_parameter<double>("fire_max_tilt_rad", 0.7853981633974483);
+    // I-1/I-3：实物击发钩子（PWM/GPIO）——开火瞬间异步执行的外部命令
+    // （/bin/sh -c，环境变量 NETGUN_SHOT_ID / NETGUN_SHOT_REASON）；单发
+    // 闭锁保证每任务至多执行一次。默认空 = 纯虚拟事件，不触任何硬件
     trigger_command_ = declare_parameter<std::string>("trigger_command", "");
+    RCLCPP_INFO(
+      get_logger(),
+      "fire config: fire_mode=%s (auto=%d manual=%d) manual_require_auth=%d "
+      "max_tilt=%.0fdeg trigger_command=%s",
+      fire_mode_.c_str(), static_cast<int>(auto_fire_enabled_),
+      static_cast<int>(manual_fire_enabled_),
+      static_cast<int>(manual_fire_require_authorization_),
+      fire_max_tilt_rad_ * 57.29577951308232,
+      trigger_command_.empty() ? "(空=仅虚拟事件)" : trigger_command_.c_str());
     fire_command_sub_ = create_subscription<std_msgs::msg::Bool>(
       declare_parameter<std::string>("fire_command_topic", "/netgun/fire_command"),
       rclcpp::QoS(1),
@@ -271,25 +388,39 @@ private:
   void on_timer()
   {
     const double now_s = now().seconds();
-    if (!latest_estimate_ || !latest_attitude_ || !latest_status_) {
+    // I-3：手动兜底不依赖估计——只有姿态/状态从未收到才整拍跳过；此时
+    // 挂起的手动请求立即拒绝（不积压到之后"迟发"）
+    if (!latest_attitude_ || !latest_status_) {
+      if (manual_fire_requested_.exchange(false)) {
+        ++diag_manual_rejected_;
+        RCLCPP_WARN(
+          get_logger(),
+          "manual fire rejected: %s（飞控姿态/状态从未收到，%llu 次）",
+          manual_fire_enabled_ ? "FCU_STALE" : "DISABLED",
+          static_cast<unsigned long long>(diag_manual_rejected_));
+      }
       return;
     }
+    // 无估计时用空估计（valid=false）占位：自动开火门自然关闭，手动兜底、
+    // 授权与调试状态照常逐拍计算
+    const px4_offboard_tracking::msg::RelativeEstimate & est =
+      latest_estimate_ ? *latest_estimate_ : empty_estimate_;
 
     FireControlInput input;
     input.now_s = now_s;
-    const double estimate_stamp_s = latest_estimate_->header.stamp.sec +
-      latest_estimate_->header.stamp.nanosec * 1e-9;
+    const double estimate_stamp_s = est.header.stamp.sec +
+      est.header.stamp.nanosec * 1e-9;
     // TODO(时间源对齐)：估计时间戳与节点钟一致性核验（骨架先按墙钟过滤）。
     // 估计有效性对齐镜像语义（estimator.valid = 初始化+age+方差）：
     // 不再逐帧要求 measurement_accepted——瞬态期 IMM 革新门拒帧会让该
     // 标志闪烁，正好在开火窗口把扳机打哑（2026-10-12 修正）。
     input.estimate_valid =
-      latest_estimate_->valid &&
+      est.valid &&
       std::abs(now_s - estimate_stamp_s) <= estimate_timeout_s_;
 
-    const double relative_x = latest_estimate_->position.x;
-    const double relative_y = latest_estimate_->position.y;
-    const double relative_z = latest_estimate_->position.z;
+    const double relative_x = est.position.x;
+    const double relative_y = est.position.y;
+    const double relative_z = est.position.z;
     input.range_m = norm3(relative_x, relative_y, relative_z);
     // R0-5：开火测量质量门——深度年龄（data_age 已回归深度本义）+
     // 距离/横向 1σ（取自 full_covariance 位置块沿视线分解）。方位-only
@@ -300,8 +431,8 @@ private:
       const double r_inv = input.range_m > 1e-6 ? 1.0 / input.range_m : 0.0;
       const double u[3] = {relative_x * r_inv, relative_y * r_inv,
         relative_z * r_inv};
-      depth_age_s_ = latest_estimate_->data_age;
-      const auto sigma = sigma_range_lateral(latest_estimate_->full_covariance, u);
+      depth_age_s_ = est.data_age;
+      const auto sigma = sigma_range_lateral(est.full_covariance, u);
       sigma_range_m_ = sigma.range_m;
       sigma_lateral_m_ = sigma.lateral_m;
       input.measurement_quality_ok =
@@ -310,9 +441,9 @@ private:
         sigma_lateral_m_ <= fire_max_lateral_sigma_m_;
     }
     const double range_rate_numerator =
-      relative_x * latest_estimate_->velocity.x +
-      relative_y * latest_estimate_->velocity.y +
-      relative_z * latest_estimate_->velocity.z;
+      relative_x * est.velocity.x +
+      relative_y * est.velocity.y +
+      relative_z * est.velocity.z;
     input.range_rate_mps =
       input.range_m > 1e-6 ? range_rate_numerator / input.range_m : 0.0;
 
@@ -320,8 +451,8 @@ private:
     // R0-4 唯一真源）；IMM 概率加权预测接口预留。
     const double lead_s = model_.trigger_lead_s(input.range_m);
     const double p_rel[3] = {relative_x, relative_y, relative_z};
-    const double v_rel[3] = {latest_estimate_->velocity.x,
-      latest_estimate_->velocity.y, latest_estimate_->velocity.z};
+    const double v_rel[3] = {est.velocity.x,
+      est.velocity.y, est.velocity.z};
     const auto aim = aim_point(p_rel, v_rel, lead_s);
     std::array<double, 3> predicted{aim.x, aim.y, aim.z};
     // 重复扣除的本机速度补偿（R0-4 前旧口径）：仅 A/B 对照用，默认关闭；
@@ -355,6 +486,10 @@ private:
       rotate_wxyz(latest_attitude_->q,
         gun_axis_body(boresight_pitch_rad_, boresight_yaw_rad_));
     input.axis_error_rad = angle_between(attack_axis, shot_direction);
+    // I-3：倾角门——枪管轴偏离竖直超过 fire_max_tilt_rad 时自动/手动都
+    // 不许发射（网弹不得朝近水平方向的人员/地面射出）
+    const double tilt_rad = tilt_from_vertical_rad(attack_axis);
+    const bool tilt_ok = std::isfinite(tilt_rad) && tilt_rad <= fire_max_tilt_rad_;
 
     // LOS 率：射击方向角变化率（一阶差分 + 一阶低通 τ=0.2s）。
     // 单 tick 差分把估计噪声放大约 50 倍，会把 circle 类（ω≈0.5 rad/s）
@@ -383,12 +518,16 @@ private:
       now_s - last_status_rx_s_ <= vehicle_status_timeout_s_;
     const bool position_fresh = latest_local_position_ &&
       now_s - last_local_position_rx_s_ <= fcu_timeout_s_;
-    const bool armed_and_offboard = fcu_fresh &&
+    const bool armed = fcu_fresh &&
       latest_status_->arming_state ==
-      px4_msgs::msg::VehicleStatus::ARMING_STATE_ARMED &&
+      px4_msgs::msg::VehicleStatus::ARMING_STATE_ARMED;
+    const bool armed_and_offboard = armed &&
       latest_status_->nav_state ==
       px4_msgs::msg::VehicleStatus::NAVIGATION_STATE_OFFBOARD;
+    // I-3：高度门另要求 z_valid——手动兜底只剩物理安全门，z 无效时的
+    // 高度读数不可信（与制导/其余节点的位置有效性口径一致）
     const bool height_ok = position_fresh &&
+      latest_local_position_->z_valid &&
       std::isfinite(latest_local_position_->z) &&
       -latest_local_position_->z >= minimum_height_m_;
     // R1-6：退出 offboard/断链持续 1s → 重置就位锚与稳定跟踪计时，
@@ -402,12 +541,15 @@ private:
     } else {
       disarmed_since_s_ = -1.0;
     }
-    input.authorization_passed = armed_and_offboard && height_ok &&
+    const bool weapon_auth = armed_and_offboard && height_ok &&
       ready_time_s_ > 0.0 &&
       now_s - ready_time_s_ >= attack_enable_delay_s_ &&
       est_valid_since_s_ > 0.0 &&
       now_s - est_valid_since_s_ >= stable_track_time_s_ &&
       !fire_control_.latched();  // R0-5：开火后撤销授权，不再反复 AIM
+    // I-3：自动开火另受倾角门约束；对外发布的武器授权（guidance 的 AIM
+    // 进入条件）不含倾角——AIM 本身改变倾角，含进去会引起 AIM 进出振荡
+    input.authorization_passed = weapon_auth && tilt_ok;
     // 连续有效跟踪计时（授权门用；断流即清零重计）
     if (input.estimate_valid) {
       if (est_valid_since_s_ < 0.0) {est_valid_since_s_ = now_s;}
@@ -426,9 +568,24 @@ private:
     if (last_auth_pub_s_ < 0.0 || now_s - last_auth_pub_s_ >= 0.1) {
       last_auth_pub_s_ = now_s;
       std_msgs::msg::Bool auth_msg;
-      auth_msg.data = input.authorization_passed;
+      auth_msg.data = weapon_auth;
       weapon_auth_pub_->publish(auth_msg);
     }
+
+    // I-3：手动兜底门（逐拍计算：调试话题/面板就绪显示与按键判定同源）
+    ManualFireGateInput manual_gate;
+    manual_gate.manual_enabled = manual_fire_enabled_;
+    manual_gate.latched = fire_control_.latched();
+    manual_gate.fcu_fresh = fcu_fresh && position_fresh;
+    manual_gate.armed = armed;
+    manual_gate.height_ok = height_ok;
+    manual_gate.tilt_ok = tilt_ok;
+    manual_gate.require_authorization = manual_fire_require_authorization_;
+    manual_gate.authorization_passed = weapon_auth;
+    manual_gate.estimate_valid = input.estimate_valid;
+    const ManualFireBlock manual_block = manual_fire_block(manual_gate);
+    const bool manual_ready = manual_block == ManualFireBlock::NONE;
+    const std::string manual_block_name = manual_fire_block_name(manual_block);
 
     // 调试状态话题（实物外场检索/失败归因，2026-10-15）：授权链逐项
     // 分解 + 五门各自通断——不开火时直接看哪个门卡住。纯只读诊断，
@@ -444,17 +601,16 @@ private:
       const bool g_los = input.los_rate_rad_s < fc.maximum_los_rate_rad_s;
       std_msgs::msg::String msg;
       char buf[512];
-      // I-1：fmode/fready 供面板/发射按钮助手就绪判定（auth+est+深度
-      // 硬门；与日志行同名同义）
-      const bool manual_ready = fire_mode_ == "manual" &&
-        !fire_control_.latched() && input.authorization_passed &&
-        input.estimate_valid && depth_age_s_ <= 1e18;
+      // I-1/I-3：fmode/fready/mblk 供面板/发射按钮助手判定——fready=1
+      // 即此刻按键会发射；mblk=被拦下的首因（与日志行同名同义）；
+      // gates t=倾角门（自动开火另需 t=1）
       std::snprintf(buf, sizeof(buf),
         "est=%d auth=%d arm=%d ob=%d h=%d rdy=%.1f/%.1f stb=%.1f/%.1f | "
         "range=%.2f[%.1f,%.1f] axis=%.2fdeg(p=%.1f w=%.1f) los=%.3f/%.2f | "
-        "gates r=%d p=%d w=%d l=%d shots=%d fmode=%s fready=%d",
+        "gates r=%d p=%d w=%d l=%d t=%d shots=%d fmode=%s fready=%d "
+        "tilt=%.1f mblk=%s",
         static_cast<int>(input.estimate_valid),
-        static_cast<int>(input.authorization_passed),
+        static_cast<int>(weapon_auth),
         static_cast<int>(armed_and_offboard),
         static_cast<int>(latest_status_->nav_state ==
         px4_msgs::msg::VehicleStatus::NAVIGATION_STATE_OFFBOARD),
@@ -470,40 +626,41 @@ private:
         input.los_rate_rad_s, fc.maximum_los_rate_rad_s,
         static_cast<int>(g_range), static_cast<int>(g_axis_p),
         static_cast<int>(g_axis_w), static_cast<int>(g_los),
+        static_cast<int>(tilt_ok),
         fire_control_.shot_count(),
-        fire_mode_.c_str(), static_cast<int>(manual_ready));
+        fire_mode_.c_str(), static_cast<int>(manual_ready),
+        std::isfinite(tilt_rad) ? tilt_rad * 57.29577951308232 : -1.0,
+        manual_block_name.c_str());
       msg.data = buf;
       debug_pub_->publish(msg);
     }
 
     FireDecision decision;
-    if (fire_mode_ == "manual") {
-      // I-1：手动模式——自动瞄准质量门（轴误差/判窗/LOS/距离/σ）不参与
-      // 开火决策；开火只来自 /netgun/fire_command（面板按钮），在下一拍
-      // 随全量输入处理：授权/估计/深度硬门与单发闭锁仍然生效
-      decision.reason = FireDecisionReason::NONE;
-      if (manual_fire_requested_.exchange(false)) {
-        const bool hard_gates_ok = input.authorization_passed &&
-          input.estimate_valid && depth_age_s_ <= 1e18;
-        if (hard_gates_ok) {
-          decision = fire_control_.request_manual();
-          if (!decision.fire) {
-            RCLCPP_WARN(
-              get_logger(), "manual fire rejected: already fired (shots=%d)",
-              fire_control_.shot_count());
-          }
-        } else {
-          ++diag_manual_rejected_;
-          RCLCPP_WARN(
-            get_logger(),
-            "manual fire rejected: 授权/估计/深度未就绪 (auth=%d est=%d dage=%.2f, %llu 次)",
-            static_cast<int>(input.authorization_passed),
-            static_cast<int>(input.estimate_valid),
-            depth_age_s_ <= 1e18 ? depth_age_s_ : -1.0,
-            static_cast<unsigned long long>(diag_manual_rejected_));
-        }
+    // I-3：手动请求（/netgun/fire_command，面板按钮）逐拍消费、不积压：
+    // 门控通过即单发；被拒记首因。随后若尚未发射，自动火控照常判定
+    //（auto_manual 下两路共享同一单发闭锁，先到先得，全任务只发一次）
+    if (manual_fire_requested_.exchange(false)) {
+      if (manual_ready) {
+        decision = fire_control_.request_manual();
+      } else if (manual_block == ManualFireBlock::LATCHED) {
+        RCLCPP_WARN(
+          get_logger(), "manual fire rejected: already fired (shots=%d)",
+          fire_control_.shot_count());
+      } else {
+        ++diag_manual_rejected_;
+        RCLCPP_WARN(
+          get_logger(),
+          "manual fire rejected: %s (fcu=%d arm=%d h=%d tilt=%.1fdeg auth=%d "
+          "est=%d, %llu 次)",
+          manual_block_name.c_str(),
+          static_cast<int>(manual_gate.fcu_fresh), static_cast<int>(armed),
+          static_cast<int>(height_ok),
+          std::isfinite(tilt_rad) ? tilt_rad * 57.29577951308232 : -1.0,
+          static_cast<int>(weapon_auth), static_cast<int>(input.estimate_valid),
+          static_cast<unsigned long long>(diag_manual_rejected_));
       }
-    } else {
+    }
+    if (!decision.fire && auto_fire_enabled_) {
       decision = fire_control_.update(input);
     }
     // 节流诊断：估计有效性/距离/轴误差/LOS率/授权（不开火时排查用）。
@@ -516,12 +673,12 @@ private:
         "fcu=%d arm=%d ob=%d h=%d "
         "[t_ready=%.1f t_delay=%.1f t_since_valid=%.1f t_stable=%.1f] "
         "range=%.2f axis_err=%.2fdeg los_rate=%.3f shots=%d "
-        "dage=%.2f sr=%.2f sl=%.2f mq=%d fmode=%s fready=%d",
+        "dage=%.2f sr=%.2f sl=%.2f mq=%d fmode=%s fready=%d tilt=%.1f mblk=%s",
         static_cast<int>(input.estimate_valid),
-        static_cast<int>(latest_estimate_->valid),
-        static_cast<int>(latest_estimate_->measurement_accepted),
-        now_s - estimate_stamp_s,
-        static_cast<int>(input.authorization_passed),
+        static_cast<int>(est.valid),
+        static_cast<int>(est.measurement_accepted),
+        latest_estimate_ ? now_s - estimate_stamp_s : -1.0,
+        static_cast<int>(weapon_auth),
         static_cast<int>(fcu_fresh),
         static_cast<int>(
           latest_status_->arming_state ==
@@ -539,23 +696,41 @@ private:
         depth_age_s_ <= 1e18 ? depth_age_s_ : -1.0,
         sigma_range_m_, sigma_lateral_m_,
         static_cast<int>(input.measurement_quality_ok),
-        fire_mode_.c_str(),
-        static_cast<int>(fire_mode_ == "manual" &&
-          !fire_control_.latched() && input.authorization_passed &&
-          input.estimate_valid && depth_age_s_ <= 1e18));
+        fire_mode_.c_str(), static_cast<int>(manual_ready),
+        std::isfinite(tilt_rad) ? tilt_rad * 57.29577951308232 : -1.0,
+        manual_block_name.c_str());
     }
     if (decision.fire) {
-      publish_shot(decision, shot_direction, predicted, lead_s, input.range_m);
+      const bool solution_valid = input.estimate_valid && predicted_norm > 1e-6;
+      // 手动兜底：网弹实际沿枪管轴飞出（轴误差可能很大）——事件方向如实
+      // 记录枪管轴；自动：轴误差已在主门/判窗内，沿用预测射击方向（仿真
+      // 裁判口径不变）
+      const bool use_gun_axis =
+        decision.reason == FireDecisionReason::MANUAL || !solution_valid;
+      publish_shot(
+        decision, est, solution_valid,
+        use_gun_axis ? attack_axis : shot_direction, predicted, lead_s,
+        input.range_m, input.axis_error_rad, tilt_rad);
     }
   }
 
   void publish_shot(
     const FireDecision & decision,
+    const px4_offboard_tracking::msg::RelativeEstimate & est,
+    bool solution_valid,
     const std::array<double, 3> & shot_direction,
     const std::array<double, 3> & predicted,
     double tof_s,
-    double range_m)
+    double range_m,
+    double axis_error_rad,
+    double tilt_rad)
   {
+    const std::string reason = NetgunFireControl::reason_name(decision.reason);
+    // I-3：实物击发钩子最先启动（异步，不阻塞火控环，击发延迟最小）
+    if (!trigger_command_.empty()) {
+      run_trigger_command_async(
+        get_logger(), trigger_command_, decision.shot_id, reason);
+    }
     virtual_interception_interfaces::msg::VirtualShotEvent event;
     event.interface_version =
       virtual_interception_interfaces::msg::VirtualShotEvent::INTERFACE_VERSION_V1;
@@ -567,30 +742,27 @@ private:
     event.shot_direction_ned.x = shot_direction[0];
     event.shot_direction_ned.y = shot_direction[1];
     event.shot_direction_ned.z = shot_direction[2];
-    event.estimated_target_position_ned.x = latest_estimate_->position.x;
-    event.estimated_target_position_ned.y = latest_estimate_->position.y;
-    event.estimated_target_position_ned.z = latest_estimate_->position.z;
-    event.estimated_target_velocity_ned.x = latest_estimate_->velocity.x;
-    event.estimated_target_velocity_ned.y = latest_estimate_->velocity.y;
-    event.estimated_target_velocity_ned.z = latest_estimate_->velocity.z;
+    event.estimated_target_position_ned.x = est.position.x;
+    event.estimated_target_position_ned.y = est.position.y;
+    event.estimated_target_position_ned.z = est.position.z;
+    event.estimated_target_velocity_ned.x = est.velocity.x;
+    event.estimated_target_velocity_ned.y = est.velocity.y;
+    event.estimated_target_velocity_ned.z = est.velocity.z;
     event.predicted_intercept_point_ned.x = predicted[0];
     event.predicted_intercept_point_ned.y = predicted[1];
     event.predicted_intercept_point_ned.z = predicted[2];
     event.estimated_range_m = range_m;
-    event.solution_valid = true;
+    event.actual_attack_axis_error_rad = solution_valid ? axis_error_rad : 0.0;
+    event.solution_valid = solution_valid;
     shot_pub_->publish(event);
     RCLCPP_INFO(
-      get_logger(), "NETGUN FIRE shot_id=%d reason=%s range=%.2fm tof=%.3fs",
-      decision.shot_id,
-      NetgunFireControl::reason_name(decision.reason).c_str(), range_m, tof_s);
-    // I-1：实物击发钩子——trigger_command 非空时在开火瞬间执行
-    // （PWM/GPIO 脉冲脚本等，接实物时装订）；默认空 = 纯虚拟事件。
-    if (!trigger_command_.empty()) {
-      const int trigger_rc = std::system(trigger_command_.c_str());
-      RCLCPP_WARN(
-        get_logger(), "trigger command executed rc=%d (%s)", trigger_rc,
-        trigger_command_.c_str());
-    }
+      get_logger(),
+      "NETGUN FIRE shot_id=%d reason=%s range=%.2fm tof=%.3fs solution=%d "
+      "axis_err=%.2fdeg tilt=%.1fdeg trigger=%s",
+      decision.shot_id, reason.c_str(), range_m, tof_s,
+      static_cast<int>(solution_valid), axis_error_rad * 57.29577951308232,
+      std::isfinite(tilt_rad) ? tilt_rad * 57.29577951308232 : -1.0,
+      trigger_command_.empty() ? "none(virtual)" : "started");
   }
 
   NetgunModel model_;
@@ -620,8 +792,12 @@ private:
   std::array<double, 3> muzzle_offset_body_m_{0.0, 0.0, 0.0};
   double boresight_pitch_rad_{0.0};
   double boresight_yaw_rad_{0.0};
-  // I-1：开火模式与手动发射
+  // I-1/I-3：开火模式与手动兜底发射
   std::string fire_mode_{"auto"};
+  bool auto_fire_enabled_{true};
+  bool manual_fire_enabled_{false};
+  bool manual_fire_require_authorization_{false};
+  double fire_max_tilt_rad_{0.7853981633974483};
   std::string trigger_command_;
   std::atomic<bool> manual_fire_requested_{false};
   std::uint64_t diag_manual_rejected_{0};
@@ -638,6 +814,8 @@ private:
   px4_msgs::msg::VehicleAttitude::ConstSharedPtr latest_attitude_;
   px4_msgs::msg::VehicleStatus::ConstSharedPtr latest_status_;
   px4_msgs::msg::VehicleLocalPosition::ConstSharedPtr latest_local_position_;
+  // I-3：无估计时的占位（valid=false）——手动兜底不依赖估计
+  px4_offboard_tracking::msg::RelativeEstimate empty_estimate_;
 
   bool last_shot_direction_valid_ = false;
   std::array<double, 3> last_shot_direction_{0.0, 0.0, 0.0};

@@ -264,7 +264,31 @@ public:
       declare_parameter<std::string>("shot_event_topic", "/tracking/virtual_shot_event"),
       rclcpp::QoS(10),
       [this](virtual_interception_interfaces::msg::VirtualShotEvent::ConstSharedPtr msg) {
-        if ((phase_ == Phase::TRACK || phase_ == Phase::AIM) && !shot_seen_) {
+        (void)msg;
+        if (shot_seen_) {return;}
+        // I-3：手动兜底发射可能发生在 TRACK/AIM 之外（TAKEOFF 爬升中、
+        // 未切 offboard 的 WAITING、遥控接管后）——同样闩锁"已激发"事实
+        // 并脱离追击：TAKEOFF 原地保持；WAITING 下再进 offboard 时由既有
+        // post-shot 逻辑直接 DONE 保持（post_shot_reengage=false）
+        if (phase_ != Phase::TRACK && phase_ != Phase::AIM) {
+          shot_seen_ = true;
+          bearing_hold_ = false;
+          if (phase_ == Phase::TAKEOFF && lp_) {
+            hold_target_[0] = lp_->x;
+            hold_target_[1] = lp_->y;
+            hold_target_[2] = lp_->z;
+            phase_ = Phase::DONE;
+            RCLCPP_WARN(
+              get_logger(), "shot event during TAKEOFF → DONE position hold");
+          } else {
+            RCLCPP_WARN(
+              get_logger(),
+              "shot event in phase %s → latched (offboard re-entry holds position)",
+              phase_name(phase_));
+          }
+          return;
+        }
+        {
           shot_seen_ = true;
           bearing_hold_ = false;
           hold_target_[0] = lp_ ? lp_->x : 0.0;

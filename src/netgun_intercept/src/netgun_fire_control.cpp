@@ -1,6 +1,8 @@
 #include "netgun_intercept/netgun_fire_control.hpp"
 
+#include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace netgun_intercept
 {
@@ -42,6 +44,49 @@ std::array<double, 3> gun_axis_body(
   const double sin_yaw = std::sin(boresight_yaw_rad);
   const double cos_yaw = std::cos(boresight_yaw_rad);
   return {-sin_pitch * cos_yaw, -sin_pitch * sin_yaw, -cos_pitch};
+}
+
+double tilt_from_vertical_rad(const std::array<double, 3> & axis_ned)
+{
+  const double norm = std::sqrt(
+    axis_ned[0] * axis_ned[0] + axis_ned[1] * axis_ned[1] +
+    axis_ned[2] * axis_ned[2]);
+  if (!std::isfinite(norm) || norm < 1e-9) {
+    return std::numeric_limits<double>::quiet_NaN();
+  }
+  // 竖直向上 = NED (0,0,-1)：cos(tilt) = -z/|v|
+  return std::acos(std::max(-1.0, std::min(1.0, -axis_ned[2] / norm)));
+}
+
+ManualFireBlock manual_fire_block(const ManualFireGateInput & input)
+{
+  if (!input.manual_enabled) {return ManualFireBlock::DISABLED;}
+  if (input.latched) {return ManualFireBlock::LATCHED;}
+  if (!input.fcu_fresh) {return ManualFireBlock::FCU_STALE;}
+  if (!input.armed) {return ManualFireBlock::NOT_ARMED;}
+  if (!input.height_ok) {return ManualFireBlock::LOW_HEIGHT;}
+  if (!input.tilt_ok) {return ManualFireBlock::TILT;}
+  if (input.require_authorization &&
+    !(input.authorization_passed && input.estimate_valid))
+  {
+    return ManualFireBlock::NOT_AUTHORIZED;
+  }
+  return ManualFireBlock::NONE;
+}
+
+std::string manual_fire_block_name(ManualFireBlock block)
+{
+  switch (block) {
+    case ManualFireBlock::DISABLED: return "DISABLED";
+    case ManualFireBlock::LATCHED: return "LATCHED";
+    case ManualFireBlock::FCU_STALE: return "FCU_STALE";
+    case ManualFireBlock::NOT_ARMED: return "NOT_ARMED";
+    case ManualFireBlock::LOW_HEIGHT: return "LOW_HEIGHT";
+    case ManualFireBlock::TILT: return "TILT";
+    case ManualFireBlock::NOT_AUTHORIZED: return "NOT_AUTHORIZED";
+    case ManualFireBlock::NONE: break;
+  }
+  return "NONE";
 }
 
 NetgunFireControl::NetgunFireControl(const FireControlConfig & config)

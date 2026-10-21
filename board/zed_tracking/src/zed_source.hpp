@@ -98,6 +98,10 @@ public:
       static_cast<float>(config.depth_max_m);
     parameters.open_timeout_sec = 10.0f;
     parameters.async_grab_camera_recovery = true;
+    // I-3（2026-10-21）：显式关闭画面翻转。相机朝天安装，安装姿态完全由
+    // 估计器外参 q_body_to_optical=(0,1,0,0)（右目朝机头）表达；SDK 5.5
+    // 默认即 OFF，这里写死防止默认值/AUTO 翻转改变像素与相机坐标系。
+    parameters.camera_image_flip = sl::FLIP_MODE::OFF;
     const sl::ERROR_CODE status = camera_.open(parameters);
     if (status != sl::ERROR_CODE::SUCCESS) {
       throw std::runtime_error(

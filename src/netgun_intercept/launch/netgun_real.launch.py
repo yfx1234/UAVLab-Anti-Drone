@@ -9,8 +9,16 @@
   - engage_mode=rc_gated：待机零 setpoint、永不下发 VehicleCommand
   - 授权延时 12→2s（仿真 12s 是与虚拟目标起跑对齐的口径；实机目标
     何时出现不可知，仅保留 2s 防抖）
-  - 开火输出仍走 /tracking/virtual_shot_event——GPIO 触发节点（待做）
-    订阅此话题执行硬件发射与联锁
+  - 开火（I-3，2026-10-21）：fire_mode=auto_manual——火控门满足即自动单发，
+    同时开放面板"发射网枪"按钮作人工兜底（自动一直不发时用；物理安全门：
+    飞控新鲜+已解锁+高度+倾角≤45°）。两路共享单发闭锁，全任务只发一次。
+    开火事件 /tracking/virtual_shot_event；实物击发经 trigger_command
+    （PWM 脉冲脚本，异步执行，环境变量 NETGUN_SHOT_ID/NETGUN_SHOT_REASON）
+  - 飞控 PX4 v1.15.x：状态话题 /fmu/out/vehicle_status（v1.16+ 才有 _v1）
+  - 相机外参（I-3 安装约定）：ZED X Mini 朝天、基线沿机头、右目在前，
+    基线中点在拦截器轴线右侧 5 cm、前后对称 → 左目（ZED 坐标原点）
+    在 body FRD (-0.025, +0.05, z)；z（相机光心相对飞控的高度差，向上为
+    负）待实测，默认 0
 
 调试：四节点自动发布 /debug/{guidance,strike,estimator,bridge}_state
 （2Hz/1Hz，key=value），用法见 docs/实物调试指南.md 与
@@ -22,8 +30,11 @@ from launch.actions import DeclareLaunchArgument
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 
 ESTIMATE_TOPIC = "/tracking/relative/estimate"
+# PX4 v1.15.x 的状态话题（I-3：I-2 的 _v1 是 v1.16+ 兼容话题，本机固件没有）
+STATUS_TOPIC_DEFAULT = "/fmu/out/vehicle_status"
 DEPTH_TOPIC = "/perception/depth/observation"
 SHOT_TOPIC = "/tracking/virtual_shot_event"
 
@@ -50,6 +61,20 @@ def generate_launch_description():
             # R0-4：AIM 与火控共用同一组枪口/展开参数（统一瞄准口径）
             DeclareLaunchArgument("muzzle_speed_mps", default_value="55.0"),
             DeclareLaunchArgument("deployment_time_s", default_value="0.055"),
+            # I-3：开火模式 auto_manual=自动单发+手动兜底按钮（实机默认）；
+            # auto=仅自动；manual=仅按钮（I-1 口径）
+            DeclareLaunchArgument("fire_mode", default_value="auto_manual"),
+            # 手动兜底门：false=只看物理安全门（解锁/高度/倾角）；true=再要求
+            # 武器授权+有效估计
+            DeclareLaunchArgument(
+                "manual_fire_require_authorization", default_value="false"),
+            # 实物击发钩子（PWM 脉冲脚本），空=仅虚拟事件（接网枪时装订）
+            DeclareLaunchArgument("trigger_command", default_value=""),
+            DeclareLaunchArgument("status_topic", default_value=STATUS_TOPIC_DEFAULT),
+            # 相机（ZED 左目）相对机体原点的平移，body FRD 米（I-3 安装约定）
+            DeclareLaunchArgument("camera_translation_body_x_m", default_value="-0.025"),
+            DeclareLaunchArgument("camera_translation_body_y_m", default_value="0.05"),
+            DeclareLaunchArgument("camera_translation_body_z_m", default_value="0.0"),
             # ---- 感知桥（PerceptionFrame v2 JSON -> DepthObservation V1） ----
             Node(
                 package="zed_perception_bridge",
@@ -89,11 +114,22 @@ def generate_launch_description():
                         "camera_cy": 538.4,
                         "camera_width": 1920,
                         "camera_height": 1080,
-                        # 安装四元数（宽轴沿机头）：与机加实物严格一致
+                        # 安装四元数（宽轴沿机头、右目在前）：与机加实物严格一致
                         "camera_q_body_to_optical_w": 0.0,
                         "camera_q_body_to_optical_x": 1.0,
                         "camera_q_body_to_optical_y": 0.0,
                         "camera_q_body_to_optical_z": 0.0,
+                        # I-3：左目（ZED 坐标原点）杠杆臂——估计输出改为相对
+                        # 机体原点（飞控），右偏 5 cm 不再混进相对位置
+                        "camera_translation_body_x_m": ParameterValue(
+                            LaunchConfiguration("camera_translation_body_x_m"),
+                            value_type=float),
+                        "camera_translation_body_y_m": ParameterValue(
+                            LaunchConfiguration("camera_translation_body_y_m"),
+                            value_type=float),
+                        "camera_translation_body_z_m": ParameterValue(
+                            LaunchConfiguration("camera_translation_body_z_m"),
+                            value_type=float),
                         "bearing_only_update_enabled": True,
                         "bearing_only_nominal_range_m": 12.0,
                         "bearing_only_range_sigma_m": 30.0,
@@ -135,7 +171,7 @@ def generate_launch_description():
                     {
                         "relative_estimate_topic": ESTIMATE_TOPIC,
                         "local_position_topic": "/fmu/out/vehicle_local_position",
-                        "status_topic": "/fmu/out/vehicle_status_v1",  # I-2：新固件把旧格式状态以 _v1 兼容话题保留
+                        "status_topic": LaunchConfiguration("status_topic"),
                         "engage_mode": "rc_gated",
                         # F-1：本地位置 0.5s / vehicle_status 1.5s（PX4 实际
                         # 2Hz）；过期停发超过 1.0s 才复位；开火后不再追击
@@ -182,7 +218,7 @@ def generate_launch_description():
                     }
                 ],
             ),
-            # ---- 火控（开火事件输出口，GPIO 触发节点待接入） ----
+            # ---- 火控（自动单发 + 手动兜底；实物击发经 trigger_command） ----
             Node(
                 package="netgun_intercept",
                 executable="netgun_strike_node",
@@ -193,7 +229,7 @@ def generate_launch_description():
                     {
                         "relative_estimate_topic": ESTIMATE_TOPIC,
                         "attitude_topic": "/fmu/out/vehicle_attitude",
-                        "status_topic": "/fmu/out/vehicle_status_v1",  # I-2：新固件把旧格式状态以 _v1 兼容话题保留
+                        "status_topic": LaunchConfiguration("status_topic"),
                         "local_position_topic": "/fmu/out/vehicle_local_position",
                         "shot_topic": SHOT_TOPIC,
                         "frame_id": "map_ned",
@@ -216,20 +252,26 @@ def generate_launch_description():
                         "minimum_height_m": 1.5,
                         # F-1：姿态/位置 1.0s，vehicle_status 单独 1.5s（2Hz）
                         "vehicle_status_timeout_s": 1.5,
-                        # H-5：相机→枪口杠杆臂（body FRD, m）与枪管-光轴
-                        # 安装角（rad）——默认同轴 0；CAD/工装实测后装订
+                        # H-5：枪口相对机体原点的杠杆臂（body FRD, m）与枪管-
+                        # 光轴安装角（rad）。I-3：网枪装在拦截器中轴线上 → x/y=0；
+                        # 估计已扣相机杠杆臂（相对机体原点），这里不再含相机偏置
                         "muzzle_offset_body_x_m": 0.0,
                         "muzzle_offset_body_y_m": 0.0,
                         "muzzle_offset_body_z_m": 0.0,
                         "boresight_pitch_rad": 0.0,
                         "boresight_yaw_rad": 0.0,
-                        # I-1：实物单发枪口径——开火由面板"发射"按钮驱动
-                        # （/netgun/fire_command）；授权/估计/深度硬门与
-                        # 单发闭锁仍生效。仿真矩阵沿用 auto。
-                        "fire_mode": "manual",
-                        # 实物击发钩子（PWM/GPIO 脉冲命令），接实物时装订；
-                        # 空 = 纯虚拟事件
-                        "trigger_command": "",
+                        # I-3：自动单发 + 手动兜底（/netgun/fire_command，面板
+                        # 按钮）；单发闭锁两路共享。仿真矩阵沿用 auto
+                        "fire_mode": ParameterValue(
+                            LaunchConfiguration("fire_mode"), value_type=str),
+                        "manual_fire_require_authorization": ParameterValue(
+                            LaunchConfiguration("manual_fire_require_authorization"),
+                            value_type=bool),
+                        # 开火倾角门（枪管轴偏离竖直上限，自动/手动共用）
+                        "fire_max_tilt_rad": 0.7853981633974483,
+                        # 实物击发钩子（PWM 脉冲命令，异步执行）；空=纯虚拟事件
+                        "trigger_command": ParameterValue(
+                            LaunchConfiguration("trigger_command"), value_type=str),
                         # 实机口径 2s（仿真 12s=与虚拟目标起跑对齐，仅仿真用）
                         "attack_enable_delay_s": LaunchConfiguration(
                             "attack_enable_delay_s"

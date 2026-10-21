@@ -21,6 +21,36 @@ PID_FILE = os.path.join(LOG_ROOT, "interceptor_stack.pid")
 STATUS_CMD_TIMEOUT_S = 5.0
 
 
+def production_launch_pids(timeout_s=5.0):
+    """I-3（2026-10-21）：只认生产域（ROS_DOMAIN_ID 为空或 0）的
+    netgun_real.launch 进程——隔离域测试栈（fullchain/rehearsal 跑在
+    domain 42）不算"拦截链运行中"，免得面板误报运行、误点停止把测试栈
+    一并 SIGINT（与 run_interceptor_stack.sh production_launch_pids 同判据）。"""
+    try:
+        out = subprocess.run(
+            ["pgrep", "-f", "netgun_real[.]launch"],
+            capture_output=True, text=True, timeout=timeout_s,
+        ).stdout.split()
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return []
+    pids = []
+    for token in out:
+        try:
+            pid = int(token)
+            with open("/proc/%d/environ" % pid, "rb") as f:
+                env = f.read().split(b"\0")
+        except (OSError, ValueError):
+            continue
+        domain = b""
+        for item in env:
+            if item.startswith(b"ROS_DOMAIN_ID="):
+                domain = item.split(b"=", 1)[1].strip()
+                break
+        if domain in (b"", b"0"):
+            pids.append(pid)
+    return pids
+
+
 def stack_pid():
     pid = None
     try:
@@ -36,17 +66,11 @@ def stack_pid():
         except OSError:
             running = False
     if not running:
-        # 兜底：PID 文件丢失/失效时按进程名找（模式含 [] 防自匹配）
-        try:
-            out = subprocess.run(
-                ["pgrep", "-f", "netgun_real[.]launch"],
-                capture_output=True, text=True, timeout=STATUS_CMD_TIMEOUT_S,
-            ).stdout.strip()
-            if out:
-                running = True
-                pid = int(out.split()[0])
-        except (OSError, ValueError, subprocess.SubprocessError):
-            pass
+        # 兜底：PID 文件丢失/失效时按进程名找（模式含 [] 防自匹配；只认生产域）
+        pids = production_launch_pids(STATUS_CMD_TIMEOUT_S)
+        if pids:
+            running = True
+            pid = pids[0]
     return running, pid
 
 
@@ -69,10 +93,11 @@ def parse_strike(line):
     match = re.search(r"range=([\d.]+)", line)
     if match:
         fields["range_m"] = float(match.group(1))
-    match = re.search(r"axis=([\d.]+)deg", line)
+    # diag 实际字段名为 axis_err=（旧正则 axis= 从未命中，I-3 顺手修正）
+    match = re.search(r"\baxis(?:_err)?=([\d.]+)deg", line)
     if match:
         fields["axis_deg"] = float(match.group(1))
-    # I-1：开火模式与手动发射就绪（netgun diag 尾部 fmode=auto|manual、
+    # I-1：开火模式与手动发射就绪（netgun diag 尾部 fmode=auto|manual|auto_manual、
     # fready=0|1；旧格式无这两个字段时不产出，面板按缺省处理）
     match = re.search(r"fmode=(\w+)", line)
     if match:
@@ -80,6 +105,14 @@ def parse_strike(line):
     match = re.search(r"\bfready=(\d)", line)
     if match:
         fields["fire_ready"] = int(match.group(1))
+    # I-3：手动兜底被拦首因（NONE/DISABLED/LATCHED/FCU_STALE/NOT_ARMED/
+    # LOW_HEIGHT/TILT/NOT_AUTHORIZED）与枪管倾角（度）
+    match = re.search(r"\bmblk=(\w+)", line)
+    if match:
+        fields["manual_block"] = match.group(1)
+    match = re.search(r"\btilt=(-?[\d.]+)", line)
+    if match:
+        fields["tilt_deg"] = float(match.group(1))
     return fields
 
 

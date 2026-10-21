@@ -1,20 +1,23 @@
 #!/usr/bin/env python3
 """实机流程彩排（2026-10-15）：按真实飞行顺序验证从切 offboard 到拦截的全流程。
 
-场景与真实外场一致（domain 0，生产环境路径；运行前停生产拦截栈）：
+场景与真实外场一致（生产 launch 路径；I-3 起必须在隔离 domain 运行——真飞控
+的 uXRCE agent 在 domain 0，mock 与真飞控混流、制导心跳会进真飞控；
+ROS_DOMAIN_ID 未设置/为 0 时拒绝运行，--allow-domain0 仅限飞控已断开）：
   S1 飞控上线（未解锁）   验证：估计器 attmiss=0 且 init=1；心跳 ob 计数持续
                           增长（两次采样 5s 间隔）；指令计数 sp=0（待机不发
                           setpoint）；mock 收 VehicleCommand=0（rc_gated）
   S2 飞手解锁（手动）     mock 模拟手动爬升至 5.5m。验证：制导保持 WAITING、
                           sp 不增长、心跳继续、高度达标
   S3 切 offboard          验证：WAITING→TAKEOFF→TRACK、sp 开始流动
-  S4 开火                 验证：NETGUN FIRE + bag 中 solution_valid=1
+  S4 开火                 验证：NETGUN FIRE（实机默认 fire_mode=auto_manual，
+                          此处验证自动支）+ bag 中 solution_valid=1
   S5 开火后               验证：SETTLE→SPIN
   S6 飞手切出 offboard    验证：回 WAITING、sp 停止增长、心跳继续（夺回后
                           心跳不断——PX4 切回 offboard 不需要重新等心跳）
 
 用法（板上，已 source 全部环境，生产栈已停止）：
-  export ROS_DOMAIN_ID=0 && unset ROS_LOCALHOST_ONLY
+  export ROS_DOMAIN_ID=42 && unset ROS_LOCALHOST_ONLY
   python3 flight_rehearsal.py
 产物：~/netgun_logs/rehearsal_<stamp>/（日志、bag、summary.json）
 """
@@ -82,6 +85,7 @@ class Rehearsal(Node):
         self.result = {"pass": False, "stages": {}, "errors": []}
         self.procs = {}
         self._finished = False
+        self.done = False
         self._pub_last = {}
 
         self.create_subscription(
@@ -405,22 +409,38 @@ class Rehearsal(Node):
             self._log("ERROR: %s" % error)
         self._log("summary: %s" % summary)
         self._log("=" * 60)
-        rclpy.try_shutdown()
+        # 不在回调里 rclpy.shutdown()：Humble 全局执行器 on_shutdown 会等本
+        # 回调结束 → 自锁挂死；main() 的 spin_once 循环看到 done 后收尾
+        self.done = True
+
+
+def domain_guard(allow_domain0):
+    """I-3：真飞控在 domain 0——mock/制导输出不得进入生产域。"""
+    domain = os.environ.get("ROS_DOMAIN_ID", "").strip()
+    if domain in ("", "0") and not allow_domain0:
+        print("拒绝运行：ROS_DOMAIN_ID=%s 是生产域，真飞控（uXRCE agent）也在 "
+              "domain 0。请 export ROS_DOMAIN_ID=42 后重跑；确认飞控已断开时可加 "
+              "--allow-domain0" % (domain or "未设置(=0)"), flush=True)
+        sys.exit(2)
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--target-ned", default="0.0,0.0,-11.6")
+    parser.add_argument("--allow-domain0", action="store_true")
     args, _ = parser.parse_known_args()
+    domain_guard(args.allow_domain0)
     rclpy.init()
     node = Rehearsal(args)
     try:
-        rclpy.spin(node)
+        while rclpy.ok() and not node.done:
+            rclpy.spin_once(node, timeout_sec=0.2)
     except KeyboardInterrupt:
         node._finish()
     finally:
         passed = node.result.get("pass", False)
         node.destroy_node()
+        rclpy.try_shutdown()
         sys.exit(0 if passed else 1)
 
 

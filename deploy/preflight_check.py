@@ -11,7 +11,11 @@
   1. /fmu/out/vehicle_attitude       >=20 Hz
   2. /fmu/out/vehicle_local_position >=10 Hz
   3. /fmu/out/vehicle_status         >=1.5 Hz（PX4 Commander 实际 2Hz，
-     F-1——不要按 10Hz 要求）
+     F-1——不要按 10Hz 要求）。I-3：本机固件 PX4 v1.15.x 只有该话题；
+     _v1 兼容话题为 v1.16+ 才有，仅作回退观测
+  3b. 本地位置有效 xy_valid/z_valid（无效→制导不发心跳，offboard 无法接管；
+      室内无 GPS 时 FAIL 属预期）；heading_good_for_control=0 仅 WARN
+  3c. 制导/火控订阅的 status_topic 与实际有数据的状态话题一致
   4. /perception/observations_json   13-17 Hz 且检测器已启用
      （detector_enabled=true / detector_state=2，H-3）
   5. /debug/bridge_state             in_hz 13-17 且 last_stamp_age_ms<300
@@ -22,6 +26,10 @@
   7. /fmu/in/vehicle_command         发布者数=0（rc_gated 红线，进程内
      count_publishers 查询，不经 daemon）
   8. timedatectl                     NTP 已同步——仅 WARN（外场离线）
+  9. /debug/guidance_state           制导飞控输入新鲜 fcu=1（否则按 stms/lpms
+     归因：状态未到 / 本地位置断流 / 本地位置无效）
+  10. /debug/strike_state            开火模式（实机默认 auto_manual）、未发射
+      过（shots=0）、手动兜底门首因 mblk；trigger_command 未装订仅 WARN
 
 环境门（G-2）：开头打印 ROS_DOMAIN_ID/ROS_LOCALHOST_ONLY；domain≠0 或
 LOCALHOST_ONLY=1 直接退出 1（与拦截链发现配置不一致时结果不可信）。
@@ -47,10 +55,10 @@ except ImportError as exc:
 
 T_ATT = "/fmu/out/vehicle_attitude"
 T_LP = "/fmu/out/vehicle_local_position"
-# I-2：新固件（VehicleStatus 改版后）旧格式状态在 _v1 兼容话题上；
-# 两个都订，哪个有数据用哪个（板上实测 2026-10-21）
-T_ST = "/fmu/out/vehicle_status_v1"
-T_ST_ALT = "/fmu/out/vehicle_status"
+# I-3：本机飞控 PX4 v1.15.x，状态话题为 /fmu/out/vehicle_status（I-2 改成
+# _v1 是误判——_v1 兼容话题 v1.16+ 才有）；_v1 仅作回退观测
+T_ST = "/fmu/out/vehicle_status"
+T_ST_ALT = "/fmu/out/vehicle_status_v1"
 T_OBS = "/perception/observations_json"
 # mock 全链路（fullchain）里 synthetic 发 /test/ 前缀话题、桥经
 # bridge_input_topic 参数指过去——生产布局没有该话题，两个都订，
@@ -59,6 +67,10 @@ T_OBS_ALT = "/test/perception/observations_json"
 T_BRIDGE = "/debug/bridge_state"
 T_EST = "/debug/estimator_state"
 T_CMD = "/fmu/in/vehicle_command"
+T_GUID = "/debug/guidance_state"
+T_STRIKE = "/debug/strike_state"
+N_GUID = "/pursuer/netgun_guidance_node"
+N_STRIKE = "/pursuer/netgun_strike_node"
 
 results = []
 
@@ -106,6 +118,10 @@ def get_node_params(node, node_name, names, timeout_s=5.0):
                 out[name] = value.double_value
             elif value.type == 2:  # PARAMETER_INTEGER
                 out[name] = float(value.integer_value)
+            elif value.type == 1:  # PARAMETER_BOOL
+                out[name] = bool(value.bool_value)
+            elif value.type == 4:  # PARAMETER_STRING
+                out[name] = value.string_value
             else:
                 out[name] = None
         return out
@@ -129,6 +145,8 @@ class PreflightNode(Node):
             (T_OBS_ALT, String),
             (T_BRIDGE, String),
             (T_EST, String),
+            (T_GUID, String),
+            (T_STRIKE, String),
         ):
             self.counts[topic] = 0
             self.last[topic] = None
@@ -180,14 +198,51 @@ def main():
         check("飞控位置 %s" % T_LP, "PASS" if hz[T_LP] >= 10.0 else "FAIL",
               "%.1f Hz" % hz[T_LP])
         # PX4 1.15.4 Commander 2Hz 发布（F-1），阈值 1.5 容忍丢一包；
-        # I-2：旧格式状态在 _v1 兼容话题上，哪个有数据用哪个
+        # I-3：主话题为 /fmu/out/vehicle_status，_v1 仅回退观测
         if hz[T_ST] > 0.0 or hz[T_ST_ALT] <= 0.0:
             st_topic, st_hz = T_ST, hz[T_ST]
         else:
             st_topic, st_hz = T_ST_ALT, hz[T_ST_ALT]
+        st_msg = node.last[st_topic]
+        st_detail = "%.1f Hz" % st_hz
+        if st_msg is not None:
+            st_detail += " · arming_state=%d nav_state=%d" % (
+                st_msg.arming_state, st_msg.nav_state)
+        elif st_hz <= 0.0 and hz[T_LP] > 0.0:
+            st_detail += "（位置有数据而状态无：px4_msgs 定义与固件不符？" \
+                         "本机应为 release/1.15 a1045ec）"
         check("飞控状态 %s" % st_topic,
-              "PASS" if st_hz >= 1.5 else "FAIL",
-              "%.1f Hz" % st_hz)
+              "PASS" if st_hz >= 1.5 else "FAIL", st_detail)
+        # 3b. 本地位置有效性（制导心跳/setpoint 的前提）
+        lp_msg = node.last[T_LP]
+        if lp_msg is None:
+            check("本地位置有效（xy/z_valid）", "FAIL", "无本地位置数据")
+        else:
+            lp_ok = bool(lp_msg.xy_valid) and bool(lp_msg.z_valid)
+            check("本地位置有效（xy/z_valid）", "PASS" if lp_ok else "FAIL",
+                  "xy_valid=%d z_valid=%d%s" % (
+                      int(lp_msg.xy_valid), int(lp_msg.z_valid),
+                      "" if lp_ok else "（无效→制导不发心跳、offboard 无法接管；"
+                      "室内无 GPS 时属预期，外场需 GPS 定位）"))
+            check("航向可用于控制（heading_good_for_control）",
+                  "PASS" if lp_msg.heading_good_for_control else "WARN",
+                  "" if lp_msg.heading_good_for_control else
+                  "=0（磁罗盘/GPS 航向未就绪，任务原点航向锁定会等待）")
+        # 3c. 拦截链订阅的状态话题与实际有数据的话题一致
+        guid_params = get_node_params(node, N_GUID, ("status_topic",))
+        strike_params = get_node_params(
+            node, N_STRIKE, ("status_topic", "fire_mode", "trigger_command",
+                             "manual_fire_require_authorization",
+                             "fire_max_tilt_rad"))
+        subscribed = sorted({p.get("status_topic") for p in
+                             (guid_params, strike_params) if p})
+        if not subscribed:
+            check("拦截链 status_topic 一致", "FAIL", "无法读取制导/火控参数（拦截链未起？）")
+        else:
+            topic_ok = st_hz > 0.0 and subscribed == [st_topic]
+            check("拦截链 status_topic 一致", "PASS" if topic_ok else "FAIL",
+                  "订阅=%s 有数据=%s" % ("/".join(map(str, subscribed)),
+                                       st_topic if st_hz > 0.0 else "无"))
         # 感知观测：生产 /perception/...，mock 全链路 /test/perception/...
         if hz[T_OBS] > 0.0 or hz[T_OBS_ALT] <= 0.0:
             obs_topic, obs_hz = T_OBS, hz[T_OBS]
@@ -275,6 +330,47 @@ def main():
                 check("估计器姿态接受（Δatt<<Δobs）",
                       "PASS" if ok else "FAIL",
                       "dobs=%.0f datt=%.0f" % (d_obs, d_att))
+
+        # 9. 制导飞控输入新鲜（心跳/setpoint 前提），失败按 stms/lpms 归因
+        guid = kv(node.last[T_GUID]) if node.last[T_GUID] else {}
+        if not guid:
+            check("制导飞控输入（%s fcu）" % T_GUID, "FAIL",
+                  "无数据（制导未收到本地位置或未启动）")
+        else:
+            fcu = int(guid.get("fcu", 0))
+            stms = guid.get("stms", -1.0)
+            lpms = guid.get("lpms", -1.0)
+            if fcu == 1:
+                why = "fcu=1"
+            elif stms < 0 or stms > 1500:
+                why = "vehicle_status 未到/过期（stms=%.0f）：查 status_topic 与 px4_msgs" % stms
+            elif lpms < 0 or lpms > 500:
+                why = "本地位置断流（lpms=%.0f）" % lpms
+            else:
+                why = "本地位置无效（xy/z_valid=0，见 3b；室内无 GPS 属预期）"
+            check("制导飞控输入（%s fcu）" % T_GUID,
+                  "PASS" if fcu == 1 else "FAIL", why)
+        # 10. 开火配置：实机默认 auto_manual、未发射过、手动兜底门首因
+        strike = node.last[T_STRIKE] or ""
+        fmode = re.search(r"\bfmode=(\w+)", strike)
+        mblk = re.search(r"\bmblk=(\w+)", strike)
+        shots = re.search(r"\bshots=(\d+)", strike)
+        if not strike:
+            check("火控状态 %s" % T_STRIKE, "FAIL", "无数据（火控未收到飞控姿态/状态）")
+        else:
+            mode = fmode.group(1) if fmode else "?"
+            n_shots = int(shots.group(1)) if shots else -1
+            check("开火模式（实机默认 auto_manual）",
+                  "PASS" if mode == "auto_manual" else "WARN",
+                  "fmode=%s 手动门=%s" % (mode, mblk.group(1) if mblk else "?"))
+            check("未发射过（单发可用）", "PASS" if n_shots == 0 else "FAIL",
+                  "shots=%d%s" % (n_shots, "" if n_shots == 0 else
+                                  "（单发已用，重启拦截链才复位）"))
+        if strike_params and strike_params.get("trigger_command") is not None:
+            trig = strike_params.get("trigger_command") or ""
+            check("实物击发钩子 trigger_command",
+                  "PASS" if trig else "WARN",
+                  trig if trig else "未装订：开火只发虚拟事件，不驱动网枪")
 
         # 7. VehicleCommand 无发布者（rc_gated 红线，进程内图查询）
         spin_for(node, 2.0)  # 留 DDS 发现收敛时间
