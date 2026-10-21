@@ -154,16 +154,17 @@ transferProgress({phase_code:'transfer',downloaded_bytes:1048576,total_bytes:209
   age='function previewFrameAge('+HTML.split('function previewFrameAge(',1)[1].split('function currentTargets(',1)[0]
   elapsed='function elapsedTime('+HTML.split('function elapsedTime(',1)[1].split('const headerObserver=',1)[0]
   cancel="byId('cancelDownload').onclick="+HTML.split("byId('cancelDownload').onclick=",1)[1].split('function mediaIdentity(',1)[0]
+  disable='function disable('+HTML.split('function disable(',1)[1].split('async function refresh()',1)[0]
   self.run_node(r'''
 const assert=require('node:assert/strict'),crypto=require('node:crypto');
-let busy=true,controlBusy=false,restarted=false,mediaPhase='',sessions=[],sessionsLoading=false,renameTarget='',downloadRequest='active-download',knownRecordedSession='';
+let busy=true,controlBusy=false,restarted=false,mediaPhase='',mediaJob=false,sessions=[],sessionsLoading=false,renameTarget='',downloadRequest='active-download',knownRecordedSession='';
 const TOKEN='test',stopButtons=['stopCapture','stopRaw','stopLocal'],meta=null,image=null,draw=()=>{},state={connected:true,state:{camera_state:'stopped',pipeline:{}}};
 const cameraNames={},recordNames={},elements={},modelsLoaded=false,hydrateNotes=()=>{},updateRangeSizeControl=()=>{};
-const byId=id=>elements[id]||(elements[id]={id,dataset:{},value:'',textContent:'',options:[{},{}],classList:{toggle(){},add(){},remove(){}},removeAttribute(){}});
+const byId=id=>elements[id]||(elements[id]={id,dataset:{},value:'',textContent:'',options:[{},{}],children:[],classList:{toggle(){},add(){},remove(){}},removeAttribute(){},setAttribute(){}});
 const document={querySelectorAll:()=>['startCapture','stopCapture','stopRaw','stopLocal'].map(byId)};
 const number=(v,d=2)=>typeof v==='number'&&Number.isFinite(v)?v.toFixed(d):'—',beijingTime=()=>'',selectedSession=()=>'',renderTargets=()=>{};
 let notice='';const message=text=>{notice=text;},fetch=async()=>({ok:true,status:200}),restartNotice=()=>{};
-'''+elapsed+transfer+age+freshness+update+cancel+r'''
+'''+elapsed+transfer+age+freshness+disable+update+cancel+r'''
 (async()=>{
  transferProgress({phase_code:'ready_check'});update();assert.equal(byId('startCapture').disabled,true,'camera cannot start while video readiness is being checked');
  transferProgress({phase_code:'board_convert',cancel_after_stage:true});update();assert.equal(byId('startCapture').disabled,true,'camera cannot start during offline board conversion');
