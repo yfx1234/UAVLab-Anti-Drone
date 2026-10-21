@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>UAVLab · USB 相机监看</title>
+<style>
+:root{color-scheme:light;--bg:#f4f4f6;--paper:#fff;--ink:#252526;--muted:#626266;--line:#ececef;--control-fill:#ededf0;--green:#216d50;--red:#ac3e43;--font-ui:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans SC","PingFang SC",Arial,sans-serif}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 var(--font-ui)}h1,h2,p{margin:0}button,a{font:inherit}button,.button{display:inline-flex;align-items:center;justify-content:center;min-height:36px;border:0;border-radius:999px;padding:7px 16px;color:var(--ink);background:var(--control-fill);text-decoration:none;cursor:pointer}button:hover,.button:hover{background:#e2e2e7}button:disabled{opacity:.45;cursor:default}.primary{color:white;background:#303033}.primary:hover{background:#171719}[hidden]{display:none!important}:focus-visible{outline:3px solid #598fea;outline-offset:3px}
+header{background:white;border-bottom:1px solid var(--line)}.identity-row{min-height:64px;display:flex;align-items:center;justify-content:space-between;gap:20px;padding:12px 32px}.identity{display:flex;align-items:center;gap:18px}.brand{font-size:25px;letter-spacing:-1px}.identity h1{font-size:14px;font-weight:500;border-left:1px solid #ddd;padding-left:18px}.pill{font-size:12px;border-radius:999px;padding:5px 11px;background:#ededf0;color:var(--muted)}.pill.good{background:#e2efe8;color:var(--green)}.pill.bad{background:#f8e9eb;color:var(--red)}.workspace-nav{padding:0 32px;height:43px;display:flex;align-items:center;border-top:1px solid #f7f7f9}.workspace-tab{align-self:stretch;display:flex;align-items:center;font-weight:600;border-bottom:2px solid var(--ink);font-size:13px}
+main{max-width:1600px;margin:auto;padding:28px 32px 36px;display:grid;grid-template-columns:270px minmax(0,1fr);gap:24px}.controls,.section{background:white;border:1px solid var(--line);border-radius:20px;box-shadow:0 2px 5px #20212404,0 12px 32px #20212408}.controls{padding:22px;height:fit-content}.controls h2{font-size:15px;margin-bottom:18px}.controls dl{margin:0}.controls dt{font-size:12px;color:var(--muted);margin-top:18px}.controls dd{margin:5px 0 0;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}.help{font-size:12px;color:var(--muted);margin-top:22px}.section{overflow:hidden}.section-head{min-height:67px;padding:15px 20px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}.section-title{display:flex;align-items:center;gap:14px;flex-wrap:wrap}h2{font-size:17px;letter-spacing:-.02em}.capture-spec{font-size:12px;color:var(--muted)}.actions{display:flex;gap:8px}.viewer{background:#202124;position:relative;aspect-ratio:16/9;min-height:260px;display:flex;align-items:center;justify-content:center;overflow:hidden}.viewer:fullscreen{width:100vw;height:100vh;aspect-ratio:auto}.viewer img{width:100%;height:100%;object-fit:contain}.live-badge{position:absolute;top:16px;left:16px;background:#ffffffdf;color:var(--green);border-radius:999px;padding:4px 11px;font-size:11px}.empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px;padding:28px;text-align:center;color:#c9c9cf}.empty strong{font-size:18px;font-weight:500}.empty span{font-size:13px;max-width:520px;overflow-wrap:anywhere}.measurements{display:grid;grid-template-columns:repeat(3,1fr);padding:18px 0}.measurements>span{padding:0 20px;border-right:1px solid var(--line);font-size:12px;color:var(--muted)}.measurements>span:last-child{border:0}.measurements b{color:var(--ink);font-size:15px;margin-left:12px;font-variant-numeric:tabular-nums}.measurements small{margin-left:5px}.note{margin:12px 4px;color:var(--muted);font-size:12px}
+@media(max-width:950px){main{grid-template-columns:1fr}.controls{padding:16px 20px}.controls h2{margin-bottom:0}.controls dl{display:grid;grid-template-columns:repeat(3,1fr);gap:8px 20px}.help{margin-top:15px}.identity-row,.workspace-nav{padding-left:20px;padding-right:20px}main{padding:20px}}@media(max-width:600px){.identity{gap:10px}.brand{font-size:22px}.identity h1{padding-left:10px;font-size:12px}.identity-row{gap:8px}.pill{font-size:11px}.controls dl{grid-template-columns:repeat(2,1fr)}main{padding:14px 12px;gap:16px}.section-head{padding:12px}.section-title{gap:6px}.capture-spec{width:100%}.actions{width:100%}.actions>*{flex:1}.viewer{min-height:200px}.measurements>span{padding:0 10px}.measurements b{display:block;margin:4px 0 0}.measurements small{margin-left:0}}
+</style>
+</head>
+<body>
+<header><div class="identity-row"><div class="identity"><strong class="brand">UAVLab</strong><h1>USB 相机监看</h1></div><span id="connection" class="pill" role="status">正在连接</span></div><div class="workspace-nav"><span class="workspace-tab">实时监看</span></div></header>
+<main>
+<aside class="controls"><h2>相机信息</h2><dl><div><dt>视频设备</dt><dd id="device">—</dd></div><div><dt>当前画面尺寸</dt><dd id="dimensions">—</dd></div><div><dt>请求采集规格</dt><dd id="requested">—</dd></div><div><dt>视频来源</dt><dd>Jetson · USB 摄像头</dd></div><div><dt>预览方式</dt><dd>RGB 实时画面</dd></div><div><dt>画面状态</dt><dd id="cameraState">等待画面</dd></div></dl><p class="help">连接恢复后自动继续显示。保存截图会下载当前画面到这台电脑。</p></aside>
+<div><section class="section"><div class="section-head"><div class="section-title"><h2>实时画面</h2><span id="captureSpec" class="capture-spec">等待读取相机</span></div><div class="actions"><button id="fullscreen" type="button">全屏监看</button><button id="snapshot" class="primary" type="button" disabled>保存截图</button></div></div><div id="viewer" class="viewer"><img id="image" alt="USB 摄像头实时画面" hidden><span id="liveBadge" class="live-badge" hidden>实时 · RGB</span><div id="empty" class="empty"><strong id="emptyTitle">正在连接摄像头</strong><span id="emptyHelp">等待第一帧画面</span></div></div><div class="measurements"><span>预览帧率<b id="fps">—</b><small>fps</small></span><span title="Jetson 收到最近一帧后经过的时间，不包含摄像头内部及网络传输延迟">最近帧间隔<b id="age">—</b><small>s</small></span><span>累计预览帧<b id="frames">—</b></span></div></section><p id="notice" class="note" role="status" aria-live="polite">正在连接视频服务…</p></div>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+let lastKey='',objectUrl=null,pollDelay=67,stopped=false;
+async function request(url,type='json'){
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),4000);
+ try{const response=await fetch(url,{cache:'no-store',signal:controller.signal});if(!response.ok)throw new Error('HTTP '+response.status);return await response[type]();}
+ finally{clearTimeout(timer);}
+}
+function unavailable(title,help){
+ $('connection').textContent='等待连接';$('connection').className='pill bad';$('cameraState').textContent='等待恢复';
+ $('emptyTitle').textContent=title;$('emptyHelp').textContent=help;$('empty').hidden=false;
+ $('image').hidden=true;$('liveBadge').hidden=true;$('snapshot').disabled=true;
+ $('fps').textContent='—';$('age').textContent='—';lastKey='';
+}
+async function tick(){
+ const started=performance.now();
+ try{
+  const status=await request('/api/status');
+  $('device').textContent=status.device;$('requested').textContent=`${status.requested_width} × ${status.requested_height} · ${status.requested_fps} fps`;
+  $('dimensions').textContent=status.width?`${status.width} × ${status.height}`:'—';
+  $('frames').textContent=status.frames;pollDelay=1000/status.requested_fps;
+  if(!status.online){unavailable('等待摄像头画面',status.error||'正在自动重连');$('notice').textContent=status.error||'正在自动重连';pollDelay=500;return;}
+  const meta=await request('/api/frame/meta');
+  if(meta.frame_key!==lastKey){
+   const blob=await request(meta.image_url,'blob'),url=URL.createObjectURL(blob);
+   try{
+    const probe=new Image();probe.src=url;await probe.decode();
+    $('image').src=url;if(objectUrl)URL.revokeObjectURL(objectUrl);objectUrl=url;lastKey=meta.frame_key;
+   }catch(error){URL.revokeObjectURL(url);throw error;}
+  }
+  $('image').hidden=false;$('empty').hidden=true;$('liveBadge').hidden=false;$('snapshot').disabled=false;
+  $('connection').textContent='相机已连接';$('connection').className='pill good';$('cameraState').textContent='正在采集';
+  $('captureSpec').textContent=`${status.width} × ${status.height} · RGB`;
+  $('fps').textContent=Number(status.preview_fps).toFixed(1);$('age').textContent=Number(status.frame_age_s).toFixed(2);
+  $('notice').textContent='实时画面已连接';
+ }catch(error){unavailable('视频连接中断','请检查 Jetson 服务及两台设备的网络连接，页面会自动重试。');$('notice').textContent='正在自动重连…';pollDelay=1000;}
+ finally{if(!stopped)setTimeout(tick,Math.max(0,pollDelay-(performance.now()-started)));}
+}
+$('fullscreen').onclick=async()=>{
+ try{if(document.fullscreenElement)await document.exitFullscreen();else await $('viewer').requestFullscreen();}
+ catch(error){$('notice').textContent='浏览器未能进入全屏，请使用浏览器全屏功能。';}
+};
+$('snapshot').onclick=async()=>{
+ try{const blob=await request('/snapshot.jpg','blob'),url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='usb-camera-'+new Date().toISOString().replace(/[:.]/g,'-')+'.jpg';link.click();setTimeout(()=>URL.revokeObjectURL(url),10000);}
+ catch(error){$('notice').textContent='截图失败，请等待画面恢复后重试。';}
+};
+window.addEventListener('pagehide',()=>{stopped=true;if(objectUrl)URL.revokeObjectURL(objectUrl);});
+window.addEventListener('pageshow',event=>{if(event.persisted){stopped=false;lastKey='';objectUrl=null;tick();}});
+tick();
+</script>
+</body>
+</html>
