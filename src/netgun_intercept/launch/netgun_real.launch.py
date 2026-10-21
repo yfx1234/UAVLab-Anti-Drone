@@ -135,7 +135,7 @@ def generate_launch_description():
                     {
                         "relative_estimate_topic": ESTIMATE_TOPIC,
                         "local_position_topic": "/fmu/out/vehicle_local_position",
-                        "status_topic": "/fmu/out/vehicle_status",
+                        "status_topic": "/fmu/out/vehicle_status_v1",  # I-2：新固件把旧格式状态以 _v1 兼容话题保留
                         "engage_mode": "rc_gated",
                         # F-1：本地位置 0.5s / vehicle_status 1.5s（PX4 实际
                         # 2Hz）；过期停发超过 1.0s 才复位；开火后不再追击
@@ -193,7 +193,7 @@ def generate_launch_description():
                     {
                         "relative_estimate_topic": ESTIMATE_TOPIC,
                         "attitude_topic": "/fmu/out/vehicle_attitude",
-                        "status_topic": "/fmu/out/vehicle_status",
+                        "status_topic": "/fmu/out/vehicle_status_v1",  # I-2：新固件把旧格式状态以 _v1 兼容话题保留
                         "local_position_topic": "/fmu/out/vehicle_local_position",
                         "shot_topic": SHOT_TOPIC,
                         "frame_id": "map_ned",
