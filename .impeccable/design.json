@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-21T13:13:44.688006Z",
+  "generatedAt": "2026-10-21T14:20:03.380245Z",
   "title": "Design System: UAVLab 感知与采集工作台",
   "extensions": {
     "colorMeta": {
@@ -555,9 +555,9 @@
       "name": "Readiness checks",
       "kind": "custom",
       "refersTo": null,
-      "description": "拦截任务栏就绪检查：圆点固定在行首，标签辅助灰，数值右对齐墨色；good 绿点、warn 琥珀点棕字、bad 红点红字、idle 空心点浅灰字。",
+      "description": "拦截任务栏就绪检查：行间不加分隔线，圆点固定在行首，标签辅助灰，数值右对齐墨色；good 绿点、warn 琥珀点棕字、bad 红点红字、idle 空心点浅灰字。",
       "html": "<dl class=\"ds-checks\"><div><dt>感知输入</dt><dd class=\"ds-good\">相机 + YOLO 运行</dd></div><div><dt>Offboard 心跳</dt><dd class=\"ds-bad\">已停发 · 飞控数据不可用</dd></div><div><dt>目标估计</dt><dd class=\"ds-warn\">距离未确认</dd></div><div><dt>火控授权</dt><dd class=\"ds-idle\">—</dd></div></dl>",
-      "css": ".ds-checks{display:grid;margin:0;font:400 13px/1.4 var(--font-ui,\"Segoe UI Variable Text\",\"Segoe UI\",-apple-system,BlinkMacSystemFont,\"PingFang SC\",\"Noto Sans SC\",\"Microsoft YaHei UI\",\"Microsoft YaHei\",sans-serif);font-variant-numeric:tabular-nums}.ds-checks>div{position:relative;display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:31px;padding-left:16px;border-top:1px solid #ececef}.ds-checks>div:first-child{border-top:0}.ds-checks dt{color:var(--muted,#6b6b70);white-space:nowrap}.ds-checks dd{margin:0;color:var(--ink,#1d1d1f);font-weight:500;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ds-checks dd::before{content:\"\";position:absolute;left:1px;top:50%;width:7px;height:7px;margin-top:-3.5px;border-radius:50%;background:#bdbdc3}.ds-checks dd.ds-good::before{background:#2f9f69}.ds-checks dd.ds-bad{color:#b2333b}.ds-checks dd.ds-bad::before{background:#e0484f}.ds-checks dd.ds-warn{color:#87590a}.ds-checks dd.ds-warn::before{background:#dc9b2a}.ds-checks dd.ds-idle{color:#75757a;font-weight:400}.ds-checks dd.ds-idle::before{background:none;box-shadow:inset 0 0 0 1.5px #d0d0d5}"
+      "css": ".ds-checks{display:grid;margin:0;font:400 13px/1.4 var(--font-ui,\"Segoe UI Variable Text\",\"Segoe UI\",-apple-system,BlinkMacSystemFont,\"PingFang SC\",\"Noto Sans SC\",\"Microsoft YaHei UI\",\"Microsoft YaHei\",sans-serif);font-variant-numeric:tabular-nums}.ds-checks>div{position:relative;display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:31px;padding-left:16px}.ds-checks dt{color:var(--muted,#6b6b70);white-space:nowrap}.ds-checks dd{margin:0;color:var(--ink,#1d1d1f);font-weight:500;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ds-checks dd::before{content:\"\";position:absolute;left:1px;top:50%;width:7px;height:7px;margin-top:-3.5px;border-radius:50%;background:#bdbdc3}.ds-checks dd.ds-good::before{background:#2f9f69}.ds-checks dd.ds-bad{color:#b2333b}.ds-checks dd.ds-bad::before{background:#e0484f}.ds-checks dd.ds-warn{color:#87590a}.ds-checks dd.ds-warn::before{background:#dc9b2a}.ds-checks dd.ds-idle{color:#75757a;font-weight:400}.ds-checks dd.ds-idle::before{background:none;box-shadow:inset 0 0 0 1.5px #d0d0d5}"
     },
     {
       "name": "Content container",
@@ -623,7 +623,7 @@
       },
       {
         "name": "Quiet Surfaces",
-        "body": "常驻表面以填色、间距和轻微浮起阴影区分，不加外围描边；目标表与检查列表的内部行分隔与键盘焦点轮廓保留。",
+        "body": "常驻表面以填色、间距和轻微浮起阴影区分，不加外围描边；目标表的内部行分隔与键盘焦点轮廓保留；就绪检查不加行分隔。",
         "section": "elevation"
       },
       {
