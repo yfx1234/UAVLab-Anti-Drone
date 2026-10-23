@@ -177,6 +177,11 @@ class StackReviewTests(unittest.TestCase):
         dumps = [review / 'params' / (node + '.yaml') for node in
                  ('zed_perception_bridge', 'relative_estimator', 'netgun_guidance_node', 'netgun_strike_node')]
         self.assertTrue(self.wait_for(lambda: all(p.exists() and 'ros__parameters' in p.read_text() for p in dumps)))
+        # 三节点在 /pursuer 命名空间下（不带命名空间 ros2 param dump 报 Node not found）
+        for p in dumps[1:]:
+            self.assertTrue(p.read_text().startswith('pursuer/' + p.stem + ':'), p.read_text())
+        self.assertTrue(dumps[0].read_text().startswith('zed_perception_bridge:'))
+        self.assertFalse((review / 'params' / 'errors.log').exists())
         status = self.run_script('status')
         self.assertIn('常驻发射通道：运行中', status.stdout)
         self.assertIn('复盘录制：录制中', status.stdout)

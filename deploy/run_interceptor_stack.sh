@@ -37,7 +37,7 @@
 # 复盘记录（2026-10-23）：start 同时在 ~/netgun_logs/review_<时间>/ 录 ros2 bag
 # （REVIEW_TOPICS 白名单：飞控收发、四节点调试/估计/授权/开火事件、发射指令、
 # 感知观测、/rosout），写 run_info.txt（提交号/launch 参数）、安装参数副本，
-# 15s 后导出四节点参数 params/*.yaml；stop 时 SIGINT 录制器收尾（metadata.yaml），
+# 15s 后存启动自检 start_check.txt 并导出四节点参数 params/*.yaml；stop 时 SIGINT 录制器收尾（metadata.yaml），
 # 并拷入本次运行日志 stack.log。sqlite3 用 resilient 预设（WAL），断电也只丢
 # 最后几秒；缺 metadata.yaml 时 ros2 bag reindex 修复。剩余空间
 # < NETGUN_REVIEW_MIN_FREE_MB（默认 5120）时不录 bag，只留日志与参数。
@@ -60,7 +60,8 @@ REVIEW_MIN_FREE_MB="${NETGUN_REVIEW_MIN_FREE_MB:-5120}"
 # ros2 bag record 的话题列表与 --regex 取交集，白名单只能写成一条正则；
 # /fmu/in 下没有发布者的话题（agent 侧订阅）不会被录
 REVIEW_TOPICS='^/(fmu/(in|out)/.*|debug/.*|tracking/.*|netgun/.*|perception/(observations_json|depth/observation)|simulation/pursuer_takeoff_ready|rosout|parameter_events)$'
-REVIEW_NODES="zed_perception_bridge relative_estimator netgun_guidance_node netgun_strike_node"
+# 全名（含命名空间，见 netgun_real.launch.py：三节点在 /pursuer 下）；文件名取末段
+REVIEW_NODES="zed_perception_bridge pursuer/relative_estimator pursuer/netgun_guidance_node pursuer/netgun_strike_node"
 
 mkdir -p "$LOG_DIR"
 
@@ -247,13 +248,20 @@ finish_review() {
 
 # 15s 后（节点参数已声明）导出四节点参数；失败只记 errors.log，不影响拦截链
 dump_params() {
-  local review_dir="$1" node
+  local review_dir="$1" node out errors
   [ -d "$review_dir" ] || return 0
   mkdir -p "$review_dir/params"
+  errors="$review_dir/params/errors.log"
   for node in $REVIEW_NODES; do
+    out="$review_dir/params/${node##*/}.yaml"
     timeout 30 ros2 param dump "/$node" --no-daemon --spin-time 5 \
-      >"$review_dir/params/$node.yaml" 2>>"$review_dir/params/errors.log" || true
+      >"$out" 2>>"$errors" || true
+    if [ ! -s "$out" ]; then
+      rm -f "$out"
+      echo "/$node：参数导出失败" >>"$errors"
+    fi
   done
+  [ -s "$errors" ] || rm -f "$errors"
 }
 
 # N-1/F-6（2026-10-18）：启动自检——估计器 diag 里 attmiss 随 obs 增长
@@ -345,9 +353,10 @@ cmd_start() {
   fi
   echo "复盘录制 $review_dir；常驻发射通道随链启动"
   echo "已启动 pid $pid，日志 $log_file"
-  # 15s 后自检（run_start_check 内部落 CHECK_FILE 与运行日志），再导出节点参数；
-  # 后台子 shell 不占用本脚本的输出管道——面板 SSH 调用 start 时不必陪等
-  ( sleep 15; run_start_check "$log_file" "$pid" >/dev/null 2>&1
+  # 15s 后自检（run_start_check 内部落 CHECK_FILE 与运行日志，结论另存复盘目录
+  # start_check.txt），再导出节点参数；后台子 shell 不占用本脚本的输出管道——
+  # 面板 SSH 调用 start 时不必陪等
+  ( sleep 15; run_start_check "$log_file" "$pid" >"$review_dir/start_check.txt" 2>&1
     dump_params "$review_dir" >/dev/null 2>&1 ) >/dev/null 2>&1 </dev/null &
 }
 
