@@ -1,5 +1,6 @@
 """面板侧拦截链（2026-10-23）：缓存 SSH 连接执行（状态轮询/发射按钮）、发射任务不排队、
-发射命令走常驻通道助手；前端显示发射通道/复盘记录并优先用 2Hz 火控状态。"""
+发射命令走常驻通道助手；前端显示发射通道/复盘记录并优先用 2Hz 火控状态。2026-10-23：「实物击发」行
+（装订、击发服务、飞控心跳、AUX5 参数、本次启动后的击发结果）。"""
 import io
 import json
 import pathlib
@@ -214,7 +215,9 @@ const disable=(id,condition)=>{byId(id).disabled=!!condition;return byId(id).dis
 const base=()=>({connected:true,error:null,interceptor_error:null,interceptor_age_s:1,state:{camera_state:'running',pipeline:{detector_state:2}},
  interceptor:{running:true,pid:5,shots:0,strike:{fire_mode:'auto_manual',fire_ready:0,manual_block:'NOT_ARMED',arm:0},estimator:{},guidance:{},tail:[],
   fire_link:{ok:true,link:{ready:true,phase:'就绪'},state:{fire_mode:'auto_manual',ready:true,latched:false,block:'NONE',shots:0}},
-  review:{dir:'review_20261023_170000',recording:true,size_mb:12.3,topics:31,free_mb:40960}}});
+  review:{dir:'review_20261023_170000',recording:true,size_mb:12.3,topics:31,free_mb:40960},
+  trigger:{bound:'python3 /home/uavlab/interceptor_ws/deploy/netgun_pwm_link.py fire',ok:true,ready:true,link:{alive:true,fc:'2/1',armed:false},
+   config:{ok:true,problems:[],missing:[],warnings:[]},options:{fire_value:-1,fire_us:1000,safe_value:1,safe_us:2000,hold_s:1},busy:false}}});
 let state=base();
 """ + block + timing
         script = harness + "\n" + assertions
@@ -245,9 +248,37 @@ assert.equal(byId('chkFireLink').textContent,'—');assert.equal(byId('chkReview
 assert.equal(fireTiming({path:'server'},213),' · 0.21 s（常驻通道）');assert.equal(fireTiming({path:'direct'},2480),' · 2.48 s（直连）');assert.equal(fireTiming({},50),' · 0.05 s');
 """)
 
+    def test_trigger_row_states(self):
+        self.run_node(r"""
+const show=()=>{renderInterceptor(true);const el=byId('chkTrigger');return [el.textContent,['good','bad','warn','idle'].find(n=>el.classList.contains(n))||'',el.title];};
+let [text,tone,title]=show();
+assert.equal(text,'就绪 · 未解锁');assert.equal(tone,'good');
+assert.match(title,/飞控 2\/1 · 击发 1000 µs 保持 1\.0 s → 安全值 2000 µs · 未解锁时开火被板上拒绝/);
+state.interceptor.trigger.link.armed=true;assert.equal(show()[0],'就绪 · 已解锁');
+state=base();state.interceptor.trigger.bound='python3 x/netgun_pwm_link.py fire --bench';[text,tone,title]=show();
+assert.equal(text,'台架模式 · 未解锁');assert.equal(tone,'warn');assert.match(title,/实飞前去掉 --bench/);
+state=base();state.interceptor.trigger.bound='';assert.deepEqual(show().slice(0,2),['未装订 · 仅虚拟','warn']);
+state=base();state.interceptor.trigger.bound='bash /tmp/hook.sh';assert.deepEqual(show(),['自定义钩子','warn','bash /tmp/hook.sh']);
+state=base();state.interceptor.trigger={bound:'python3 x/netgun_pwm_link.py fire',ok:false,error:'击发服务未运行'};[text,tone,title]=show();
+assert.equal(text,'击发服务未运行');assert.equal(tone,'bad');assert.match(title,/netgun-pwm-link/);
+state=base();state.interceptor.trigger.link={alive:false};assert.deepEqual(show().slice(0,2),['飞控无心跳','bad']);
+state=base();state.interceptor.trigger.config={ok:false,problems:['PWM_AUX_DIS5=1000（应为 0）'],missing:[]};[text,tone,title]=show();
+assert.equal(text,'AUX5 参数不符');assert.equal(tone,'bad');assert.match(title,/PWM_AUX_DIS5=1000/);
+state=base();state.interceptor.trigger.config={ok:null,problems:[],missing:['PWM_AUX_TIM1']};assert.deepEqual(show(),['参数核对中','warn','未读到 PWM_AUX_TIM1']);
+state=base();state.interceptor.trigger.last_fire={ok:true,mode:'live',shot_id:1,ack_ms:23.4,pwm_us:1000};[text,tone,title]=show();
+assert.equal(text,'已击发 · ACK 23 ms');assert.equal(tone,'good');assert.match(title,/第 1 发 · 1000 µs/);
+state.interceptor.trigger.last_fire.pending=true;assert.equal(show()[0],'击发中 · ACK 23 ms');
+state=base();state.interceptor.trigger.last_fire={ok:false,refused:'DISARMED',reason_text:'飞控未解锁：不发击发指令'};[text,tone,title]=show();
+assert.equal(text,'未击发 · 飞控未解锁');assert.equal(tone,'bad');assert.match(title,/不发击发指令/);
+state=base();state.interceptor.trigger.last_fire={ok:false,result_name:'NO_ACK',pending:true};assert.equal(show()[0],'未击发 · 飞控无应答');
+state=base();state.interceptor.trigger.bound=null;assert.equal(show()[0],'就绪 · 未解锁','old logs without NETGUN_TRIGGER still show the service');
+state=base();delete state.interceptor.trigger;assert.deepEqual(show().slice(0,2),['—','idle']);
+state=base();state.interceptor.running=false;renderInterceptor(false);assert.equal(byId('chkTrigger').textContent,'—');
+""")
+
     def test_fire_job_polls_fast_and_rows_exist(self):
         self.assertIn("const pollMs=actionName==='interceptor_fire'?100:400;", HTML)
-        for row in ('<dt>发射通道</dt><dd id="chkFireLink"', '<dt>复盘记录</dt><dd id="chkReview"'):
+        for row in ('<dt>发射通道</dt><dd id="chkFireLink"', '<dt>实物击发</dt><dd id="chkTrigger"', '<dt>复盘记录</dt><dd id="chkReview"'):
             self.assertIn(row, HTML)
         self.assertIn('fireDialog', HTML, 'the confirmation dialog stays')
 

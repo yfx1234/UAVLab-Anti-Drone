@@ -15,6 +15,10 @@ netgun_fire_button.py serve 的结果（link.ready=按键直达火控；state=�
 2Hz 火控状态，比 5s 一条的 diag 日志新）；review = 本次复盘目录、录制器是否
 在录、目录大小与剩余空间（无当前记录时给最近一次目录名）。
 
+实物击发（2026-10-23）：trigger = 本次启动装订的 trigger_command（运行日志 NETGUN_TRIGGER 行，
+bound=""→仅虚拟；旧日志无此行→null）+ 常驻击发服务 netgun_pwm_link 状态（飞控心跳/解锁、
+AUX5 参数核对、本次启动以来的最近一次击发 last_fire）。
+
 任何内部错误都降级为 {"error": ...}，绝不向日志目录写东西。
 """
 
@@ -170,6 +174,36 @@ def fire_link_status():
     return info
 
 
+def trigger_status(log_text):
+    """实物击发装订 + 击发服务状态（本机套接字，无 ROS）；服务不可用时 ok=false 与原因。"""
+    bound = re.findall(r"^NETGUN_TRIGGER ?(.*)$", log_text or "", re.MULTILINE)
+    info = {"bound": bound[-1].strip() if bound else None}
+    try:
+        link = _sibling("netgun_pwm_link").status(PING_REPLY_S)
+    except Exception as exc:  # noqa: BLE001 —— 旧部署缺脚本只降级本字段
+        link = {"ok": False, "error": str(exc)}
+    info["ok"] = bool(link.get("ok"))
+    if not info["ok"]:
+        info["error"] = link.get("error") or "击发服务不可用"
+        return info
+    config = link.get("config") or {}
+    info["ready"] = bool(link.get("ready"))
+    info["link"] = link.get("link") or {}
+    info["config"] = {key: config.get(key) for key in ("ok", "problems", "missing", "warnings")}
+    info["options"] = link.get("options") or {}
+    info["busy"] = bool(link.get("busy"))
+    last = link.get("last_fire")
+    try:
+        started = os.path.getmtime(PID_FILE)  # 本次启动时刻：更早的击发（台架测试等）不算
+    except OSError:
+        started = None
+    if isinstance(last, dict) and (started is None or float(last.get("time") or 0) >= started):
+        info["last_fire"] = {key: last.get(key) for key in (
+            "ok", "pending", "mode", "shot_id", "refused", "result_name", "ack_ms", "attempts",
+            "elapsed_ms", "pwm_us", "reason_text", "time")}
+    return info
+
+
 def _pid_with_cmdline(pid_file, needle):
     try:
         with open(pid_file) as f:
@@ -295,9 +329,11 @@ def main():
     result["fire_last"] = fires[-1] if fires else None
 
     result["geometry"] = geometry_status(text)
+    if running:
+        result["trigger"] = trigger_status(text)
 
     lines = [ln for ln in text.splitlines()
-             if ln.strip() and not ln.startswith(("NETGUN_GEOMETRY ", "NETGUN_REVIEW "))]
+             if ln.strip() and not ln.startswith(("NETGUN_GEOMETRY ", "NETGUN_REVIEW ", "NETGUN_TRIGGER "))]
     result["tail"] = lines[-8:]
     print(json.dumps(result, ensure_ascii=False))
 

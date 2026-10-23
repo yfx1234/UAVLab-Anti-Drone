@@ -32,13 +32,19 @@ ROS_DOMAIN_ID 未设置或为 0 时拒绝运行（--allow-domain0 仅限确认�
   单发：stack.log 恰 1 条 NETGUN FIRE，bag 恰 1 个 VirtualShotEvent
   --trigger-hook：trigger_command 装订为干跑脚本 netgun_trigger_dryrun.sh
      （只写日志不碰硬件），验证恰执行 1 次且 "trigger command done rc=0"
+  --trigger-pwm-bench（2026-10-23，与 --trigger-hook 二选一）：trigger_command 装订
+     生产同款击发客户端 deploy/netgun_pwm_link.py fire --bench——真实经常驻击发服务
+     → MAVProxy → 飞控 ACTUATOR_TEST 驱动 FMU PWM OUT 5（舵机会动；真飞控必须未解锁、
+     拆桨）。开跑前要求击发服务就绪且飞控未解锁；验证恰 1 次 "trigger command done
+     rc=0"、客户端结果 ACCEPTED/shot_id=1、复位与释放 ACCEPTED，summary 记录 ACK/
+     客户端/钩子耗时与舵机输出回读（击发记录写入本次产物目录 pwm_events.jsonl）
   常驻发射通道（2026-10-23）：与生产同款 netgun_fire_button.py serve
      --parent-pid=<stack> 随栈起（套接字在本次产物目录，按域隔离）；助手按键
      须走常驻通道（path=server），fire_contract 记录按键到回复耗时 elapsed_ms
 
 用法（板上，已 source 全部环境；生产拦截栈必须先停止）：
   export ROS_DOMAIN_ID=42 && unset ROS_LOCALHOST_ONLY
-  python3 fullchain_test.py [--fire auto|manual] [--trigger-hook] \\
+  python3 fullchain_test.py [--fire auto|manual] [--trigger-hook|--trigger-pwm-bench] \\
       [--target-ned 0.0,0.0,-11.6]
 
 产物：~/netgun_logs/fullchain_<stamp>/（各进程日志、bag、summary.json）
@@ -61,6 +67,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(os.path.dirname(HERE))
 FIRE_BUTTON = os.path.join(REPO_ROOT, "deploy", "netgun_fire_button.py")
 TRIGGER_DRYRUN = os.path.join(HERE, "netgun_trigger_dryrun.sh")
+PWM_LINK = os.path.join(REPO_ROOT, "deploy", "netgun_pwm_link.py")
 LOG_ROOT = os.path.expanduser("~/netgun_logs")
 
 
@@ -127,8 +134,8 @@ class Orchestrator(Node):
         if os.environ.get("ROS_DOMAIN_ID") in (None, "", "0"):
             self._log("WARNING: 在生产 domain 0 运行（--allow-domain0）——"
                       "确认拦截栈已停止且飞控已断开")
-        self._log("fire=%s trigger_hook=%s" % (
-            self.args.fire, self.args.trigger_hook))
+        self._log("fire=%s trigger_hook=%s trigger_pwm_bench=%s" % (
+            self.args.fire, self.args.trigger_hook, self.args.trigger_pwm_bench))
         self._spawn("mock_px4", [
             "python3", os.path.join(HERE, "mock_px4_node.py")])
         self._spawn("synthetic", [
@@ -146,6 +153,10 @@ class Orchestrator(Node):
         if self.args.trigger_hook:
             os.environ["NETGUN_TRIGGER_LOG"] = self.trigger_log_path
             stack_cmd.append("trigger_command:=bash %s" % TRIGGER_DRYRUN)
+        if self.args.trigger_pwm_bench:
+            # 击发记录（含复位/舵机回读）写进本次产物目录
+            os.environ["NETGUN_REVIEW_DIR"] = self.run_dir
+            stack_cmd.append("trigger_command:=python3 %s fire --bench" % PWM_LINK)
         self._spawn("stack", stack_cmd)
         # 生产同款常驻发射通道：助手与通道共用本目录的套接字（不碰生产链的 d0 套接字）
         os.environ["NETGUN_FIRE_SOCKET"] = os.path.join(
@@ -480,9 +491,76 @@ class Orchestrator(Node):
             elif "shot_id=1" not in hook_lines[0] or (
                     reason and ("reason=%s" % reason) not in hook_lines[0]):
                 errors.append("击发钩子环境变量不符：%s" % hook_lines[0])
+        if self.args.trigger_pwm_bench:
+            self._check_pwm_bench(log_text, reason, checks, errors)
         self.result["fire_contract"] = checks
         if errors:
             self.result["pass"] = False
+
+    def _check_pwm_bench(self, log_text, reason, checks, errors):
+        """台架实物击发：客户端结果恰 1 条且飞控接受；复位/释放记录（等保持+复位收尾）。"""
+        results = []
+        for text in re.findall(r"NETGUN_PWM_RESULT (\{.*\})", log_text):
+            try:
+                results.append(json.loads(text))
+            except ValueError:
+                results.append({"unparsed": text})
+        done = re.findall(r"trigger command done rc=0 \((\d+) ms\)", log_text)
+        failed = re.findall(r"trigger command FAILED[^\n]*", log_text)
+        checks["pwm_results"] = [{key: r.get(key) for key in (
+            "ok", "mode", "shot_id", "reason", "result_name", "refused", "attempts", "ack_ms",
+            "elapsed_ms", "client_ms", "reason_text")} for r in results]
+        checks["trigger_done_ms"] = [int(x) for x in done]
+        checks["trigger_failed"] = failed
+        if len(results) != 1 or len(done) != 1:
+            errors.append("台架击发应恰 1 次：客户端结果 %d 条、done %d 次、FAILED %s"
+                          % (len(results), len(done), failed))
+        elif not (results[0].get("ok") and results[0].get("mode") == "bench"
+                  and results[0].get("result_name") == "ACCEPTED"
+                  and results[0].get("shot_id") == 1
+                  and (not reason or results[0].get("reason") == reason)):
+            errors.append("台架击发未被飞控接受或环境变量不符：%s" % results[0])
+        events_path = os.path.join(self.run_dir, "pwm_events.jsonl")
+        record = None
+        deadline = time.monotonic() + 6.0
+        while time.monotonic() < deadline:
+            try:
+                with open(events_path) as f:
+                    lines = [json.loads(ln) for ln in f if ln.strip()]
+            except (OSError, ValueError):
+                lines = []
+            if lines and ("reset" in lines[-1] or "reset_error" in lines[-1]):
+                record = lines[-1]
+                break
+            time.sleep(0.2)
+        if record is None:
+            errors.append("未见台架击发复位记录 %s" % events_path)
+            return
+        reset = record.get("reset") or {}
+        checks["pwm_reset"] = reset
+        checks["pwm_servo"] = record.get("servo")
+        checks["pwm_done_ms"] = record.get("done_ms")
+        if record.get("reset_error") or reset.get("release") != "ACCEPTED" or (
+                "result_name" in reset and reset["result_name"] != "ACCEPTED"):
+            errors.append("台架击发复位/释放未被飞控接受：%s" % (record.get("reset_error") or reset))
+
+
+def pwm_bench_guard():
+    """台架实物击发前置：击发服务就绪（飞控心跳 + AUX5 参数一致）且真飞控未解锁。"""
+    try:
+        out = subprocess.run(["python3", PWM_LINK, "status"], capture_output=True,
+                             text=True, timeout=10).stdout
+        info = json.loads(out.strip().splitlines()[-1])
+    except (OSError, ValueError, IndexError, subprocess.SubprocessError) as exc:
+        print("台架击发前置检查失败：%s" % exc, flush=True)
+        sys.exit(1)
+    link = info.get("link") or {}
+    if not info.get("ready") or link.get("armed") is not False:
+        print("台架击发要求击发服务就绪且飞控未解锁：ready=%s armed=%s %s" % (
+            info.get("ready"), link.get("armed"), info.get("error") or info.get("config")),
+            flush=True)
+        sys.exit(1)
+    print("台架击发前置：飞控 %s 未解锁，AUX5 参数一致" % link.get("fc"), flush=True)
 
 
 def main():
@@ -490,9 +568,14 @@ def main():
     parser.add_argument("--target-ned", default="0.0,0.0,-11.6")
     parser.add_argument("--fire", choices=("auto", "manual"), default="auto")
     parser.add_argument("--trigger-hook", action="store_true")
+    parser.add_argument("--trigger-pwm-bench", action="store_true")
     parser.add_argument("--allow-domain0", action="store_true")
     args, _ = parser.parse_known_args()
+    if args.trigger_hook and args.trigger_pwm_bench:
+        parser.error("--trigger-hook 与 --trigger-pwm-bench 只能选一个")
     domain_guard(args.allow_domain0)
+    if args.trigger_pwm_bench:
+        pwm_bench_guard()
 
     rclpy.init()
     node = Orchestrator(args)

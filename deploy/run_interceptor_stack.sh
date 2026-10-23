@@ -34,6 +34,14 @@
 # （--parent-pid=launch，launch 退出即自停），面板「发射网枪」经本机套接字直达
 # 火控，按键到发布约 0.1 s；通道未就绪时按钮自动退回直连（约 2–3 s）。
 #
+# 实物击发（2026-10-23）：start 默认装订 trigger_command:=python3 deploy/netgun_pwm_link.py
+# fire——火控开火时经常驻击发服务（用户级 systemd netgun-pwm-link.service，见
+# deploy/install_netgun_pwm_link.sh）→ MAVProxy → 飞控 FMU PWM OUT 5：已解锁才发
+# DO_SET_ACTUATOR 击发值，保持后回安全值；未解锁拒绝且不发任何指令。环境变量
+# NETGUN_TRIGGER_COMMAND 覆盖（置空 = 仅虚拟事件），命令行 trigger_command:=… 最后生效；
+# 实际装订写入运行日志 NETGUN_TRIGGER 行，启动时打印链路状态。拦截链进程带
+# NETGUN_REVIEW_DIR=本次复盘目录，击发记录同时写入其中 pwm_events.jsonl。
+#
 # 复盘记录（2026-10-23）：start 同时在 ~/netgun_logs/review_<时间>/ 录 ros2 bag
 # （REVIEW_TOPICS 白名单：飞控收发、四节点调试/估计/授权/开火事件、发射指令、
 # 感知观测、/rosout），写 run_info.txt（提交号/launch 参数）、安装参数副本，
@@ -53,6 +61,7 @@ LAUNCH_FILE="netgun_real.launch.py"
 GEOMETRY_TOOL="$INTERCEPTOR_WS/deploy/mounting_geometry.py"
 GEOMETRY_FILE="${NETGUN_CONFIG_DIR:-$HOME/netgun_config}/mounting_geometry.json"
 FIRE_TOOL="$INTERCEPTOR_WS/deploy/netgun_fire_button.py"
+PWM_TOOL="$INTERCEPTOR_WS/deploy/netgun_pwm_link.py"
 FIRE_PID_FILE="$LOG_DIR/netgun_fire_server.pid"
 BAG_PID_FILE="$LOG_DIR/interceptor_bag.pid"
 REVIEW_FILE="$LOG_DIR/interceptor_review.current"
@@ -153,6 +162,29 @@ production_launch_pids() {
 
 latest_log() {
   ls -t "$LOG_DIR"/interceptor_stack_*.log 2>/dev/null | head -1 || true
+}
+
+pwm_link_brief() {
+  if [ -f "$PWM_TOOL" ]; then
+    timeout 5 python3 "$PWM_TOOL" status --brief 2>/dev/null || true
+  else
+    echo "实物击发链路：缺少 $PWM_TOOL"
+  fi
+}
+
+trigger_summary() {
+  local command="$1" link
+  case "$command" in
+    "") echo "实物击发：未装订（仅虚拟开火事件，不驱动网枪）" ;;
+    *netgun_pwm_link.py*)
+      link="$(pwm_link_brief)"
+      case "$command" in
+        *--bench*) echo "实物击发：已装订台架模式（仅未解锁可用）；${link#实物击发链路：}" ;;
+        *) echo "实物击发：已装订 netgun_pwm_link；${link#实物击发链路：}" ;;
+      esac
+      ;;
+    *) echo "实物击发：已装订自定义命令（$command）" ;;
+  esac
 }
 
 start_fire_server() {
@@ -325,17 +357,34 @@ cmd_start() {
     geometry_summary="$(python3 "$GEOMETRY_TOOL" summary 2>/dev/null || true)"
     geometry_brief="$(python3 "$GEOMETRY_TOOL" brief 2>/dev/null || true)"
   fi
+  # 实物击发装订：默认常驻击发服务；NETGUN_TRIGGER_COMMAND 覆盖（空=仅虚拟），
+  # 命令行 trigger_command:=… 排在最后、最终生效（日志按它记录）
+  local trigger_command="" arg
+  local -a trigger_args=()
+  if [ "${NETGUN_TRIGGER_COMMAND+set}" = set ]; then
+    trigger_command="$NETGUN_TRIGGER_COMMAND"
+  elif [ -f "$PWM_TOOL" ]; then
+    trigger_command="python3 $PWM_TOOL fire"
+  fi
+  if [ -n "$trigger_command" ]; then
+    trigger_args=("trigger_command:=$trigger_command")
+  fi
+  for arg in "${@:2}"; do
+    case "$arg" in trigger_command:=*) trigger_command="${arg#trigger_command:=}" ;; esac
+  done
   env_setup
-  local stamp log_file
+  local stamp log_file review_dir
   stamp="$(date +%Y%m%d_%H%M%S)"
   log_file="$LOG_DIR/interceptor_stack_${stamp}.log"
+  review_dir="$LOG_DIR/review_${stamp}"
   if [ -n "$geometry_summary" ]; then
     printf '%s\n' "$geometry_summary" >>"$log_file"
   fi
+  printf 'NETGUN_TRIGGER %s\n' "$trigger_command" >>"$log_file"
   # G-1（2026-10-18）：必须用追加模式——run_start_check 会 >> 同一文件
   # 写告警，截断写会让 launch 按自己的旧偏移把追加行覆盖掉
-  nohup setsid ros2 launch "$LAUNCH_PKG" "$LAUNCH_FILE" \
-    "${geometry_args[@]}" "${@:2}" >>"$log_file" 2>&1 &
+  NETGUN_REVIEW_DIR="$review_dir" nohup setsid ros2 launch "$LAUNCH_PKG" "$LAUNCH_FILE" \
+    "${geometry_args[@]}" "${trigger_args[@]}" "${@:2}" >>"$log_file" 2>&1 &
   local pid=$!
   echo "$pid" >"$PID_FILE"
   sleep 2
@@ -345,12 +394,15 @@ cmd_start() {
     rm -f "$PID_FILE"
     exit 1
   fi
-  local review_dir="$LOG_DIR/review_${stamp}"
-  start_review "$review_dir" "$log_file" "${geometry_args[@]}" "${@:2}"
+  start_review "$review_dir" "$log_file" "${geometry_args[@]}" "${trigger_args[@]}" "${@:2}"
   start_fire_server "$pid" "$log_file"
   if [ -n "$geometry_brief" ]; then
     echo "$geometry_brief"
   fi
+  local trigger_line
+  trigger_line="$(trigger_summary "$trigger_command")"
+  printf '%s\n' "$trigger_line" >>"$log_file"
+  echo "$trigger_line"
   echo "复盘录制 $review_dir；常驻发射通道随链启动"
   echo "已启动 pid $pid，日志 $log_file"
   # 15s 后自检（run_start_check 内部落 CHECK_FILE 与运行日志，结论另存复盘目录
@@ -411,14 +463,19 @@ cmd_status() {
   else
     echo "常驻发射通道：未运行（按钮走直连）"
   fi
+  local log_file bound
+  log_file="$(latest_log)"
+  if running_pid >/dev/null && [ -n "$log_file" ] && grep -q '^NETGUN_TRIGGER ' "$log_file"; then
+    bound="$(sed -n 's/^NETGUN_TRIGGER //p' "$log_file" | tail -1)"
+    echo "实物击发装订：${bound:-未装订（仅虚拟开火事件）}"
+  fi
+  pwm_link_brief
   review_dir="$(cat "$REVIEW_FILE" 2>/dev/null || true)"
   if pid="$(pid_from_file "$BAG_PID_FILE" "bag record")"; then
     echo "复盘录制：录制中 pid $pid → $review_dir（$(du -sh "$review_dir" 2>/dev/null | cut -f1)）"
   else
     echo "复盘录制：未录制"
   fi
-  local log_file
-  log_file="$(latest_log)"
   if [ -n "$log_file" ]; then
     echo "---- 最近日志（$log_file）----"
     tail -5 "$log_file" || true

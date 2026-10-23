@@ -1,5 +1,6 @@
 """run_interceptor_stack.sh（2026-10-23）：start 建复盘记录（bag/参数/安装参数/运行信息）并随链起
-常驻发射通道；stop 收尾（录制器 SIGINT 写 metadata、拷入运行日志）。
+常驻发射通道；stop 收尾（录制器 SIGINT 写 metadata、拷入运行日志）。2026-10-23：start 默认装订
+实物击发 trigger_command（netgun_pwm_link.py fire），NETGUN_TRIGGER_COMMAND/命令行可覆盖。
 
 测试副本不 source ROS；ros2 为 Python 桩（像真 launch/录制器那样自行处理 SIGINT——
 nohup … & 启动的后台命令在非交互 bash 里 SIGINT 被忽略，bash 桩收不到）；pgrep 桩
@@ -17,6 +18,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from unittest import mock
@@ -26,6 +28,28 @@ SCRIPT = ROOT / 'deploy' / 'run_interceptor_stack.sh'
 spec = importlib.util.spec_from_file_location('netgun_fire_button_stack_test', ROOT / 'deploy' / 'netgun_fire_button.py')
 fb = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(fb)
+spec = importlib.util.spec_from_file_location('netgun_pwm_link_stack_test', ROOT / 'deploy' / 'netgun_pwm_link.py')
+pl = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(pl)
+
+
+class StubFcLink:
+    """PwmService.status() 所需的最小飞控链路桩（不需要 pymavlink）。"""
+
+    def __init__(self, params=None, alive=True, armed=False):
+        self.params = {'PWM_AUX_FUNC5': 301, 'PWM_AUX_DIS5': 0, 'PWM_AUX_FAIL5': 0, 'PWM_AUX_MIN5': 1000,
+                       'PWM_AUX_MAX5': 2000, 'PWM_AUX_TIM1': 50, 'COM_MOT_TEST_EN': 1} if params is None else params
+        self.alive, self.armed = alive, armed
+
+    def snapshot(self):
+        return {'alive': self.alive, 'fc': '2/1' if self.alive else None, 'armed': self.armed,
+                'heartbeat_age_s': 0.4 if self.alive else None}
+
+    def param(self, name):
+        return (self.params[name], time.monotonic()) if name in self.params else None
+
+    def servo_now(self):
+        return {}
 
 ROS2_STUB = r'''#!/usr/bin/env python3
 import os, signal, sys, time
@@ -34,6 +58,8 @@ out = None
 if args[:1] == ['launch']:
     with open(os.environ['ARGS_FILE'], 'w') as f:
         f.write('\n'.join(args) + '\n')
+    with open(os.environ['ARGS_FILE'] + '.env', 'w') as f:
+        f.write(os.environ.get('NETGUN_REVIEW_DIR', '') + '\n')
 elif args[:2] == ['bag', 'record']:
     with open(os.environ['ARGS_FILE'] + '.bag', 'w') as f:
         f.write('\n'.join(args) + '\n')
@@ -95,7 +121,7 @@ class StackReviewTests(unittest.TestCase):
         self.workspace = self.root / 'ws'
         (self.workspace / 'install').mkdir(parents=True)
         (self.workspace / 'deploy').mkdir()
-        for name in ('mounting_geometry.py', 'netgun_fire_button.py'):
+        for name in ('mounting_geometry.py', 'netgun_fire_button.py', 'netgun_pwm_link.py'):
             shutil.copy(ROOT / 'deploy' / name, self.workspace / 'deploy' / name)
         self.config = self.root / 'config'
         self.logs = self.root / 'logs'
@@ -105,8 +131,8 @@ class StackReviewTests(unittest.TestCase):
         self.env = dict(os.environ, INTERCEPTOR_WS=str(self.workspace), NETGUN_LOG_DIR=str(self.logs),
                         NETGUN_CONFIG_DIR=str(self.config), ARGS_FILE=str(self.args_file), ROS_DOMAIN_ID='199',
                         PATH=str(bin_dir) + os.pathsep + os.environ.get('PATH', ''))
-        self.env.pop('NETGUN_FIRE_SOCKET', None)
-        self.env.pop('NETGUN_REVIEW_MIN_FREE_MB', None)
+        for name in ('NETGUN_FIRE_SOCKET', 'NETGUN_REVIEW_MIN_FREE_MB', 'NETGUN_PWM_SOCKET', 'NETGUN_TRIGGER_COMMAND'):
+            self.env.pop(name, None)
         self.socket = self.logs / 'netgun_fire_d199.sock'
 
     def tearDown(self):
@@ -167,6 +193,17 @@ class StackReviewTests(unittest.TestCase):
             self.assertFalse(topics.match(topic), topic)
         log = (self.logs / log_name).read_text(encoding='utf-8')
         self.assertIn('NETGUN_REVIEW %s\n' % review, log)
+        # 实物击发：默认装订常驻击发服务客户端；拦截链进程带本次复盘目录
+        trigger = 'python3 %s fire' % (self.workspace / 'deploy' / 'netgun_pwm_link.py')
+        launch_args = self.args_file.read_text(encoding='utf-8').splitlines()
+        self.assertIn('trigger_command:=' + trigger, launch_args)
+        self.assertLess(launch_args.index('trigger_command:=' + trigger), launch_args.index('fire_mode:=auto_manual'),
+                        'explicit command-line arguments must come last')
+        self.assertIn('NETGUN_TRIGGER %s\n' % trigger, log)
+        self.assertIn('实物击发：已装订 netgun_pwm_link；不可用：击发服务未运行', result.stdout)
+        self.assertIn('实物击发：已装订 netgun_pwm_link；不可用', log)
+        self.assertEqual(pathlib.Path(str(self.args_file) + '.env').read_text().strip(), str(review))
+        self.assertIn('trigger_command:=' + trigger, info)
         self.assertEqual((self.logs / 'interceptor_review.current').read_text().strip(), str(review))
         # 常驻发射通道：本域套接字可 ping，未见火控节点时停在等待阶段
         self.assertTrue(self.wait_for(self.socket.exists))
@@ -181,9 +218,12 @@ class StackReviewTests(unittest.TestCase):
         for p in dumps[1:]:
             self.assertTrue(p.read_text().startswith('pursuer/' + p.stem + ':'), p.read_text())
         self.assertTrue(dumps[0].read_text().startswith('zed_perception_bridge:'))
-        self.assertFalse((review / 'params' / 'errors.log').exists())
+        # errors.log 在导出循环中先建后删（无错误才删），等循环收尾再判
+        self.assertTrue(self.wait_for(lambda: not (review / 'params' / 'errors.log').exists()))
         status = self.run_script('status')
         self.assertIn('常驻发射通道：运行中', status.stdout)
+        self.assertIn('实物击发装订：' + trigger, status.stdout)
+        self.assertIn('实物击发链路：不可用：击发服务未运行', status.stdout)
         self.assertIn('复盘录制：录制中', status.stdout)
         listing = self.run_script('review')
         self.assertIn(review.name, listing.stdout)
@@ -214,6 +254,25 @@ class StackReviewTests(unittest.TestCase):
         self.assertIn('bag 已收尾', listing.stdout)
         again = self.run_script('stop')
         self.assertEqual(again.stdout.strip(), '拦截链未运行')
+
+    def test_trigger_binding_can_be_cleared_or_overridden(self):
+        env = dict(self.env, NETGUN_TRIGGER_COMMAND='')
+        result = self.run_script('start', env=env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(any(a.startswith('trigger_command:=') for a in self.args_file.read_text().splitlines()))
+        log = next(self.logs.glob('interceptor_stack_*.log'))
+        self.assertIn('NETGUN_TRIGGER \n', log.read_text(encoding='utf-8'))
+        self.assertIn('实物击发：未装订（仅虚拟开火事件，不驱动网枪）', result.stdout)
+        self.assertIn('实物击发装订：未装订', self.run_script('status', env=env).stdout)
+        self.assertEqual(self.run_script('stop', env=env).returncode, 0)
+        time.sleep(1.1)  # 日志名按秒取时间戳
+        result = self.run_script('start', 'trigger_command:=bash /tmp/hook.sh')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        args = self.args_file.read_text().splitlines()
+        self.assertEqual(args[-1], 'trigger_command:=bash /tmp/hook.sh', 'the explicit argument is last and wins')
+        newest = max(self.logs.glob('interceptor_stack_*.log'), key=lambda path: path.name)
+        self.assertIn('NETGUN_TRIGGER bash /tmp/hook.sh\n', newest.read_text(encoding='utf-8'))
+        self.assertIn('实物击发：已装订自定义命令（bash /tmp/hook.sh）', result.stdout)
 
     def test_low_disk_keeps_logs_and_params_without_bag(self):
         env = dict(self.env, NETGUN_REVIEW_MIN_FREE_MB='999999999')
@@ -320,23 +379,64 @@ class StatusScriptTests(unittest.TestCase):
 
     def test_main_reports_review_and_hides_marker_lines(self):
         log = self.root / 'interceptor_stack_20261023_170000.log'
-        log.write_text('NETGUN_REVIEW /x/review_20261023_170000\n[INFO] [1792729673.6] [netgun_fire_server]: 常驻发射通道就绪\n',
-                       encoding='utf-8')
+        log.write_text('NETGUN_REVIEW /x/review_20261023_170000\nNETGUN_TRIGGER python3 /ws/deploy/netgun_pwm_link.py fire\n'
+                       '[INFO] [1792729673.6] [netgun_fire_server]: 常驻发射通道就绪\n', encoding='utf-8')
         out = io.StringIO()
         with mock.patch.object(self.status, 'stack_pid', return_value=(True, 42)), \
                 mock.patch.object(self.status, 'fire_link_status', return_value={'ok': True, 'link': {'ready': True}}), \
+                mock.patch.dict(os.environ, {'NETGUN_PWM_SOCKET': str(self.root / 'none.sock')}), \
                 contextlib.redirect_stdout(out):
             self.status.main()
         result = json.loads(out.getvalue())
         self.assertEqual(result['fire_link'], {'ok': True, 'link': {'ready': True}})
         self.assertIn('review', result)
         self.assertEqual(result['tail'], ['[INFO] [1792729673.6] [netgun_fire_server]: 常驻发射通道就绪'])
+        self.assertEqual(result['trigger']['bound'], 'python3 /ws/deploy/netgun_pwm_link.py fire')
+        self.assertFalse(result['trigger']['ok'])
+        self.assertIn('击发服务未运行', result['trigger']['error'])
         out = io.StringIO()
         with mock.patch.object(self.status, 'stack_pid', return_value=(False, None)), \
-                mock.patch.object(self.status, 'fire_link_status') as ping, contextlib.redirect_stdout(out):
+                mock.patch.object(self.status, 'fire_link_status') as ping, \
+                mock.patch.object(self.status, 'trigger_status') as trigger, contextlib.redirect_stdout(out):
             self.status.main()
         ping.assert_not_called()
+        trigger.assert_not_called()
         self.assertNotIn('fire_link', json.loads(out.getvalue()))
+        self.assertNotIn('trigger', json.loads(out.getvalue()))
+
+    @unittest.skipUnless(hasattr(socket, 'AF_UNIX'), 'Unix sockets required')
+    def test_trigger_status_reads_pwm_service(self):
+        self.assertEqual(self.status.trigger_status('x\n')['bound'], None, 'old logs have no NETGUN_TRIGGER line')
+        self.assertEqual(self.status.trigger_status('NETGUN_TRIGGER \n')['bound'], '')
+        path = str(self.root / 'pwm.sock')
+        service = pl.PwmService(StubFcLink(), -1.0, 1.0, 1.0, events_path=str(self.root / 'events.jsonl'),
+                                log=lambda *a, **k: None)
+        sock = service.bind(path)
+        thread = threading.Thread(target=service.serve_forever, args=(sock,), daemon=True)
+        thread.start()
+        try:
+            (self.root / 'interceptor_stack.pid').write_text('42\n')
+            service.last_fire = {'ok': True, 'mode': 'bench', 'time': time.time() - 3600, 'ack_ms': 20.0}
+            with mock.patch.dict(os.environ, {'NETGUN_PWM_SOCKET': path}):
+                info = self.status.trigger_status('NETGUN_TRIGGER python3 x fire\n')
+                self.assertTrue(info['ok'])
+                self.assertTrue(info['ready'])
+                self.assertEqual(info['link']['fc'], '2/1')
+                self.assertEqual(info['config']['ok'], True)
+                self.assertEqual(info['options']['fire_us'], 1000)
+                self.assertNotIn('last_fire', info, 'a fire from before this start is not shown')
+                service.last_fire = {'ok': False, 'refused': 'DISARMED', 'time': time.time() + 1, 'servo': {'0': {}}}
+                info = self.status.trigger_status('NETGUN_TRIGGER python3 x fire\n')
+                self.assertEqual(info['last_fire']['refused'], 'DISARMED')
+                self.assertNotIn('servo', info['last_fire'])
+                service.link.params['PWM_AUX_DIS5'] = 1000
+                info = self.status.trigger_status('NETGUN_TRIGGER python3 x fire\n')
+                self.assertFalse(info['ready'])
+                self.assertEqual(info['config']['problems'], ['PWM_AUX_DIS5=1000（应为 0）'])
+        finally:
+            service.stop.set()
+            thread.join(2)
+            sock.close()
 
 
 if __name__ == '__main__':
