@@ -10,7 +10,7 @@ NETGUN_SHOT_ID / NETGUN_SHOT_REASON）→ 本脚本 fire 客户端 → 本机 Un
 
 用法：
   python3 netgun_pwm_link.py serve [--fire-value -1] [--safe-value 1|none] [--hold-s 1.0]
-  python3 netgun_pwm_link.py fire [--bench] [--timeout 1.5]
+  python3 netgun_pwm_link.py fire [--bench] [--timeout 1.5]   （装订时用 python3 -I -S，启动更快）
   python3 netgun_pwm_link.py status [--brief]
 
 飞控（PX4 v1.15.4）配置：PWM_AUX_FUNC5=301（Peripheral via Actuator Set 1）、
@@ -119,7 +119,11 @@ def log_line(text, level="INFO"):
 
 def emit(payload, prefix=None):
     text = json.dumps(payload, ensure_ascii=False, sort_keys=True)
-    print(("%s %s" % (prefix, text)) if prefix else text, flush=True)
+    try:
+        print(("%s %s" % (prefix, text)) if prefix else text, flush=True)
+    except UnicodeEncodeError:  # 非 UTF-8 终端/日志：退回 ASCII 转义，结果行不能丢
+        text = json.dumps(payload, sort_keys=True)
+        print(("%s %s" % (prefix, text)) if prefix else text, flush=True)
 
 
 # ---------------------------------------------------------------- 客户端

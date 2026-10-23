@@ -156,7 +156,7 @@ class Orchestrator(Node):
         if self.args.trigger_pwm_bench:
             # 击发记录（含复位/舵机回读）写进本次产物目录
             os.environ["NETGUN_REVIEW_DIR"] = self.run_dir
-            stack_cmd.append("trigger_command:=python3 %s fire --bench" % PWM_LINK)
+            stack_cmd.append("trigger_command:=python3 -I -S %s fire --bench" % PWM_LINK)
         self._spawn("stack", stack_cmd)
         # 生产同款常驻发射通道：助手与通道共用本目录的套接字（不碰生产链的 d0 套接字）
         os.environ["NETGUN_FIRE_SOCKET"] = os.path.join(

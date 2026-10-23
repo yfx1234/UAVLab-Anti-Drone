@@ -34,7 +34,7 @@
 # （--parent-pid=launch，launch 退出即自停），面板「发射网枪」经本机套接字直达
 # 火控，按键到发布约 0.1 s；通道未就绪时按钮自动退回直连（约 2–3 s）。
 #
-# 实物击发（2026-10-23）：start 默认装订 trigger_command:=python3 deploy/netgun_pwm_link.py
+# 实物击发（2026-10-23）：start 默认装订 trigger_command:=python3 -I -S deploy/netgun_pwm_link.py
 # fire——火控开火时经常驻击发服务（用户级 systemd netgun-pwm-link.service，见
 # deploy/install_netgun_pwm_link.sh）→ MAVProxy → 飞控 FMU PWM OUT 5：已解锁才发
 # DO_SET_ACTUATOR 击发值，保持后回安全值；未解锁拒绝且不发任何指令。环境变量
@@ -364,7 +364,8 @@ cmd_start() {
   if [ "${NETGUN_TRIGGER_COMMAND+set}" = set ]; then
     trigger_command="$NETGUN_TRIGGER_COMMAND"
   elif [ -f "$PWM_TOOL" ]; then
-    trigger_command="python3 $PWM_TOOL fire"
+    # -I -S：客户端只用标准库，不加载 site/PYTHON* 环境，解释器启动快约 25 ms
+    trigger_command="python3 -I -S $PWM_TOOL fire"
   fi
   if [ -n "$trigger_command" ]; then
     trigger_args=("trigger_command:=$trigger_command")

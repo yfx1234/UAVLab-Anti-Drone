@@ -445,6 +445,17 @@ class ClientOnlyTests(unittest.TestCase):
         for value in (0, 50, 301, 1000, 2000, -1):
             self.assertEqual(pl.param_number(Msg(value)), value)
 
+    def test_result_line_survives_non_utf8_stdout(self):
+        # 火控节点 stdout 若不是 UTF-8，结果行退回 ASCII 转义，不能因中文原因崩掉
+        raw = io.BytesIO()
+        out = io.TextIOWrapper(raw, encoding='ascii')
+        with mock.patch.object(sys, 'stdout', out):
+            pl.emit({'ok': False, 'reason_text': '飞控未解锁'}, 'NETGUN_PWM_RESULT')
+        out.flush()
+        line = raw.getvalue().decode('ascii')
+        self.assertTrue(line.startswith('NETGUN_PWM_RESULT {') and line.endswith('\n'), line)
+        self.assertEqual(json.loads(line.split(' ', 1)[1])['reason_text'], '飞控未解锁')
+
 
 if __name__ == '__main__':
     unittest.main()

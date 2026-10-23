@@ -194,7 +194,7 @@ class StackReviewTests(unittest.TestCase):
         log = (self.logs / log_name).read_text(encoding='utf-8')
         self.assertIn('NETGUN_REVIEW %s\n' % review, log)
         # 实物击发：默认装订常驻击发服务客户端；拦截链进程带本次复盘目录
-        trigger = 'python3 %s fire' % (self.workspace / 'deploy' / 'netgun_pwm_link.py')
+        trigger = 'python3 -I -S %s fire' % (self.workspace / 'deploy' / 'netgun_pwm_link.py')
         launch_args = self.args_file.read_text(encoding='utf-8').splitlines()
         self.assertIn('trigger_command:=' + trigger, launch_args)
         self.assertLess(launch_args.index('trigger_command:=' + trigger), launch_args.index('fire_mode:=auto_manual'),
