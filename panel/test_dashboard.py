@@ -22,20 +22,20 @@ class DashboardTests(unittest.TestCase):
         panel=Panel()
         try:
             default=dashboard.geometry.DEFAULT_CONFIG
-            for params in ({},{'config':{}},{'config':dict(default,camera_center_m=[0,0.9,0])},{'config':default,'command':'rm -rf ~'}):
+            for params in ({},{'config':{}},{'config':dict(default,camera_top_m=[0,0.9,0])},{'config':dict(default,gun_axis_tilt_deg=[0,0])},{'config':default,'command':'rm -rf ~'}):
                 with self.assertRaises(ValueError):panel.submit({'action':'interceptor_geometry_save','params':params})
             calls=[]
             class Board:
                 def exec_json(self,command,payload,timeout=30):
                     calls.append((command,payload));return {'ok':True,'source':'file','config':payload['config']}
             panel.board=Board();panel.connected=True
-            jid=panel.submit({'action':'interceptor_geometry_save','request_id':'geometry1','params':{'config':dict(default,gun_axis_tilt_deg=[1.234,0])}})
+            jid=panel.submit({'action':'interceptor_geometry_save','request_id':'geometry1','params':{'config':dict(default,flight_controller_m=[0,0,0.18004])}})
             for _ in range(100):
                 job=panel.jobs.get(jid)
                 if job['state'] in ('complete','error'):break
                 time.sleep(0.02)
             self.assertEqual(job['state'],'complete',job.get('error'))
-            self.assertEqual(calls,[(dashboard.INTERCEPTOR_GEOMETRY_SAVE_CMD,{'config':dict(default,gun_axis_tilt_deg=[1.23,0.0])})])
+            self.assertEqual(calls,[(dashboard.INTERCEPTOR_GEOMETRY_SAVE_CMD,{'config':dict(default,flight_controller_m=[0.0,0.0,0.18])})])
             self.assertEqual(dashboard.INTERCEPTOR_GEOMETRY_SAVE_CMD,'python3 /home/uavlab/interceptor_ws/deploy/mounting_geometry.py save')
         finally:panel.close()
     def test_panel_deployed_without_repository_tools_leaves_geometry_validation_to_board(self):

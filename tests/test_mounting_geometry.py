@@ -1,4 +1,4 @@
-"""安装参数（以网枪中心为基准）：换算、校验、存储、启动脚本与面板换算一致性。"""
+"""安装参数（以网枪顶面中心为基准）：换算、校验、存储、启动脚本与面板换算一致性。"""
 import importlib.util
 import io
 import json
@@ -60,15 +60,19 @@ class TemporaryConfig:
 
 class DerivationTests(unittest.TestCase):
     def test_user_measurements_are_the_defaults(self):
+        # 2026-10-23：相机顶面与网枪顶面同高、轴线右侧 6 cm；RTK 在相机底面下 8.5 cm
+        # （相机厚 3.7 cm）；飞控在网枪顶面下 18 cm；光心在相机顶面下 2 cm
         derived = geometry.derive(geometry.validate_editable(geometry.DEFAULT_CONFIG))
-        self.assertEqual(geometry.DEFAULT_CONFIG['camera_center_m'], [0.0, 0.06, 0.0])
-        self.assertEqual(geometry.DEFAULT_CONFIG['rtk_antenna_m'], [0.0, 0.06, 0.085])
-        self.assertEqual(derived['left_eye_m'], [-0.025, 0.06, 0.0])
-        self.assertEqual(derived['camera_translation_body_m'], [-0.025, 0.06, 0.0])
+        self.assertEqual(geometry.DEFAULT_CONFIG['camera_top_m'], [0.0, 0.06, 0.0])
+        self.assertEqual(geometry.DEFAULT_CONFIG['rtk_antenna_m'], [0.0, 0.06, 0.122])
+        self.assertEqual(geometry.DEFAULT_CONFIG['flight_controller_m'], [0.0, 0.0, 0.18])
+        self.assertEqual(geometry.OPTICAL_CENTER_BELOW_TOP_M, 0.02)
+        self.assertEqual(derived['left_eye_m'], [-0.025, 0.06, 0.02])
+        self.assertEqual(derived['camera_translation_body_m'], [-0.025, 0.06, -0.16])
         self.assertEqual(derived['camera_q_body_to_optical_wxyz'], [0.0, 1.0, 0.0, 0.0])
-        self.assertEqual(derived['muzzle_offset_body_m'], [0.0, 0.0, 0.0])
-        self.assertEqual((derived['boresight_pitch_rad'], derived['boresight_yaw_rad']), (0.0, 0.0))
-        self.assertEqual(derived['px4_gps_pos_m'], {'EKF2_GPS_POS_X': 0.0, 'EKF2_GPS_POS_Y': 0.06, 'EKF2_GPS_POS_Z': 0.085})
+        self.assertEqual(derived['muzzle_offset_body_m'], [0.0, 0.0, -0.18])
+        self.assertEqual(derived['px4_gps_pos_m'], {'EKF2_GPS_POS_X': 0.0, 'EKF2_GPS_POS_Y': 0.06, 'EKF2_GPS_POS_Z': -0.058})
+        self.assertNotIn('boresight_pitch_rad', derived, 'gun axis is parallel to the optical axis; boresight stays 0')
 
     def test_right_eye_quaternions_match_upward_optical_axes(self):
         for name, eye in geometry.RIGHT_EYE.items():
@@ -85,39 +89,33 @@ class DerivationTests(unittest.TestCase):
                     for j in range(3):
                         self.assertAlmostEqual(matrix[i][j], matrix[j][i], places=12)
 
-    def test_left_eye_is_half_baseline_against_right_eye(self):
+    def test_left_eye_is_below_top_face_and_half_baseline_against_right_eye(self):
         for name, eye in geometry.RIGHT_EYE.items():
             with self.subTest(name=name):
-                derived = geometry.derive(geometry.validate_editable(config(camera_right_eye=name, camera_center_m=[0.01, 0.06, -0.02])))
-                expected = [round(c - 0.025 * a, 4) for c, a in zip([0.01, 0.06, -0.02], eye['axis'])]
+                derived = geometry.derive(geometry.validate_editable(config(camera_right_eye=name, camera_top_m=[0.01, 0.06, -0.02])))
+                expected = [round(c - 0.025 * a, 4) for c, a in zip([0.01, 0.06, 0.0], eye['axis'])]
                 self.assertEqual(derived['left_eye_m'], expected)
 
     def test_flight_controller_is_internal_origin(self):
         derived = geometry.derive(geometry.validate_editable(config(flight_controller_m=[0.02, -0.01, 0.03])))
-        self.assertEqual(derived['camera_translation_body_m'], [-0.045, 0.07, -0.03])
+        self.assertEqual(derived['camera_translation_body_m'], [-0.045, 0.07, -0.01])
         self.assertEqual(derived['muzzle_offset_body_m'], [-0.02, 0.01, -0.03])
-        self.assertEqual(derived['px4_gps_pos_m'], {'EKF2_GPS_POS_X': -0.02, 'EKF2_GPS_POS_Y': 0.07, 'EKF2_GPS_POS_Z': 0.055})
+        self.assertEqual(derived['px4_gps_pos_m'], {'EKF2_GPS_POS_X': -0.02, 'EKF2_GPS_POS_Y': 0.07, 'EKF2_GPS_POS_Z': 0.092})
 
-    def test_tilt_reproduces_strike_gun_axis_formula(self):
-        for tilt in ([0.0, 0.0], [2.0, 0.0], [0.0, -3.0], [1.5, 2.5], [-10.0, 10.0]):
-            with self.subTest(tilt=tilt):
-                axis, pitch, yaw = geometry.gun_axis_from_tilt(tilt)
-                strike = [-math.sin(pitch) * math.cos(yaw), -math.sin(pitch) * math.sin(yaw), -math.cos(pitch)]
-                tf, tr = math.tan(math.radians(tilt[0])), math.tan(math.radians(tilt[1]))
-                norm = math.sqrt(1 + tf * tf + tr * tr)
-                for got, from_strike, want in zip(axis, strike, [tf / norm, tr / norm, -1 / norm]):
-                    self.assertAlmostEqual(got, want, places=12)
-                    self.assertAlmostEqual(from_strike, want, places=12)
-                self.assertAlmostEqual(math.degrees(math.atan2(axis[0], -axis[2])), tilt[0], places=9)
-                self.assertAlmostEqual(math.degrees(math.atan2(axis[1], -axis[2])), tilt[1], places=9)
-        self.assertEqual(geometry.gun_axis_from_tilt([0.0, 0.0])[1:], (0.0, 0.0))
+    def test_aiming_lever_arm_does_not_depend_on_flight_controller(self):
+        # 火控瞄准用 目标 − 枪口 = R·p + (左目 − 飞控) − (枪口 − 飞控)：飞控位置相消
+        for fc in ([0.0, 0.0, 0.18], [0.03, -0.02, 0.25], [-0.1, 0.1, 0.0]):
+            with self.subTest(fc=fc):
+                derived = geometry.derive(geometry.validate_editable(config(flight_controller_m=fc)))
+                lever = [round(a - b, 4) for a, b in zip(derived['camera_translation_body_m'], derived['muzzle_offset_body_m'])]
+                self.assertEqual(lever, [-0.025, 0.06, 0.02])
 
     def test_launch_arguments_are_float_text_in_fixed_order(self):
         pairs = geometry.launch_arguments(geometry.derive(geometry.validate_editable(geometry.DEFAULT_CONFIG)))
         self.assertEqual([name for name, _ in pairs], [
             'camera_translation_body_x_m', 'camera_translation_body_y_m', 'camera_translation_body_z_m',
             'camera_q_body_to_optical_w', 'camera_q_body_to_optical_x', 'camera_q_body_to_optical_y', 'camera_q_body_to_optical_z',
-            'muzzle_offset_body_x_m', 'muzzle_offset_body_y_m', 'muzzle_offset_body_z_m', 'boresight_pitch_rad', 'boresight_yaw_rad'])
+            'muzzle_offset_body_x_m', 'muzzle_offset_body_y_m', 'muzzle_offset_body_z_m'])
         for _, text in pairs:
             self.assertIn('.', text)
             self.assertTrue(math.isfinite(float(text)))
@@ -128,18 +126,18 @@ class DerivationTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertIn(name, declared)
                 self.assertEqual(float(declared[name]), float(text))
+        self.assertEqual((float(declared['boresight_pitch_rad']), float(declared['boresight_yaw_rad'])), (0.0, 0.0))
 
 
 class ValidationTests(unittest.TestCase):
     def test_rejects_malformed_or_out_of_range_values(self):
         bad = [
-            config(camera_center_m=[0.0, 0.06]),
-            config(camera_center_m=[0.0, True, 0.0]),
+            config(camera_top_m=[0.0, 0.06]),
+            config(camera_top_m=[0.0, True, 0.0]),
             config(rtk_antenna_m=[0.0, float('nan'), 0.0]),
             config(rtk_antenna_m=[0.0, 0.0, 0.51]),
             config(flight_controller_m='0,0,0'),
-            config(gun_axis_tilt_deg=[10.5, 0.0]),
-            config(gun_axis_tilt_deg=[0.0]),
+            config(gun_axis_tilt_deg=[0.0, 0.0]),
             config(camera_right_eye='up'),
             config(extra=1),
         ]
@@ -149,10 +147,10 @@ class ValidationTests(unittest.TestCase):
                 geometry.validate_editable(raw)
 
     def test_normalises_numbers(self):
-        value = geometry.validate_editable(config(camera_center_m=[0, 0.060000001, -0.0], gun_axis_tilt_deg=[1.234, -0.0]))
-        self.assertEqual(value['camera_center_m'], [0.0, 0.06, 0.0])
-        self.assertEqual(value['gun_axis_tilt_deg'], [1.23, 0.0])
-        self.assertTrue(all(isinstance(v, float) for v in value['camera_center_m']))
+        value = geometry.validate_editable(config(camera_top_m=[0, 0.060000001, -0.0], flight_controller_m=[0, 0, 0.18004]))
+        self.assertEqual(value['camera_top_m'], [0.0, 0.06, 0.0])
+        self.assertEqual(value['flight_controller_m'], [0.0, 0.0, 0.18])
+        self.assertTrue(all(isinstance(v, float) for v in value['camera_top_m']))
 
 
 class StorageTests(unittest.TestCase):
@@ -171,16 +169,16 @@ class StorageTests(unittest.TestCase):
         with TemporaryConfig() as directory:
             info = geometry.describe()
             self.assertEqual((info['source'], info['saved_at']), ('default', None))
-            first = geometry.save(config(gun_axis_tilt_deg=[1.0, 0.0]))
+            first = geometry.save(config(flight_controller_m=[0.0, 0.0, 0.17]))
             self.assertEqual(first['source'], 'file')
             self.assertTrue(first['saved_at'])
             stored = json.loads((directory / 'mounting_geometry.json').read_text(encoding='utf-8'))
-            self.assertEqual((stored['reference'], stored['frame'], stored['schema_version']), ('netgun_center', 'body_frd', 1))
-            geometry.save(config(gun_axis_tilt_deg=[2.0, 0.0]))
+            self.assertEqual((stored['reference'], stored['frame'], stored['schema_version']), ('netgun_top_center', 'body_frd', 2))
+            geometry.save(config(flight_controller_m=[0.0, 0.0, 0.19]))
             history = sorted((directory / 'history').iterdir())
             self.assertEqual(len(history), 1)
-            self.assertEqual(json.loads(history[0].read_text(encoding='utf-8'))['gun_axis_tilt_deg'], [1.0, 0.0])
-            self.assertEqual(geometry.describe()['config']['gun_axis_tilt_deg'], [2.0, 0.0])
+            self.assertEqual(json.loads(history[0].read_text(encoding='utf-8'))['flight_controller_m'], [0.0, 0.0, 0.17])
+            self.assertEqual(geometry.describe()['config']['flight_controller_m'], [0.0, 0.0, 0.19])
             self.assertEqual(sorted(p.name for p in directory.iterdir()), ['history', 'mounting_geometry.json'])
 
     def test_cli_save_reads_stdin_and_rejects_invalid_request(self):
@@ -199,33 +197,37 @@ class StorageTests(unittest.TestCase):
             self.assertEqual(code, 0)
             self.assertIn('camera_q_body_to_optical_x:=0.7071067811865476', out.splitlines())
 
-    def test_invalid_file_blocks_launch_arguments(self):
-        with TemporaryConfig() as directory:
-            (directory / 'mounting_geometry.json').write_text('{"schema_version": 1}', encoding='utf-8')
-            err = io.StringIO()
-            old = sys.stderr
-            try:
-                sys.stderr = err
-                code, out = self.run_main('launch-args')
-            finally:
-                sys.stderr = old
-            self.assertEqual((code, out), (2, ''))
-            self.assertIn('安装参数无效', err.getvalue())
-            code, out = self.run_main('show')
-            self.assertEqual(code, 1)
-            self.assertIn('mounting_geometry.json', json.loads(out)['error'])
+    def test_invalid_or_v1_file_blocks_launch_arguments(self):
+        v1 = {'schema_version': 1, 'reference': 'netgun_center', 'frame': 'body_frd', 'camera_center_m': [0, 0.06, 0],
+              'camera_right_eye': 'forward', 'rtk_antenna_m': [0, 0.06, 0.085], 'flight_controller_m': [0, 0, 0], 'gun_axis_tilt_deg': [0, 0]}
+        for text, reason in (('{"schema_version": 2}', '基准'), (json.dumps(v1), '旧版格式')):
+            with self.subTest(reason=reason), TemporaryConfig() as directory:
+                (directory / 'mounting_geometry.json').write_text(text, encoding='utf-8')
+                err = io.StringIO()
+                old = sys.stderr
+                try:
+                    sys.stderr = err
+                    code, out = self.run_main('launch-args')
+                finally:
+                    sys.stderr = old
+                self.assertEqual((code, out), (2, ''))
+                self.assertIn('安装参数无效', err.getvalue())
+                self.assertIn(reason, err.getvalue())
+                code, out = self.run_main('show')
+                self.assertEqual(code, 1)
+                self.assertIn('mounting_geometry.json', json.loads(out)['error'])
 
     def test_summary_line_is_parsed_by_status_script(self):
         status_spec = importlib.util.spec_from_file_location('interceptor_status', ROOT / 'deploy' / 'interceptor_status.py')
         status = importlib.util.module_from_spec(status_spec)
         status_spec.loader.exec_module(status)
         with TemporaryConfig():
-            geometry.save(config(gun_axis_tilt_deg=[0.5, -0.5]))
+            geometry.save(config(rtk_antenna_m=[0.0, 0.06, 0.125]))
             code, line = self.run_main('summary')
             self.assertEqual(code, 0)
             self.assertTrue(line.startswith('NETGUN_GEOMETRY {'))
             info = status.geometry_status('header\n' + line + 'later line\n')
-            self.assertEqual(info['saved']['config']['gun_axis_tilt_deg'], [0.5, -0.5])
+            self.assertEqual(info['saved']['config']['rtk_antenna_m'], [0.0, 0.06, 0.125])
             self.assertEqual(info['applied']['config'], info['saved']['config'])
             self.assertNotIn('applied', status.geometry_status('no geometry here\n'))
 
@@ -273,7 +275,7 @@ class StartScriptTests(unittest.TestCase):
     def test_saved_geometry_precedes_command_line_overrides(self):
         self.config.mkdir()
         env = dict(os.environ, NETGUN_CONFIG_DIR=str(self.config))
-        request = json.dumps({'config': config(gun_axis_tilt_deg=[2.0, 0.0])})
+        request = json.dumps({'config': config(flight_controller_m=[0.0, 0.0, 0.2])})
         subprocess.run([sys.executable, str(TOOL), 'save'], input=request, env=env, capture_output=True, text=True, check=True)
         result = self.start('camera_translation_body_x_m:=0.5')
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -287,8 +289,9 @@ class StartScriptTests(unittest.TestCase):
         self.assertEqual(args[2], 'netgun_real.launch.py')
         self.assertEqual(args[3], 'camera_translation_body_x_m:=-0.025')
         self.assertEqual(args[-1], 'camera_translation_body_x_m:=0.5', 'explicit arguments must come last and win')
-        pitch = [a for a in args if a.startswith('boresight_pitch_rad:=')]
-        self.assertAlmostEqual(float(pitch[0].split(':=')[1]), -math.radians(2.0), places=12)
+        self.assertIn('camera_translation_body_z_m:=-0.18', args)
+        self.assertIn('muzzle_offset_body_z_m:=-0.2', args)
+        self.assertFalse([a for a in args if a.startswith('boresight_')], 'boresight stays at the launch default 0')
         log = next(self.logs.glob('interceptor_stack_*.log')).read_text(encoding='utf-8')
         self.assertTrue(log.startswith('NETGUN_GEOMETRY {'))
 
@@ -305,47 +308,29 @@ class StartScriptTests(unittest.TestCase):
 
 @unittest.skipUnless(shutil.which('node'), 'Node required')
 class PanelDerivationTests(unittest.TestCase):
-    def test_browser_derivation_and_readout_match_board_tool(self):
+    def test_browser_rtk_offset_and_defaults_match_board_tool(self):
         block = HTML.split('// Mounting geometry controls', 1)[1].split('// End mounting geometry controls', 1)[0]
         cases = [
             geometry.validate_editable(geometry.DEFAULT_CONFIG),
-            geometry.validate_editable(config(camera_right_eye='backward', camera_center_m=[0.012, 0.0575, -0.031], flight_controller_m=[0.01, -0.02, 0.04], gun_axis_tilt_deg=[1.25, -2.5])),
-            geometry.validate_editable(config(camera_right_eye='right', rtk_antenna_m=[-0.1, 0.06, 0.12], gun_axis_tilt_deg=[-9.99, 0.01])),
-            geometry.validate_editable(config(camera_right_eye='left', camera_center_m=[0.5, -0.5, 0.5], flight_controller_m=[-0.5, 0.5, -0.5])),
+            geometry.validate_editable(config(camera_right_eye='backward', camera_top_m=[0.012, 0.0575, -0.031], flight_controller_m=[0.01, -0.02, 0.04])),
+            geometry.validate_editable(config(camera_right_eye='right', rtk_antenna_m=[-0.1, 0.06, 0.12])),
+            geometry.validate_editable(config(camera_right_eye='left', camera_top_m=[0.5, -0.5, 0.5], flight_controller_m=[-0.5, 0.5, -0.5])),
         ]
-        points = [[0.3, -0.2, 6.0], [-1.0, 0.4, 9.5]]
         harness = """
 const elements={};const byId=id=>elements[id]||(elements[id]={value:'',textContent:'',disabled:false,open:false,classList:{toggle(){}}});
-const document={activeElement:null};let state={},busy=false,controlBusy=false,restarted=false,meta=null;
-const number=(v,d=2)=>typeof v==='number'&&Number.isFinite(v)?v.toFixed(d):'—',message=()=>{},setStatus=()=>{},action=async()=>null,currentTargets=()=>[];
+const document={activeElement:null};let state={},busy=false,controlBusy=false,restarted=false;
+const message=()=>{},setStatus=()=>{},action=async()=>null;
 """ + block + """
-const cases=%s,points=%s;
-console.log(JSON.stringify(cases.map(config=>({derived:mountDerive(config),readout:points.map(p=>mountTargetReadout([{track_id:1,confidence:.9,mode:'depth',position_camera:p}],config))}))));
-""" % (json.dumps(cases), json.dumps(points))
+console.log(JSON.stringify({defaults:mountDefaults,labels:mountRightEyes,gps:%s.map(mountGpsOffset)}));
+""" % json.dumps(cases)
         result = subprocess.run(['node', '-e', harness], capture_output=True, text=True, encoding='utf-8', timeout=15)
         self.assertEqual(result.returncode, 0, result.stderr)
-        for case, browser in zip(cases, json.loads(result.stdout)):
-            board = geometry.derive(case)
-            js = browser['derived']
-            for key in ('left_eye_m', 'camera_translation_body_m', 'muzzle_offset_body_m'):
-                self.assertEqual(js[key], board[key], key)
-            self.assertEqual(js['px4_gps_pos_m'], [board['px4_gps_pos_m'][k] for k in ('EKF2_GPS_POS_X', 'EKF2_GPS_POS_Y', 'EKF2_GPS_POS_Z')])
-            for key in ('boresight_pitch_rad', 'boresight_yaw_rad'):
-                self.assertAlmostEqual(js[key], board[key], places=12)
-            for a, b in zip(js['gun_axis_body'], board['gun_axis_body']):
-                self.assertAlmostEqual(a, b, places=12)
-            matrix = quaternion_matrix(board['camera_q_body_to_optical_wxyz'])
-            for point, readout in zip(points, browser['readout']):
-                # 估计器口径：p_body = R(q)ᵀ·p_optical + 左目（此处以网枪中心为原点）
-                body = [sum(matrix[r][c] * point[r] for r in range(3)) + board['left_eye_m'][c] for c in range(3)]
-                for a, b in zip(readout['position'], body):
-                    self.assertAlmostEqual(a, b, places=12)
-                if body[2] < 0:
-                    self.assertAlmostEqual(readout['forward'], math.degrees(math.atan2(body[0], -body[2])), places=9)
-                    self.assertAlmostEqual(readout['right'], math.degrees(math.atan2(body[1], -body[2])), places=9)
-                    axis = board['gun_axis_body']
-                    cosine = sum(a * b for a, b in zip(axis, body)) / math.sqrt(sum(v * v for v in body))
-                    self.assertAlmostEqual(readout['error'], math.degrees(math.acos(max(-1.0, min(1.0, cosine)))), places=6)
+        browser = json.loads(result.stdout)
+        self.assertEqual(browser['defaults'], geometry.DEFAULT_CONFIG)
+        self.assertEqual(browser['labels'], {name: eye['label'] for name, eye in geometry.RIGHT_EYE.items()})
+        for case, js in zip(cases, browser['gps']):
+            board = geometry.derive(case)['px4_gps_pos_m']
+            self.assertEqual(js, [board[k] for k in ('EKF2_GPS_POS_X', 'EKF2_GPS_POS_Y', 'EKF2_GPS_POS_Z')])
 
 
 if __name__ == '__main__':

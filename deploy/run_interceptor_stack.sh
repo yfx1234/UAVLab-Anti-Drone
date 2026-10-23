@@ -23,9 +23,9 @@
 #          -> ~/interceptor_ws/install（拦截链，最后覆盖生效）
 # nohup+setsid 保证图传/SSH 断连不杀进程；日志写 ~/netgun_logs/。
 #
-# 安装参数（2026-10-22）：面板「安装参数」保存在 ~/netgun_config/
-# mounting_geometry.json（以网枪中心为基准）。start 时经
-# deploy/mounting_geometry.py launch-args 换算成相机外参/枪口偏置/枪轴偏角
+# 安装参数（2026-10-23 修订）：面板「安装参数」保存在 ~/netgun_config/
+# mounting_geometry.json（以网枪顶面中心为基准）。start 时经
+# deploy/mounting_geometry.py launch-args 换算成相机外参与枪口偏置
 # launch 参数，排在命令行参数之前（命令行显式参数仍可覆盖）；文件无效时拒绝
 # 启动，不静默退回默认值。实际使用的参数以 NETGUN_GEOMETRY 行写入运行日志。
 

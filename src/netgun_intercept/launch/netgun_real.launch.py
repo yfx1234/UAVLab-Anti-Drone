@@ -15,16 +15,17 @@
     开火事件 /tracking/virtual_shot_event；实物击发经 trigger_command
     （PWM 脉冲脚本，异步执行，环境变量 NETGUN_SHOT_ID/NETGUN_SHOT_REASON）
   - 飞控 PX4 v1.15.x：状态话题 /fmu/out/vehicle_status（v1.16+ 才有 _v1）
-  - 相机外参（I-3 安装约定，2026-10-22 按用户口径更新）：ZED X Mini 朝天、基线
-    沿机头、右目在前，相机中心在网枪轴线右侧 6 cm（原 5 cm）、前后对称 →
-    左目（ZED 坐标原点）在 body FRD (-0.025, +0.06, z)；z（相机光心相对飞控
-    的高度差，向上为负）待实测，默认 0
-  - 安装参数（2026-10-22）：相机/RTK/飞控相对网枪中心的位置、右目朝向与
-    枪轴偏角在面板「拦截任务 → 安装参数」修改，存板上
+  - 相机外参（I-3 安装约定，2026-10-23 按用户口径更新）：ZED X Mini 朝天、基线
+    沿机头、右目在前，相机中心在网枪轴线右侧 6 cm、相机顶面与网枪顶面同高，
+    飞控在网枪顶面下方 18 cm → 左目光心（ZED 坐标原点，顶面下 2 cm）相对飞控
+    在 body FRD (-0.025, +0.06, -0.16)，枪口相对飞控 (0, 0, -0.18)；
+    光轴与枪轴平行、无夹角，boresight 固定 0（不再做枪轴核对）
+  - 安装参数（2026-10-23 修订）：相机顶面/RTK/飞控相对网枪顶面中心的位置与
+    右目朝向在面板「拦截任务 → 安装参数」修改，存板上
     ~/netgun_config/mounting_geometry.json；run_interceptor_stack.sh start
     经 deploy/mounting_geometry.py launch-args 换算成下列 camera_* /
-    muzzle_* / boresight_* 参数传入（重启拦截链后生效）。下面的默认值 =
-    未保存时的默认安装；RTK 天线偏置只给飞控参数建议值，不经本链
+    muzzle_* 参数传入（重启拦截链后生效）。下面的默认值 = 未保存时的默认
+    安装；RTK 天线偏置只给飞控参数建议值，不经本链
 
 调试：四节点自动发布 /debug/{guidance,strike,estimator,bridge}_state
 （2Hz/1Hz，key=value），用法见 docs/实物调试指南.md 与
@@ -82,20 +83,21 @@ def generate_launch_description():
             # 实物击发钩子（PWM 脉冲脚本），空=仅虚拟事件（接网枪时装订）
             DeclareLaunchArgument("trigger_command", default_value=""),
             DeclareLaunchArgument("status_topic", default_value=STATUS_TOPIC_DEFAULT),
-            # 相机（ZED 左目）相对机体原点（飞控）的平移，body FRD 米；
+            # 相机（ZED 左目光心）相对机体原点（飞控）的平移，body FRD 米；
             # 2026-10-22 起由面板安装参数生成（mounting_geometry.py）
             DeclareLaunchArgument("camera_translation_body_x_m", default_value="-0.025"),
             DeclareLaunchArgument("camera_translation_body_y_m", default_value="0.06"),
-            DeclareLaunchArgument("camera_translation_body_z_m", default_value="0.0"),
+            DeclareLaunchArgument("camera_translation_body_z_m", default_value="-0.16"),
             # 安装四元数 body→optical（相机朝天；默认 = 右目朝机头）
             DeclareLaunchArgument("camera_q_body_to_optical_w", default_value="0.0"),
             DeclareLaunchArgument("camera_q_body_to_optical_x", default_value="1.0"),
             DeclareLaunchArgument("camera_q_body_to_optical_y", default_value="0.0"),
             DeclareLaunchArgument("camera_q_body_to_optical_z", default_value="0.0"),
-            # 网枪中心（枪口）相对机体原点（飞控）的杠杆臂与枪轴偏角（rad）
+            # 网枪顶面中心（枪口）相对机体原点（飞控）的杠杆臂；枪轴与光轴
+            # 平行（2026-10-23 用户确认），boresight 固定 0，仅留作工程覆盖
             DeclareLaunchArgument("muzzle_offset_body_x_m", default_value="0.0"),
             DeclareLaunchArgument("muzzle_offset_body_y_m", default_value="0.0"),
-            DeclareLaunchArgument("muzzle_offset_body_z_m", default_value="0.0"),
+            DeclareLaunchArgument("muzzle_offset_body_z_m", default_value="-0.18"),
             DeclareLaunchArgument("boresight_pitch_rad", default_value="0.0"),
             DeclareLaunchArgument("boresight_yaw_rad", default_value="0.0"),
             # ---- 感知桥（PerceptionFrame v2 JSON -> DepthObservation V1） ----
@@ -280,7 +282,7 @@ def generate_launch_description():
                         # H-5：枪口相对机体原点的杠杆臂（body FRD, m）与枪管-
                         # 光轴安装角（rad）。I-3：网枪装在拦截器中轴线上 → x/y=0；
                         # 估计已扣相机杠杆臂（相对机体原点），这里不再含相机偏置。
-                        # 2026-10-22：由面板安装参数（飞控位置、枪轴偏角）生成
+                        # 2026-10-23：枪口偏置由面板安装参数（飞控位置）生成
                         "muzzle_offset_body_x_m": _float_arg("muzzle_offset_body_x_m"),
                         "muzzle_offset_body_y_m": _float_arg("muzzle_offset_body_y_m"),
                         "muzzle_offset_body_z_m": _float_arg("muzzle_offset_body_z_m"),

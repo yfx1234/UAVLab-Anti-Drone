@@ -7,7 +7,7 @@
 offboard 从火控诊断 arm=/ob= 读取。
 
 安装参数（2026-10-22）：geometry.saved = 板上已保存的安装参数（面板「安装参数」，
-以网枪中心为基准，下次启动生效）；geometry.applied = 最新日志启动时实际使用的参数
+以网枪顶面中心为基准，下次启动生效）；geometry.applied = 最新日志启动时实际使用的参数
 （run_interceptor_stack.sh 写入的 NETGUN_GEOMETRY 行；旧日志/手动启动时缺省）。
 
 任何内部错误都降级为 {"error": ...}，绝不向日志目录写东西。
