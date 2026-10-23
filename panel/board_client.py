@@ -53,6 +53,29 @@ class BoardClient:
             return text
         finally:
             stdin.close();stdout.close();stderr.close()
+    def exec_json(self,command,payload,timeout=30):
+        """Run a constant board command with a JSON request on stdin, never in argv.
+
+        Used for small structured writes (mounting geometry); the board script
+        validates again and answers with one JSON line ({"ok": false} raises).
+        """
+        data=json.dumps(payload,ensure_ascii=False,allow_nan=False).encode()
+        if len(data)>65536:raise ValueError('请求内容过大')
+        with self.connection() as client:
+            stdin,stdout,stderr=client.exec_command(command,timeout=timeout)
+            try:
+                stdin.write(data);stdin.flush();stdin.channel.shutdown_write()
+                raw=stdout.read();error=stderr.read().decode(errors='replace')
+                if len(raw)>512*1024:raise ValueError('板上命令输出过大')
+                lines=[line for line in raw.decode(errors='replace').splitlines() if line.strip()]
+                if not lines:raise ValueError('板上命令无输出'+('：'+error[-400:] if error.strip() else ''))
+                try:result=json.loads(lines[-1])
+                except ValueError:raise ValueError('板上响应无效：'+(error.strip() or lines[-1])[-400:])
+                if not isinstance(result,dict):raise ValueError('板上响应无效')
+                if result.get('ok') is False:raise ValueError(result.get('error','板上操作失败'))
+                return result
+            finally:
+                stdin.close();stdout.close();stderr.close()
     def stream_json(self,command,progress,timeout=3600):
         """Read JSON annotation progress while the remote process is running."""
         with self.connection() as client:

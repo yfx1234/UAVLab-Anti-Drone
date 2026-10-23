@@ -22,6 +22,12 @@
 #          -> install_perception（感知部署，仅运行参考，无构建耦合）
 #          -> ~/interceptor_ws/install（拦截链，最后覆盖生效）
 # nohup+setsid 保证图传/SSH 断连不杀进程；日志写 ~/netgun_logs/。
+#
+# 安装参数（2026-10-22）：面板「安装参数」保存在 ~/netgun_config/
+# mounting_geometry.json（以网枪中心为基准）。start 时经
+# deploy/mounting_geometry.py launch-args 换算成相机外参/枪口偏置/枪轴偏角
+# launch 参数，排在命令行参数之前（命令行显式参数仍可覆盖）；文件无效时拒绝
+# 启动，不静默退回默认值。实际使用的参数以 NETGUN_GEOMETRY 行写入运行日志。
 
 set -euo pipefail
 
@@ -31,6 +37,7 @@ PID_FILE="$LOG_DIR/interceptor_stack.pid"
 CHECK_FILE="$LOG_DIR/last_start_check.txt"
 LAUNCH_PKG="netgun_intercept"
 LAUNCH_FILE="netgun_real.launch.py"
+GEOMETRY_TOOL="$INTERCEPTOR_WS/deploy/mounting_geometry.py"
 
 mkdir -p "$LOG_DIR"
 
@@ -128,14 +135,33 @@ cmd_start() {
     echo "错误：$INTERCEPTOR_WS/install 不存在，先在板上构建拦截链" >&2
     exit 1
   fi
+  # 安装参数先于环境与日志检查：无效时不启动、不留空日志
+  local -a geometry_args=()
+  local geometry_out="" geometry_line="" geometry_summary="" geometry_brief=""
+  if [ -f "$GEOMETRY_TOOL" ]; then
+    if ! geometry_out="$(python3 "$GEOMETRY_TOOL" launch-args 2>&1)"; then
+      echo "错误：${geometry_out}；拦截链未启动（在面板「安装参数」修正后重试）" >&2
+      exit 1
+    fi
+    while IFS= read -r geometry_line; do
+      if [ -n "$geometry_line" ]; then
+        geometry_args+=("$geometry_line")
+      fi
+    done <<<"$geometry_out"
+    geometry_summary="$(python3 "$GEOMETRY_TOOL" summary 2>/dev/null || true)"
+    geometry_brief="$(python3 "$GEOMETRY_TOOL" brief 2>/dev/null || true)"
+  fi
   env_setup
   local stamp log_file
   stamp="$(date +%Y%m%d_%H%M%S)"
   log_file="$LOG_DIR/interceptor_stack_${stamp}.log"
+  if [ -n "$geometry_summary" ]; then
+    printf '%s\n' "$geometry_summary" >>"$log_file"
+  fi
   # G-1（2026-10-18）：必须用追加模式——run_start_check 会 >> 同一文件
   # 写告警，截断写会让 launch 按自己的旧偏移把追加行覆盖掉
-  nohup setsid ros2 launch "$LAUNCH_PKG" "$LAUNCH_FILE" "${@:2}" \
-    >>"$log_file" 2>&1 &
+  nohup setsid ros2 launch "$LAUNCH_PKG" "$LAUNCH_FILE" \
+    "${geometry_args[@]}" "${@:2}" >>"$log_file" 2>&1 &
   local pid=$!
   echo "$pid" >"$PID_FILE"
   sleep 2
@@ -144,6 +170,9 @@ cmd_start() {
     tail -20 "$log_file" >&2 || true
     rm -f "$PID_FILE"
     exit 1
+  fi
+  if [ -n "$geometry_brief" ]; then
+    echo "$geometry_brief"
   fi
   echo "已启动 pid $pid，日志 $log_file"
   # 15s 后自检（run_start_check 内部落 CHECK_FILE 与运行日志）

@@ -15,10 +15,16 @@
     开火事件 /tracking/virtual_shot_event；实物击发经 trigger_command
     （PWM 脉冲脚本，异步执行，环境变量 NETGUN_SHOT_ID/NETGUN_SHOT_REASON）
   - 飞控 PX4 v1.15.x：状态话题 /fmu/out/vehicle_status（v1.16+ 才有 _v1）
-  - 相机外参（I-3 安装约定）：ZED X Mini 朝天、基线沿机头、右目在前，
-    基线中点在拦截器轴线右侧 5 cm、前后对称 → 左目（ZED 坐标原点）
-    在 body FRD (-0.025, +0.05, z)；z（相机光心相对飞控的高度差，向上为
-    负）待实测，默认 0
+  - 相机外参（I-3 安装约定，2026-10-22 按用户口径更新）：ZED X Mini 朝天、基线
+    沿机头、右目在前，相机中心在网枪轴线右侧 6 cm（原 5 cm）、前后对称 →
+    左目（ZED 坐标原点）在 body FRD (-0.025, +0.06, z)；z（相机光心相对飞控
+    的高度差，向上为负）待实测，默认 0
+  - 安装参数（2026-10-22）：相机/RTK/飞控相对网枪中心的位置、右目朝向与
+    枪轴偏角在面板「拦截任务 → 安装参数」修改，存板上
+    ~/netgun_config/mounting_geometry.json；run_interceptor_stack.sh start
+    经 deploy/mounting_geometry.py launch-args 换算成下列 camera_* /
+    muzzle_* / boresight_* 参数传入（重启拦截链后生效）。下面的默认值 =
+    未保存时的默认安装；RTK 天线偏置只给飞控参数建议值，不经本链
 
 调试：四节点自动发布 /debug/{guidance,strike,estimator,bridge}_state
 （2Hz/1Hz，key=value），用法见 docs/实物调试指南.md 与
@@ -37,6 +43,11 @@ ESTIMATE_TOPIC = "/tracking/relative/estimate"
 STATUS_TOPIC_DEFAULT = "/fmu/out/vehicle_status"
 DEPTH_TOPIC = "/perception/depth/observation"
 SHOT_TOPIC = "/tracking/virtual_shot_event"
+
+
+def _float_arg(name):
+    """launch 参数按 float 传给节点（安装几何均为米/弧度）。"""
+    return ParameterValue(LaunchConfiguration(name), value_type=float)
 
 
 def generate_launch_description():
@@ -71,10 +82,22 @@ def generate_launch_description():
             # 实物击发钩子（PWM 脉冲脚本），空=仅虚拟事件（接网枪时装订）
             DeclareLaunchArgument("trigger_command", default_value=""),
             DeclareLaunchArgument("status_topic", default_value=STATUS_TOPIC_DEFAULT),
-            # 相机（ZED 左目）相对机体原点的平移，body FRD 米（I-3 安装约定）
+            # 相机（ZED 左目）相对机体原点（飞控）的平移，body FRD 米；
+            # 2026-10-22 起由面板安装参数生成（mounting_geometry.py）
             DeclareLaunchArgument("camera_translation_body_x_m", default_value="-0.025"),
-            DeclareLaunchArgument("camera_translation_body_y_m", default_value="0.05"),
+            DeclareLaunchArgument("camera_translation_body_y_m", default_value="0.06"),
             DeclareLaunchArgument("camera_translation_body_z_m", default_value="0.0"),
+            # 安装四元数 body→optical（相机朝天；默认 = 右目朝机头）
+            DeclareLaunchArgument("camera_q_body_to_optical_w", default_value="0.0"),
+            DeclareLaunchArgument("camera_q_body_to_optical_x", default_value="1.0"),
+            DeclareLaunchArgument("camera_q_body_to_optical_y", default_value="0.0"),
+            DeclareLaunchArgument("camera_q_body_to_optical_z", default_value="0.0"),
+            # 网枪中心（枪口）相对机体原点（飞控）的杠杆臂与枪轴偏角（rad）
+            DeclareLaunchArgument("muzzle_offset_body_x_m", default_value="0.0"),
+            DeclareLaunchArgument("muzzle_offset_body_y_m", default_value="0.0"),
+            DeclareLaunchArgument("muzzle_offset_body_z_m", default_value="0.0"),
+            DeclareLaunchArgument("boresight_pitch_rad", default_value="0.0"),
+            DeclareLaunchArgument("boresight_yaw_rad", default_value="0.0"),
             # ---- 感知桥（PerceptionFrame v2 JSON -> DepthObservation V1） ----
             Node(
                 package="zed_perception_bridge",
@@ -114,22 +137,24 @@ def generate_launch_description():
                         "camera_cy": 538.4,
                         "camera_width": 1920,
                         "camera_height": 1080,
-                        # 安装四元数（宽轴沿机头、右目在前）：与机加实物严格一致
-                        "camera_q_body_to_optical_w": 0.0,
-                        "camera_q_body_to_optical_x": 1.0,
-                        "camera_q_body_to_optical_y": 0.0,
-                        "camera_q_body_to_optical_z": 0.0,
+                        # 安装四元数（相机朝天；默认宽轴沿机头、右目在前）：须与
+                        # 机加实物一致，面板安装参数「右目朝向」生成
+                        "camera_q_body_to_optical_w": _float_arg(
+                            "camera_q_body_to_optical_w"),
+                        "camera_q_body_to_optical_x": _float_arg(
+                            "camera_q_body_to_optical_x"),
+                        "camera_q_body_to_optical_y": _float_arg(
+                            "camera_q_body_to_optical_y"),
+                        "camera_q_body_to_optical_z": _float_arg(
+                            "camera_q_body_to_optical_z"),
                         # I-3：左目（ZED 坐标原点）杠杆臂——估计输出改为相对
-                        # 机体原点（飞控），右偏 5 cm 不再混进相对位置
-                        "camera_translation_body_x_m": ParameterValue(
-                            LaunchConfiguration("camera_translation_body_x_m"),
-                            value_type=float),
-                        "camera_translation_body_y_m": ParameterValue(
-                            LaunchConfiguration("camera_translation_body_y_m"),
-                            value_type=float),
-                        "camera_translation_body_z_m": ParameterValue(
-                            LaunchConfiguration("camera_translation_body_z_m"),
-                            value_type=float),
+                        # 机体原点（飞控），相机右偏不再混进相对位置
+                        "camera_translation_body_x_m": _float_arg(
+                            "camera_translation_body_x_m"),
+                        "camera_translation_body_y_m": _float_arg(
+                            "camera_translation_body_y_m"),
+                        "camera_translation_body_z_m": _float_arg(
+                            "camera_translation_body_z_m"),
                         "bearing_only_update_enabled": True,
                         "bearing_only_nominal_range_m": 12.0,
                         "bearing_only_range_sigma_m": 30.0,
@@ -254,12 +279,13 @@ def generate_launch_description():
                         "vehicle_status_timeout_s": 1.5,
                         # H-5：枪口相对机体原点的杠杆臂（body FRD, m）与枪管-
                         # 光轴安装角（rad）。I-3：网枪装在拦截器中轴线上 → x/y=0；
-                        # 估计已扣相机杠杆臂（相对机体原点），这里不再含相机偏置
-                        "muzzle_offset_body_x_m": 0.0,
-                        "muzzle_offset_body_y_m": 0.0,
-                        "muzzle_offset_body_z_m": 0.0,
-                        "boresight_pitch_rad": 0.0,
-                        "boresight_yaw_rad": 0.0,
+                        # 估计已扣相机杠杆臂（相对机体原点），这里不再含相机偏置。
+                        # 2026-10-22：由面板安装参数（飞控位置、枪轴偏角）生成
+                        "muzzle_offset_body_x_m": _float_arg("muzzle_offset_body_x_m"),
+                        "muzzle_offset_body_y_m": _float_arg("muzzle_offset_body_y_m"),
+                        "muzzle_offset_body_z_m": _float_arg("muzzle_offset_body_z_m"),
+                        "boresight_pitch_rad": _float_arg("boresight_pitch_rad"),
+                        "boresight_yaw_rad": _float_arg("boresight_yaw_rad"),
                         # I-3：自动单发 + 手动兜底（/netgun/fire_command，面板
                         # 按钮）；单发闭锁两路共享。仿真矩阵沿用 auto
                         "fire_mode": ParameterValue(

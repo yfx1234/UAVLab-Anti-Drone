@@ -6,6 +6,10 @@
 （attmiss=obs 且持续增长 = 无姿态数据 = 飞控未上电/uxrce 未跑）；解锁与
 offboard 从火控诊断 arm=/ob= 读取。
 
+安装参数（2026-10-22）：geometry.saved = 板上已保存的安装参数（面板「安装参数」，
+以网枪中心为基准，下次启动生效）；geometry.applied = 最新日志启动时实际使用的参数
+（run_interceptor_stack.sh 写入的 NETGUN_GEOMETRY 行；旧日志/手动启动时缺省）。
+
 任何内部错误都降级为 {"error": ...}，绝不向日志目录写东西。
 """
 
@@ -14,6 +18,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 import time
 
 LOG_ROOT = os.path.expanduser("~/netgun_logs")
@@ -116,6 +121,26 @@ def parse_strike(line):
     return fields
 
 
+def geometry_status(log_text):
+    """已保存与本次启动实际使用的安装参数；任何异常只降级本字段。"""
+    info = {}
+    try:
+        here = os.path.dirname(os.path.abspath(__file__))
+        if here not in sys.path:
+            sys.path.insert(0, here)
+        import mounting_geometry  # noqa: PLC0415 —— 与本脚本同目录部署
+        info["saved"] = mounting_geometry.describe()
+    except Exception as exc:  # noqa: BLE001 —— 文件损坏也不能拖垮状态轮询
+        info["saved"] = {"ok": False, "error": str(exc)}
+    applied = re.findall(r"^NETGUN_GEOMETRY (\{.*\})$", log_text or "", re.MULTILINE)
+    if applied:
+        try:
+            info["applied"] = json.loads(applied[-1])
+        except ValueError:
+            info["applied"] = None
+    return info
+
+
 def main():
     result = {"utc": time.time()}
     running, pid = stack_pid()
@@ -130,6 +155,7 @@ def main():
         pass
     if not logs:
         result["log"] = None
+        result["geometry"] = geometry_status("")
         print(json.dumps(result, ensure_ascii=False))
         return
     log_path = logs[-1]
@@ -172,7 +198,10 @@ def main():
     result["shots"] = len(fires)
     result["fire_last"] = fires[-1] if fires else None
 
-    lines = [ln for ln in text.splitlines() if ln.strip()]
+    result["geometry"] = geometry_status(text)
+
+    lines = [ln for ln in text.splitlines()
+             if ln.strip() and not ln.startswith("NETGUN_GEOMETRY ")]
     result["tail"] = lines[-8:]
     print(json.dumps(result, ensure_ascii=False))
 

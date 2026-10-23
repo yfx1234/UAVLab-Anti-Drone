@@ -1,6 +1,7 @@
 """Perception platform on loopback 8767. Camera lifetime belongs to the board."""
 import hmac
 import http.server
+import importlib.util
 import json
 import math
 import os
@@ -25,12 +26,21 @@ OUTPUT=pathlib.Path(os.environ.get('UAVLAB_OUTPUT_DIRECTORY',str(BASE.parents[1]
 BOARD_ACTIONS={'check_device','start_capture','stop_capture','set_detector','start_raw_record','stop_raw_record',
                'list_sessions','list_models','test_model','select_model','save_calibration','export_session','export_diagnostics','prepare_dataset','rename_session','delete_session','save_session_metadata'}
 LOCAL_ACTIONS={'connect','disconnect','start_preview_record','stop_preview_record','download_session','download_asset','extract_local_frames','cancel_job','open_media_folder','delete_local_media',
-               'interceptor_start','interceptor_stop','interceptor_fire','annotate_session'}
+               'interceptor_start','interceptor_stop','interceptor_fire','interceptor_geometry_save','annotate_session'}
 INTERCEPTOR_STATUS_CMD='python3 /home/uavlab/interceptor_ws/deploy/interceptor_status.py'
 INTERCEPTOR_CONTROL_CMD='bash /home/uavlab/interceptor_ws/deploy/run_interceptor_stack.sh'
 # I-1：网枪发射按钮（板上助手先校验就绪再发布 /netgun/fire_command，单发闭锁在火控侧）
 # 助手需 rclpy（status 脚本只读日志不需要）——SSH exec 非登录 shell，命令内显式 source humble
 INTERCEPTOR_FIRE_CMD='bash -c "source /opt/ros/humble/setup.bash && python3 /home/uavlab/interceptor_ws/deploy/netgun_fire_button.py fire"'
+# 2026-10-22：安装参数（以网枪中心为基准）——JSON 经 stdin 交板上脚本校验并原子写入
+# ~/netgun_config/mounting_geometry.json；只影响下次启动的拦截链，不写飞控参数
+INTERCEPTOR_GEOMETRY_SAVE_CMD='python3 /home/uavlab/interceptor_ws/deploy/mounting_geometry.py save'
+
+def _load_geometry_module():
+    """与板上同一份校验/换算（仓库 deploy/mounting_geometry.py）。"""
+    spec=importlib.util.spec_from_file_location('mounting_geometry',BASE.parent/'deploy'/'mounting_geometry.py')
+    module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module);return module
+geometry=_load_geometry_module()
 
 def valid_request(host,origin,token,expected):
     return host in ('127.0.0.1:8767','localhost:8767') and origin=='http://'+host and isinstance(token,str) and hmac.compare_digest(token,expected)
@@ -115,6 +125,9 @@ class Panel:
         action=data.get('action');params=data.get('params',{})
         if action not in BOARD_ACTIONS|LOCAL_ACTIONS:raise ValueError('仅支持已批准的感知动作；旧飞行动作已移除')
         if not isinstance(params,dict):raise ValueError('参数必须是对象')
+        if action=='interceptor_geometry_save':
+            if set(params)!={'config'}:raise ValueError('安装参数请求格式无效')
+            params={'config':geometry.validate_editable(params['config'])}
         rid=data.get('request_id',uuid.uuid4().hex)
         if not isinstance(rid,str) or not re.fullmatch('[a-zA-Z0-9_-]{1,80}',rid):raise ValueError('请求 ID 无效')
         # Reserve at submission, including queued work, so delete cannot race a transfer.
@@ -171,6 +184,8 @@ class Panel:
                     INTERCEPTOR_CONTROL_CMD+' '+action.removeprefix('interceptor_'),timeout=45)
                 lines=[line for line in out.splitlines() if line.strip()]
                 return {'output':lines[-3:]}
+            if action=='interceptor_geometry_save':
+                return self.board.exec_json(INTERCEPTOR_GEOMETRY_SAVE_CMD,params,timeout=20)
             if action=='interceptor_fire':
                 # I-1：发射网枪（单发）——板上助手校验就绪（授权/估计/
                 # 深度硬门在 strike 侧逐拍计算）后发布一次发射指令；
