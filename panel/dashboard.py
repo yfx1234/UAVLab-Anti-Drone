@@ -37,8 +37,13 @@ INTERCEPTOR_FIRE_CMD='bash -c "source /opt/ros/humble/setup.bash && python3 /hom
 INTERCEPTOR_GEOMETRY_SAVE_CMD='python3 /home/uavlab/interceptor_ws/deploy/mounting_geometry.py save'
 
 def _load_geometry_module():
-    """与板上同一份校验/换算（仓库 deploy/mounting_geometry.py）。"""
-    spec=importlib.util.spec_from_file_location('mounting_geometry',BASE.parent/'deploy'/'mounting_geometry.py')
+    """与板上同一份校验/换算（仓库 deploy/mounting_geometry.py）。
+
+    面板目录单独部署、旁边没有仓库 deploy/ 时返回 None：面板照常启动，安装参数只做格式检查，
+    完整校验由板上同一脚本完成（板上总会再校验一次）。"""
+    path=BASE.parent/'deploy'/'mounting_geometry.py'
+    if not path.is_file():return None
+    spec=importlib.util.spec_from_file_location('mounting_geometry',path)
     module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module);return module
 geometry=_load_geometry_module()
 
@@ -126,8 +131,8 @@ class Panel:
         if action not in BOARD_ACTIONS|LOCAL_ACTIONS:raise ValueError('仅支持已批准的感知动作；旧飞行动作已移除')
         if not isinstance(params,dict):raise ValueError('参数必须是对象')
         if action=='interceptor_geometry_save':
-            if set(params)!={'config'}:raise ValueError('安装参数请求格式无效')
-            params={'config':geometry.validate_editable(params['config'])}
+            if set(params)!={'config'} or not isinstance(params['config'],dict):raise ValueError('安装参数请求格式无效')
+            if geometry is not None:params={'config':geometry.validate_editable(params['config'])}
         rid=data.get('request_id',uuid.uuid4().hex)
         if not isinstance(rid,str) or not re.fullmatch('[a-zA-Z0-9_-]{1,80}',rid):raise ValueError('请求 ID 无效')
         # Reserve at submission, including queued work, so delete cannot race a transfer.
