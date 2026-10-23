@@ -30,8 +30,9 @@ LOCAL_ACTIONS={'connect','disconnect','start_preview_record','stop_preview_recor
 INTERCEPTOR_STATUS_CMD='python3 /home/uavlab/interceptor_ws/deploy/interceptor_status.py'
 INTERCEPTOR_CONTROL_CMD='bash /home/uavlab/interceptor_ws/deploy/run_interceptor_stack.sh'
 # I-1：网枪发射按钮（板上助手先校验就绪再发布 /netgun/fire_command，单发闭锁在火控侧）
-# 助手需 rclpy（status 脚本只读日志不需要）——SSH exec 非登录 shell，命令内显式 source humble
-INTERCEPTOR_FIRE_CMD='bash -c "source /opt/ros/humble/setup.bash && python3 /home/uavlab/interceptor_ws/deploy/netgun_fire_button.py fire"'
+# 2026-10-23：助手先走拦截链常驻发射通道（本机套接字，不需要 ROS 环境，按键到发布约 0.1 s）；
+# 通道未就绪时助手自行 source humble 退回直连（约 2–3 s）。经缓存 SSH 连接执行、独立线程跑
+INTERCEPTOR_FIRE_CMD='python3 /home/uavlab/interceptor_ws/deploy/netgun_fire_button.py fire'
 # 2026-10-22：安装参数（以网枪中心为基准）——JSON 经 stdin 交板上脚本校验并原子写入
 # ~/netgun_config/mounting_geometry.json；只影响下次启动的拦截链，不写飞控参数
 INTERCEPTOR_GEOMETRY_SAVE_CMD='python3 /home/uavlab/interceptor_ws/deploy/mounting_geometry.py save'
@@ -81,7 +82,7 @@ class Panel:
         while not self.closed.wait(2):
             if not self.connected:continue
             try:
-                raw=self.board.exec_command(INTERCEPTOR_STATUS_CMD,timeout=12)
+                raw=self.board.shared_exec(INTERCEPTOR_STATUS_CMD,timeout=12)
                 data=json.loads(raw.strip().splitlines()[-1])
                 if not isinstance(data,dict) or 'running' not in data:raise ValueError('拦截链状态格式无效')
                 with self.lock:self.interceptor=data;self.interceptor_error=None;self.interceptor_observed_at=time.monotonic()
@@ -154,7 +155,7 @@ class Panel:
             if action=='connect':
                 password=data.get('password')
                 if password is not None and not isinstance(password,str):raise ValueError('密码字段无效')
-                self.board.password=password
+                self.board.password=password;self.board.close_shared()
                 state=self.board.call('status')
                 request=dict(request_id=uuid.uuid4().hex,**{'expected_'+k:state[k] for k in ('boot_id','run_id','revision')})
                 started=time.monotonic();state=self.board.call('set_clock_reference',{'pc_unix_s':time.time()},request)['state']
@@ -162,6 +163,7 @@ class Panel:
                 self.receiver.set_enabled(bool(state.get('pid')));return {'connected':True}
             if action=='disconnect':
                 with self.lock:self.connected=False;self.board.password=None
+                self.board.close_shared()
                 self.receiver.set_enabled(False);return {'connected':False,'board_capture_continues':True}
             if action=='cancel_job':
                 with self.lock:self.cancelled.add(params['request_id'])
@@ -195,9 +197,12 @@ class Panel:
                 # I-1：发射网枪（单发）——板上助手校验就绪（授权/估计/
                 # 深度硬门在 strike 侧逐拍计算）后发布一次发射指令；
                 # 未就绪/已发射时返回拒绝原因，按钮可重试
-                out=self.board.exec_command(INTERCEPTOR_FIRE_CMD,timeout=20)
+                started=time.monotonic()
+                out=self.board.shared_exec(INTERCEPTOR_FIRE_CMD,timeout=20)
                 lines=[line for line in out.splitlines() if line.strip()]
-                return json.loads(lines[-1])
+                result=json.loads(lines[-1])
+                if isinstance(result,dict):result['panel_ms']=round((time.monotonic()-started)*1000)
+                return result
             if action=='annotate_session':
                 def annotation_progress(value):
                     with self.lock:self.progress[rid]=value
@@ -260,7 +265,8 @@ class Panel:
                 if existing:
                     if sid and self.scene_jobs.get(sid)==rid:self.scene_jobs.pop(sid,None)
                     return existing
-                return self.jobs.submit(rid,guarded_work)
+                # 发射不排在下载/标注等长任务之后：独立线程立即执行
+                return self.jobs.submit(rid,guarded_work,dedicated=action=='interceptor_fire')
         except Exception:
             with self.lock:
                 if sid and self.scene_jobs.get(sid)==rid:self.scene_jobs.pop(sid,None)

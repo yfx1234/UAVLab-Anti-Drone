@@ -10,6 +10,11 @@ offboard 从火控诊断 arm=/ob= 读取。
 以网枪顶面中心为基准，下次启动生效）；geometry.applied = 最新日志启动时实际使用的参数
 （run_interceptor_stack.sh 写入的 NETGUN_GEOMETRY 行；旧日志/手动启动时缺省）。
 
+常驻发射通道与复盘记录（2026-10-23）：fire_link = 拦截链运行时经本机套接字 ping
+netgun_fire_button.py serve 的结果（link.ready=按键直达火控；state=≤1.5s 内的
+2Hz 火控状态，比 5s 一条的 diag 日志新）；review = 本次复盘目录、录制器是否
+在录、目录大小与剩余空间（无当前记录时给最近一次目录名）。
+
 任何内部错误都降级为 {"error": ...}，绝不向日志目录写东西。
 """
 
@@ -17,13 +22,17 @@ import glob
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
 
 LOG_ROOT = os.path.expanduser("~/netgun_logs")
 PID_FILE = os.path.join(LOG_ROOT, "interceptor_stack.pid")
+REVIEW_FILE = os.path.join(LOG_ROOT, "interceptor_review.current")
+BAG_PID_FILE = os.path.join(LOG_ROOT, "interceptor_bag.pid")
 STATUS_CMD_TIMEOUT_S = 5.0
+PING_REPLY_S = 0.5
 
 
 def production_launch_pids(timeout_s=5.0):
@@ -141,11 +150,98 @@ def geometry_status(log_text):
     return info
 
 
+def _sibling(name):
+    here = os.path.dirname(os.path.abspath(__file__))
+    if here not in sys.path:
+        sys.path.insert(0, here)
+    return __import__(name)
+
+
+def fire_link_status():
+    """常驻发射通道 ping（本机套接字，无 ROS）；不可用时 ok=false 与原因。"""
+    try:
+        reply = _sibling("netgun_fire_button").channel_request(
+            "ping", confirm_s=PING_REPLY_S)
+    except Exception as exc:  # noqa: BLE001 —— 通道缺失/旧部署只降级本字段
+        return {"ok": False, "error": str(exc)}
+    info = {"ok": True, "link": reply.get("link") or {}}
+    if isinstance(reply.get("state"), dict):
+        info["state"] = reply["state"]
+    return info
+
+
+def _pid_with_cmdline(pid_file, needle):
+    try:
+        with open(pid_file) as f:
+            pid = int(f.read().strip())
+        with open("/proc/%d/cmdline" % pid, "rb") as f:
+            cmdline = f.read().replace(b"\0", b" ").decode(errors="replace")
+    except (OSError, ValueError):
+        return None
+    return pid if needle in cmdline else None
+
+
+def _dir_size_mb(path):
+    total = 0
+    for root, _, files in os.walk(path):
+        for name in files:
+            try:
+                total += os.path.getsize(os.path.join(root, name))
+            except OSError:
+                continue
+    return round(total / 1048576.0, 1)
+
+
+def review_status():
+    """本次复盘记录（run_interceptor_stack.sh start 建立，stop 收尾）。"""
+    info = {}
+    try:
+        info["free_mb"] = int(shutil.disk_usage(LOG_ROOT).free / 1048576)
+    except OSError:
+        pass
+    try:
+        with open(REVIEW_FILE) as f:
+            current = f.read().strip()
+    except OSError:
+        current = ""
+    if not current or not os.path.isdir(current):
+        dirs = sorted(d for d in glob.glob(os.path.join(LOG_ROOT, "review_*"))
+                      if os.path.isdir(d))
+        if dirs:
+            info["last"] = os.path.basename(dirs[-1])
+        return info
+    info["dir"] = os.path.basename(current)
+    info["recording"] = _pid_with_cmdline(BAG_PID_FILE, "bag record") is not None
+    info["size_mb"] = _dir_size_mb(current)
+    try:
+        with open(os.path.join(current, "bag_record.log"), errors="replace") as f:
+            bag_log = f.read()
+    except OSError:
+        bag_log = ""
+    info["topics"] = len(set(re.findall(r"Subscribed to topic '([^']+)'", bag_log)))
+    notes = []
+    try:
+        with open(os.path.join(current, "run_info.txt"), errors="replace") as f:
+            notes = [ln.strip() for ln in f if ln.startswith("WARN")]
+    except OSError:
+        pass
+    if not info["recording"]:
+        # 启动时的告警（如磁盘余量不足不录 bag）优先，其次录制器最后一条错误
+        notes += [ln.strip() for ln in bag_log.splitlines()
+                  if re.search(r"ERROR|error|Error|Traceback", ln)][-1:]
+    if notes:
+        info["note"] = notes[0][:300]
+    return info
+
+
 def main():
     result = {"utc": time.time()}
     running, pid = stack_pid()
     result["running"] = running
     result["pid"] = pid
+    result["review"] = review_status()
+    if running:
+        result["fire_link"] = fire_link_status()
     logs = []
     try:
         logs = sorted(
@@ -201,7 +297,7 @@ def main():
     result["geometry"] = geometry_status(text)
 
     lines = [ln for ln in text.splitlines()
-             if ln.strip() and not ln.startswith("NETGUN_GEOMETRY ")]
+             if ln.strip() and not ln.startswith(("NETGUN_GEOMETRY ", "NETGUN_REVIEW "))]
     result["tail"] = lines[-8:]
     print(json.dumps(result, ensure_ascii=False))
 

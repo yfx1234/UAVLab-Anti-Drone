@@ -245,9 +245,14 @@ class StartScriptTests(unittest.TestCase):
         bin_dir = self.root / 'bin'
         bin_dir.mkdir()
         self.args_file = self.root / 'ros2_args.txt'
+        # ros2 桩只记 launch 参数（start 另起的复盘录制器/参数导出不覆盖）；pgrep 桩让兜底清理
+        # 看不到本机任何进程（板上带生产链跑测试也不会误停生产录制器/发射通道）
         stub = bin_dir / 'ros2'
-        stub.write_text('#!/bin/bash\nprintf "%s\\n" "$@" > "$ARGS_FILE"\nexec sleep 20\n', encoding='utf-8')
+        stub.write_text('#!/bin/bash\nif [ "$1" = launch ]; then printf "%s\\n" "$@" > "$ARGS_FILE"; fi\n'
+                        '[ "$1" = param ] && exit 0\nexec sleep 20\n', encoding='utf-8')
         stub.chmod(0o755)
+        (bin_dir / 'pgrep').write_text('#!/bin/sh\nexit 1\n', encoding='utf-8')
+        (bin_dir / 'pgrep').chmod(0o755)
         script = (ROOT / 'deploy' / 'run_interceptor_stack.sh').read_text(encoding='utf-8')
         # 测试副本：不 source 板上 ROS 环境，不跑 15s 后台自检；其余逻辑原样
         self.assertEqual(script.count('env_setup() {\n'), 1)
@@ -261,12 +266,13 @@ class StartScriptTests(unittest.TestCase):
                         PATH=str(bin_dir) + os.pathsep + os.environ.get('PATH', ''))
 
     def tearDown(self):
-        pid_file = self.logs / 'interceptor_stack.pid'
-        if pid_file.exists():
-            try:
-                os.killpg(int(pid_file.read_text().strip()), signal.SIGTERM)
-            except (OSError, ValueError):
-                pass
+        for name in ('interceptor_stack.pid', 'interceptor_bag.pid', 'netgun_fire_server.pid'):
+            pid_file = self.logs / name
+            if pid_file.exists():
+                try:
+                    os.killpg(int(pid_file.read_text().strip()), signal.SIGTERM)
+                except (OSError, ValueError):
+                    pass
         shutil.rmtree(self.root, ignore_errors=True)
 
     def start(self, *extra):

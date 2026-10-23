@@ -65,6 +65,13 @@
   `tools/board_test/netgun_trigger_dryrun.sh`。
 - 制导收到开火事件：TRACK/AIM → SETTLE→SPIN→DONE（原逻辑）；TAKEOFF 中 →
   原地 DONE 保持；WAITING（未切 offboard）→ 闩锁，之后进 offboard 直接 DONE。
+- 面板按钮的板上入口（2026-10-23）：`deploy/netgun_fire_button.py serve` 是常驻发射
+  通道（节点 `netgun_fire_server`，随 `run_interceptor_stack.sh start` 启动，launch 退出即停）。
+  火控进程运行满 3 s、端点进入图后才建状态订阅/发射发布端，提前完成匹配。
+  `fire`/`status` 经 `~/netgun_logs/netgun_fire_d<域>.sock`（0600）受理：状态超过
+  1.5 s 未更新或尚未匹配时回复退回，由助手改走直连。门控与直连路径相同：
+  `fready=1` 才发布一次；以 `/tracking/virtual_shot_event` 或 shots 增加作为确认。
+  受理后超时不重发。
 
 ## 骨架边界（TODO 清单）
 

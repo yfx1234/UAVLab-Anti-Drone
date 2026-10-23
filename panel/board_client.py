@@ -22,7 +22,7 @@ class PinnedHost(paramiko.MissingHostKeyPolicy):
         if not hmac.compare_digest(actual,FINGERPRINT):raise paramiko.SSHException('板子 SSH 主机身份不符')
 
 class BoardClient:
-    def __init__(self):self.password=None
+    def __init__(self):self.password=None;self.shared=None;self.shared_users={};self.shared_lock=threading.Lock()
     def connection(self):
         sock=socket.socket();sock.settimeout(8);sock.bind((LOCAL_IP,0))
         client=paramiko.SSHClient();client.set_missing_host_key_policy(PinnedHost())
@@ -43,16 +43,70 @@ class BoardClient:
         """
         with self.connection() as client:
             return self.exec_on(client,command,timeout)
+    def shared_exec(self,command,timeout=45,open_timeout=3):
+        """Run a constant board command on one cached, pinned connection.
+
+        Interceptor polling and the net-gun button use this path: a fresh SSH
+        connection costs ~0.2 s on the board link, a new channel on the cached
+        transport ~0.08 s. The command is retried once (on a fresh connection)
+        only when the cached transport could not open the channel or start the
+        command; once it may have run on the board the error is reported as is.
+        A broken connection is dropped and closed after its last in-flight user.
+        """
+        for attempt in (0,1):
+            client=self._lease();broken=True
+            try:
+                try:channel=client.get_transport().open_session(timeout=open_timeout)
+                except Exception:
+                    if attempt:raise
+                    continue
+                try:
+                    try:channel.settimeout(timeout);channel.exec_command(command)
+                    except Exception:
+                        if attempt:raise
+                        continue
+                    try:result=self._read_output(channel.makefile('rb'),channel.makefile_stderr('rb'))
+                    except ValueError:broken=False;raise
+                    broken=False;return result
+                finally:channel.close()
+            finally:self._release(client,broken)
+    def _lease(self):
+        with self.shared_lock:
+            client=self.shared
+            transport=client.get_transport() if client is not None else None
+            if transport is None or not transport.is_active():
+                if client is not None:
+                    self.shared=None
+                    if not self.shared_users.get(client):client.close()
+                client=self.connection();self.shared=client
+            self.shared_users[client]=self.shared_users.get(client,0)+1
+            return client
+    def _release(self,client,broken):
+        with self.shared_lock:
+            users=self.shared_users.get(client,1)-1
+            if users>0:self.shared_users[client]=users
+            else:self.shared_users.pop(client,None)
+            if broken and self.shared is client:self.shared=None
+            close=users<=0 and self.shared is not client
+        if close:client.close()
+    def close_shared(self):
+        """Forget the cached connection (disconnect, new password); in-flight commands finish first."""
+        with self.shared_lock:
+            client,self.shared=self.shared,None
+            close=client is not None and not self.shared_users.get(client)
+        if close:client.close()
     def exec_on(self,client,command,timeout=45):
         stdin,stdout,stderr=client.exec_command(command,timeout=timeout)
-        try:
-            raw=stdout.read();error=stderr.read().decode(errors='replace')
-            text=raw.decode(errors='replace')
-            if len(raw)>512*1024:raise ValueError('板上命令输出过大')
-            if not text.strip():raise ValueError('板上命令无输出'+('：'+error[-400:] if error.strip() else ''))
-            return text
+        try:return self._read_output(stdout,stderr)
         finally:
             stdin.close();stdout.close();stderr.close()
+    @staticmethod
+    def _read_output(stdout,stderr):
+        raw=stdout.read();error=stderr.read().decode(errors='replace')
+        text=raw.decode(errors='replace')
+        if len(raw)>512*1024:raise ValueError('板上命令输出过大')
+        if not text.strip():raise ValueError('板上命令无输出'+('：'+error[-400:] if error.strip() else ''))
+        return text
     def exec_json(self,command,payload,timeout=30):
         """Run a constant board command with a JSON request on stdin, never in argv.
 

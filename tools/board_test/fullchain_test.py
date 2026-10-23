@@ -32,6 +32,9 @@ ROS_DOMAIN_ID 未设置或为 0 时拒绝运行（--allow-domain0 仅限确认�
   单发：stack.log 恰 1 条 NETGUN FIRE，bag 恰 1 个 VirtualShotEvent
   --trigger-hook：trigger_command 装订为干跑脚本 netgun_trigger_dryrun.sh
      （只写日志不碰硬件），验证恰执行 1 次且 "trigger command done rc=0"
+  常驻发射通道（2026-10-23）：与生产同款 netgun_fire_button.py serve
+     --parent-pid=<stack> 随栈起（套接字在本次产物目录，按域隔离）；助手按键
+     须走常驻通道（path=server），fire_contract 记录按键到回复耗时 elapsed_ms
 
 用法（板上，已 source 全部环境；生产拦截栈必须先停止）：
   export ROS_DOMAIN_ID=42 && unset ROS_LOCALHOST_ONLY
@@ -144,6 +147,12 @@ class Orchestrator(Node):
             os.environ["NETGUN_TRIGGER_LOG"] = self.trigger_log_path
             stack_cmd.append("trigger_command:=bash %s" % TRIGGER_DRYRUN)
         self._spawn("stack", stack_cmd)
+        # 生产同款常驻发射通道：助手与通道共用本目录的套接字（不碰生产链的 d0 套接字）
+        os.environ["NETGUN_FIRE_SOCKET"] = os.path.join(
+            self.run_dir, "netgun_fire.sock")
+        self._spawn("fire_server", [
+            "python3", "-u", FIRE_BUTTON, "serve", "--parent-pid",
+            str(self.procs["stack"][0].pid)])
         self._spawn("bag", [
             "ros2", "bag", "record", "--all",
             "-o", os.path.join(self.run_dir, "bag")])
@@ -444,6 +453,17 @@ class Orchestrator(Node):
         if self.post_shot_checked and not checks["helper_status_latched"]:
             errors.append("开火后助手 status 未报 latched：%s"
                           % (status[-1] if status else None))
+        presses = [b["result"] for b in self.button_results
+                   if b["action"] == "fire"]
+        checks["helper_fire"] = [
+            {key: press.get(key) for key in (
+                "path", "fired", "elapsed_ms", "publish_ms", "confirm_ms",
+                "confirmed_by", "fallback_reason", "reason")}
+            for press in presses]
+        fired = [press for press in presses if press.get("fired")]
+        if self.args.fire == "manual" and fired and fired[0].get("path") != "server":
+            errors.append("手动按键未走常驻发射通道：path=%s（%s）"
+                          % (fired[0].get("path"), fired[0].get("fallback_reason")))
         if self.args.trigger_hook:
             try:
                 with open(self.trigger_log_path) as f:

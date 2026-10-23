@@ -8,10 +8,11 @@ class JobManager:
     def __init__(self):
         self.lock=threading.Lock();self.jobs={};self.ids={}
         self.pool=ThreadPoolExecutor(max_workers=3,thread_name_prefix='panel-job')
-    def submit(self,request_id,work):
+    def submit(self,request_id,work,dedicated=False):
+        """dedicated=True: run now on its own thread (net-gun button), never queued behind pool work."""
         with self.lock:
             if request_id in self.ids:return self.ids[request_id]
-            if sum(j['state'] in ('queued','running') for j in self.jobs.values())>=8:raise ValueError('已有太多后台任务')
+            if not dedicated and sum(j['state'] in ('queued','running') for j in self.jobs.values())>=8:raise ValueError('已有太多后台任务')
             # Retain bounded completed history; never evict an active job.
             for key in list(self.jobs):
                 if len(self.jobs)<128:break
@@ -26,7 +27,9 @@ class JobManager:
                 with self.lock:self.jobs[jid].update(state='complete',result=result)
             except Exception as e:
                 with self.lock:self.jobs[jid].update(state='error',error=str(e))
-        self.pool.submit(run);return jid
+        if dedicated:threading.Thread(target=run,name='panel-job-dedicated',daemon=True).start()
+        else:self.pool.submit(run)
+        return jid
     def get(self,jid):
         with self.lock:
             if jid not in self.jobs:raise KeyError(jid)
