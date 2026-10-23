@@ -204,11 +204,12 @@ class Orchestrator(Node):
 
     def _fire_raw_cli(self, note):
         """原始话题按键（绕过助手的就绪预判）：直接考 strike 侧门控/闭锁。
-        发 3 次：--once 默认只等 1 个匹配订阅者，bag 录制器（record --all）
-        先匹配时单发会在火控匹配前发出而丢失（实测 2 轮各丢 1 次）。"""
+        发 3 次且 -w 2：-t/--once 默认只等 1 个匹配订阅者，本测试 bag 录制器
+        （record --all）先匹配时会在火控匹配前发完而全部丢失（2026-10-21 实测
+        2 轮各丢 1 次，10-23 一轮 3 条全丢）——等火控 + 录制器两个订阅都匹配再发。"""
         try:
             subprocess.run(
-                ["ros2", "topic", "pub", "-t", "3", "-r", "2",
+                ["ros2", "topic", "pub", "-t", "3", "-r", "2", "-w", "2",
                  "--keep-alive", "1.0", "/netgun/fire_command",
                  "std_msgs/msg/Bool", "{data: true}"],
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
