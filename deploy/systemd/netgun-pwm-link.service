@@ -2,7 +2,9 @@
 # 经 MAVProxy（qgc-mavlink-forward.service 的 --out=udp:127.0.0.1:14555）与飞控通信，
 # 受理拦截链 trigger_command 的击发请求（~/netgun_logs/netgun_pwm.sock）。
 # 安装/更新：bash ~/interceptor_ws/deploy/install_netgun_pwm_link.sh
-# 击发值/安全值/保持时间改 ExecStart 参数后重跑安装脚本（安全值 none = 不复位）。
+# 2026-10-24：启动后锁存 AUX5 待命低位，开火时低位→高位→回低位（网枪触发模块说明）。击发参数
+# （低位/高位/保持/低位确认）不在这里改：~/netgun_config/netgun_pwm.json，用
+# netgun_pwm_link.py params 或面板「击发参数」修改，立即生效、无需重启服务。
 [Unit]
 Description=Netgun PWM trigger link (MAVLink via MAVProxy -> PX4 FMU PWM OUT 5)
 After=qgc-mavlink-forward.service
@@ -12,7 +14,7 @@ StartLimitIntervalSec=0
 [Service]
 Type=simple
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/usr/bin/python3 -u %h/interceptor_ws/deploy/netgun_pwm_link.py serve --fire-value -1 --safe-value 1 --hold-s 1.0
+ExecStart=/usr/bin/python3 -u %h/interceptor_ws/deploy/netgun_pwm_link.py serve
 Restart=always
 RestartSec=5
 KillSignal=SIGINT

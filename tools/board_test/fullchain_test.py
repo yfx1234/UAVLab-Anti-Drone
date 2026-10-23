@@ -36,8 +36,10 @@ ROS_DOMAIN_ID 未设置或为 0 时拒绝运行（--allow-domain0 仅限确认�
      生产同款击发客户端 deploy/netgun_pwm_link.py fire --bench——真实经常驻击发服务
      → MAVProxy → 飞控 ACTUATOR_TEST 驱动 FMU PWM OUT 5（舵机会动；真飞控必须未解锁、
      拆桨）。开跑前要求击发服务就绪且飞控未解锁；验证恰 1 次 "trigger command done
-     rc=0"、客户端结果 ACCEPTED/shot_id=1、复位与释放 ACCEPTED，summary 记录 ACK/
-     客户端/钩子耗时与舵机输出回读（击发记录写入本次产物目录 pwm_events.jsonl）
+     rc=0"、客户端结果 ACCEPTED/shot_id=1、回低位与释放 ACCEPTED，summary 记录 ACK/
+     客户端/钩子耗时与舵机输出回读（击发记录写入本次产物目录 pwm_events.jsonl）。
+     2026-10-24 起台架序列按网枪触发模块：待命低位 → 等低位确认 → 击发高位保持 →
+     回低位 → 释放（脉宽/时长取板上击发参数 ~/netgun_config/netgun_pwm.json）
   常驻发射通道（2026-10-23）：与生产同款 netgun_fire_button.py serve
      --parent-pid=<stack> 随栈起（套接字在本次产物目录，按域隔离）；助手按键
      须走常驻通道（path=server），fire_contract 记录按键到回复耗时 elapsed_ms
@@ -498,7 +500,7 @@ class Orchestrator(Node):
             self.result["pass"] = False
 
     def _check_pwm_bench(self, log_text, reason, checks, errors):
-        """台架实物击发：客户端结果恰 1 条且飞控接受；复位/释放记录（等保持+复位收尾）。"""
+        """台架实物击发：客户端结果恰 1 条且飞控接受；回低位/释放记录（等低位确认+高位保持+回低位收尾）。"""
         results = []
         for text in re.findall(r"NETGUN_PWM_RESULT (\{.*\})", log_text):
             try:
@@ -509,7 +511,8 @@ class Orchestrator(Node):
         failed = re.findall(r"trigger command FAILED[^\n]*", log_text)
         checks["pwm_results"] = [{key: r.get(key) for key in (
             "ok", "mode", "shot_id", "reason", "result_name", "refused", "attempts", "ack_ms",
-            "elapsed_ms", "client_ms", "reason_text")} for r in results]
+            "elapsed_ms", "client_ms", "reason_text", "pwm_us", "low_us", "pre_low", "low_wait_ms")}
+            for r in results]
         checks["trigger_done_ms"] = [int(x) for x in done]
         checks["trigger_failed"] = failed
         if len(results) != 1 or len(done) != 1:
@@ -522,7 +525,7 @@ class Orchestrator(Node):
             errors.append("台架击发未被飞控接受或环境变量不符：%s" % results[0])
         events_path = os.path.join(self.run_dir, "pwm_events.jsonl")
         record = None
-        deadline = time.monotonic() + 6.0
+        deadline = time.monotonic() + 8.0  # 高位保持 ≤2.5 s + 低位确认 ≤2 s + ACK
         while time.monotonic() < deadline:
             try:
                 with open(events_path) as f:
@@ -534,7 +537,7 @@ class Orchestrator(Node):
                 break
             time.sleep(0.2)
         if record is None:
-            errors.append("未见台架击发复位记录 %s" % events_path)
+            errors.append("未见台架击发回低位记录 %s" % events_path)
             return
         reset = record.get("reset") or {}
         checks["pwm_reset"] = reset
@@ -542,7 +545,7 @@ class Orchestrator(Node):
         checks["pwm_done_ms"] = record.get("done_ms")
         if record.get("reset_error") or reset.get("release") != "ACCEPTED" or (
                 "result_name" in reset and reset["result_name"] != "ACCEPTED"):
-            errors.append("台架击发复位/释放未被飞控接受：%s" % (record.get("reset_error") or reset))
+            errors.append("台架击发回低位/释放未被飞控接受：%s" % (record.get("reset_error") or reset))
 
 
 def pwm_bench_guard():

@@ -384,7 +384,8 @@ class StatusScriptTests(unittest.TestCase):
         out = io.StringIO()
         with mock.patch.object(self.status, 'stack_pid', return_value=(True, 42)), \
                 mock.patch.object(self.status, 'fire_link_status', return_value={'ok': True, 'link': {'ready': True}}), \
-                mock.patch.dict(os.environ, {'NETGUN_PWM_SOCKET': str(self.root / 'none.sock')}), \
+                mock.patch.dict(os.environ, {'NETGUN_PWM_SOCKET': str(self.root / 'none.sock'),
+                                             'NETGUN_CONFIG_DIR': str(self.root / 'cfg')}), \
                 contextlib.redirect_stdout(out):
             self.status.main()
         result = json.loads(out.getvalue())
@@ -394,23 +395,28 @@ class StatusScriptTests(unittest.TestCase):
         self.assertEqual(result['trigger']['bound'], 'python3 /ws/deploy/netgun_pwm_link.py fire')
         self.assertFalse(result['trigger']['ok'])
         self.assertIn('击发服务未运行', result['trigger']['error'])
+        self.assertEqual((result['trigger']['options']['source'], result['trigger']['options']['high_us']), ('default', 2000),
+                         'with the service down the trigger parameters are read from the file')
         out = io.StringIO()
         with mock.patch.object(self.status, 'stack_pid', return_value=(False, None)), \
                 mock.patch.object(self.status, 'fire_link_status') as ping, \
-                mock.patch.object(self.status, 'trigger_status') as trigger, contextlib.redirect_stdout(out):
+                mock.patch.object(self.status, 'trigger_status', return_value={'bound': None, 'ok': False}) as trigger, \
+                contextlib.redirect_stdout(out):
             self.status.main()
         ping.assert_not_called()
-        trigger.assert_not_called()
+        trigger.assert_called_once_with('')
         self.assertNotIn('fire_link', json.loads(out.getvalue()))
-        self.assertNotIn('trigger', json.loads(out.getvalue()))
+        self.assertEqual(json.loads(out.getvalue())['trigger'], {'bound': None, 'ok': False},
+                         'the trigger service is reported while stopped (panel parameter editor)')
 
     @unittest.skipUnless(hasattr(socket, 'AF_UNIX'), 'Unix sockets required')
     def test_trigger_status_reads_pwm_service(self):
         self.assertEqual(self.status.trigger_status('x\n')['bound'], None, 'old logs have no NETGUN_TRIGGER line')
         self.assertEqual(self.status.trigger_status('NETGUN_TRIGGER \n')['bound'], '')
         path = str(self.root / 'pwm.sock')
-        service = pl.PwmService(StubFcLink(), -1.0, 1.0, 1.0, events_path=str(self.root / 'events.jsonl'),
-                                log=lambda *a, **k: None)
+        service = pl.PwmService(StubFcLink(), events_path=str(self.root / 'events.jsonl'),
+                                params_file=str(self.root / 'netgun_pwm.json'), log=lambda *a, **k: None)
+        service.latch = {'low_us': 1000, 't': time.monotonic(), 'why': 'test'}  # 桩链路没有 maintain 线程
         sock = service.bind(path)
         thread = threading.Thread(target=service.serve_forever, args=(sock,), daemon=True)
         thread.start()
@@ -423,16 +429,18 @@ class StatusScriptTests(unittest.TestCase):
                 self.assertTrue(info['ready'])
                 self.assertEqual(info['link']['fc'], '2/1')
                 self.assertEqual(info['config']['ok'], True)
-                self.assertEqual(info['options']['fire_us'], 1000)
+                self.assertEqual((info['options']['low_us'], info['options']['high_us'], info['options']['source']),
+                                 (1000, 2000, 'default'))
+                self.assertTrue(info['idle']['latched'])
                 self.assertNotIn('last_fire', info, 'a fire from before this start is not shown')
                 service.last_fire = {'ok': False, 'refused': 'DISARMED', 'time': time.time() + 1, 'servo': {'0': {}}}
                 info = self.status.trigger_status('NETGUN_TRIGGER python3 x fire\n')
                 self.assertEqual(info['last_fire']['refused'], 'DISARMED')
                 self.assertNotIn('servo', info['last_fire'])
-                service.link.params['PWM_AUX_DIS5'] = 1000
+                service.link.params['PWM_AUX_DIS5'] = 1500
                 info = self.status.trigger_status('NETGUN_TRIGGER python3 x fire\n')
                 self.assertFalse(info['ready'])
-                self.assertEqual(info['config']['problems'], ['PWM_AUX_DIS5=1000（应为 0）'])
+                self.assertEqual(info['config']['problems'], ['PWM_AUX_DIS5=1500（应为 0 或 800–1250）'])
         finally:
             service.stop.set()
             thread.join(2)

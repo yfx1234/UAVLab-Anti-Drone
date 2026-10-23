@@ -36,8 +36,8 @@
 #
 # 实物击发（2026-10-23）：start 默认装订 trigger_command:=python3 -I -S deploy/netgun_pwm_link.py
 # fire——火控开火时经常驻击发服务（用户级 systemd netgun-pwm-link.service，见
-# deploy/install_netgun_pwm_link.sh）→ MAVProxy → 飞控 FMU PWM OUT 5：已解锁才发
-# DO_SET_ACTUATOR 击发值，保持后回安全值；未解锁拒绝且不发任何指令。环境变量
+# deploy/install_netgun_pwm_link.sh）→ MAVProxy → 飞控 FMU PWM OUT 5：常态锁存待命低位，
+# 已解锁才跳击发高位、保持后回低位（2026-10-24 按网枪触发模块说明）；未解锁拒绝、不发高位。环境变量
 # NETGUN_TRIGGER_COMMAND 覆盖（置空 = 仅虚拟事件），命令行 trigger_command:=… 最后生效；
 # 实际装订写入运行日志 NETGUN_TRIGGER 行，启动时打印链路状态。拦截链进程带
 # NETGUN_REVIEW_DIR=本次复盘目录，击发记录同时写入其中 pwm_events.jsonl。

@@ -31,8 +31,9 @@
   10. /debug/strike_state            开火模式（实机默认 auto_manual）、未发射
       过（shots=0）、手动兜底门首因 mblk；trigger_command 未装订仅 WARN
   10b. 实物击发链路（2026-10-23）：trigger_command 装订 netgun_pwm_link 时，常驻击发
-      服务在线 + 飞控 MAVLink 心跳 + AUX5 参数只读核对一致，否则 FAIL；台架模式
-      （--bench）装订或参数提示（COM_MOT_TEST_EN/COM_PREARM_MODE）仅 WARN
+      服务在线 + 飞控 MAVLink 心跳 + AUX5 参数只读核对一致 + 击发参数有效 + 待命低位
+      已被飞控确认（2026-10-24），否则 FAIL；台架模式（--bench）装订或参数提示
+      （COM_MOT_TEST_EN/COM_PREARM_MODE）仅 WARN
 
 环境门（G-2）：开头打印 ROS_DOMAIN_ID/ROS_LOCALHOST_ONLY；domain≠0 或
 LOCALHOST_ONLY=1 直接退出 1（与拦截链发现配置不一致时结果不可信）。
@@ -94,7 +95,7 @@ def kv(text):
 
 
 def pwm_link_check(trigger):
-    """10b：常驻击发服务（本机套接字，无 ROS）就绪 = 飞控心跳 + AUX5 参数一致。"""
+    """10b：常驻击发服务（本机套接字，无 ROS）就绪 = 飞控心跳 + AUX5 参数一致 + 待命低位已锁存。"""
     name = "实物击发链路（netgun_pwm_link → FMU PWM OUT 5）"
     here = os.path.dirname(os.path.abspath(__file__))
     if here not in sys.path:

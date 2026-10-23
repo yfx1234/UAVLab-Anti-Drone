@@ -26,7 +26,7 @@ OUTPUT=pathlib.Path(os.environ.get('UAVLAB_OUTPUT_DIRECTORY',str(BASE.parents[1]
 BOARD_ACTIONS={'check_device','start_capture','stop_capture','set_detector','start_raw_record','stop_raw_record',
                'list_sessions','list_models','test_model','select_model','save_calibration','export_session','export_diagnostics','prepare_dataset','rename_session','delete_session','save_session_metadata'}
 LOCAL_ACTIONS={'connect','disconnect','start_preview_record','stop_preview_record','download_session','download_asset','extract_local_frames','cancel_job','open_media_folder','delete_local_media',
-               'interceptor_start','interceptor_stop','interceptor_fire','interceptor_geometry_save','annotate_session'}
+               'interceptor_start','interceptor_stop','interceptor_fire','interceptor_geometry_save','interceptor_trigger_save','annotate_session'}
 INTERCEPTOR_STATUS_CMD='python3 /home/uavlab/interceptor_ws/deploy/interceptor_status.py'
 INTERCEPTOR_CONTROL_CMD='bash /home/uavlab/interceptor_ws/deploy/run_interceptor_stack.sh'
 # I-1：网枪发射按钮（板上助手先校验就绪再发布 /netgun/fire_command，单发闭锁在火控侧）
@@ -36,6 +36,12 @@ INTERCEPTOR_FIRE_CMD='python3 /home/uavlab/interceptor_ws/deploy/netgun_fire_but
 # 2026-10-22：安装参数（以网枪中心为基准）——JSON 经 stdin 交板上脚本校验并原子写入
 # ~/netgun_config/mounting_geometry.json；只影响下次启动的拦截链，不写飞控参数
 INTERCEPTOR_GEOMETRY_SAVE_CMD='python3 /home/uavlab/interceptor_ws/deploy/mounting_geometry.py save'
+# 2026-10-24：击发参数（待命低位/击发高位/高位保持/低位确认）——JSON 经 stdin 交板上击发服务校验、
+# 写 ~/netgun_config/netgun_pwm.json 并立即生效（解锁中拒绝）；服务未运行时板上脚本直接写文件。不写飞控参数
+INTERCEPTOR_TRIGGER_SAVE_CMD='python3 /home/uavlab/interceptor_ws/deploy/netgun_pwm_link.py params save'
+TRIGGER_PARAM_KEYS=('low_us','high_us','hold_s','low_s')
+# 前端据此判断后台是否支持新动作（只更新 index.html、未重启面板时禁用保存并提示）
+FEATURES=('trigger_params',)
 
 def _load_geometry_module():
     """与板上同一份校验/换算（仓库 deploy/mounting_geometry.py）。
@@ -121,7 +127,7 @@ class Panel:
             if isinstance(hardware,dict):
                 age=hardware.get('sample_age_s')
                 state['hardware']=dict(hardware,sample_age_s=age+max(0,time.monotonic()-self.state_observed_at) if isinstance(age,(int,float)) and math.isfinite(age) and age>=0 else None)
-            return {'api_version':2,'instance_id':self.instance_id,'host':HOST,'connected':self.connected,'state':state,'error':self.error,
+            return {'api_version':2,'instance_id':self.instance_id,'features':list(FEATURES),'host':HOST,'connected':self.connected,'state':state,'error':self.error,
                     'control_roundtrip_ms':getattr(self,'control_roundtrip_ms',None),
                     'local_revision':self.local_revision,'preview':self.receiver.snapshot(),'preview_recording':self.recorder.snapshot(),
                     'interceptor':self.interceptor,'interceptor_error':self.interceptor_error,
@@ -134,6 +140,13 @@ class Panel:
         if action=='interceptor_geometry_save':
             if set(params)!={'config'} or not isinstance(params['config'],dict):raise ValueError('安装参数请求格式无效')
             if geometry is not None:params={'config':geometry.validate_editable(params['config'])}
+        if action=='interceptor_trigger_save':
+            # 只做格式检查：范围由板上击发服务/脚本校验（同一份 netgun_pwm_link.py），面板不另存一份范围
+            config=params.get('config') if set(params)=={'config'} else None
+            if not isinstance(config,dict) or not config or not set(config)<=set(TRIGGER_PARAM_KEYS) or not all(
+                    isinstance(v,(int,float)) and not isinstance(v,bool) and math.isfinite(v) for v in config.values()):
+                raise ValueError('击发参数请求格式无效')
+            params={'config':dict(config)}
         rid=data.get('request_id',uuid.uuid4().hex)
         if not isinstance(rid,str) or not re.fullmatch('[a-zA-Z0-9_-]{1,80}',rid):raise ValueError('请求 ID 无效')
         # Reserve at submission, including queued work, so delete cannot race a transfer.
@@ -193,6 +206,8 @@ class Panel:
                 return {'output':lines[-3:]}
             if action=='interceptor_geometry_save':
                 return self.board.exec_json(INTERCEPTOR_GEOMETRY_SAVE_CMD,params,timeout=20)
+            if action=='interceptor_trigger_save':
+                return self.board.exec_json(INTERCEPTOR_TRIGGER_SAVE_CMD,params,timeout=20)
             if action=='interceptor_fire':
                 # I-1：发射网枪（单发）——板上助手校验就绪（授权/估计/
                 # 深度硬门在 strike 侧逐拍计算）后发布一次发射指令；

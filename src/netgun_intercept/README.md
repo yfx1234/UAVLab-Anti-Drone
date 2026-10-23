@@ -63,8 +63,10 @@
   `trigger command done rc=0`，否则 `trigger command FAILED`。单发闭锁保证
   每任务至多执行一次。干跑替身见 `tools/board_test/netgun_trigger_dryrun.sh`。
   实机实现（2026-10-23）：`deploy/netgun_pwm_link.py fire` → 常驻服务
-  `netgun-pwm-link.service` → MAVProxy → 飞控 FMU PWM OUT 5（已解锁才发
-  `DO_SET_ACTUATOR`，未解锁拒绝且不发指令），`run_interceptor_stack.sh start` 默认装订；
+  `netgun-pwm-link.service` → MAVProxy → 飞控 FMU PWM OUT 5，`run_interceptor_stack.sh start`
+  默认装订。2026-10-24 起按网枪触发模块：平时锁存待命低位（默认 1000 µs），开火时确认低位后
+  `DO_SET_ACTUATOR` 击发高位（默认 2000 µs）保持 1.0 s 再回低位；未解锁拒绝且不发高位。
+  脉宽/时长存 `~/netgun_config/netgun_pwm.json`（面板「击发参数」或 `netgun_pwm_link.py params`）；
   接线、参数、台架与解锁实测见 `指令.md` 0.8。
 - 制导收到开火事件：TRACK/AIM → SETTLE→SPIN→DONE（原逻辑）；TAKEOFF 中 →
   原地 DONE 保持；WAITING（未切 offboard）→ 闩锁，之后进 offboard 直接 DONE。

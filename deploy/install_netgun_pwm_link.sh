@@ -3,7 +3,8 @@
 #   1. qgc-mavlink-forward.service 的 MAVProxy 增加本机输出 --out=udp:127.0.0.1:14555
 #      （改前备份；有改动才重启转发服务——QGC 断开几秒，飞控与 uXRCE agent 不受影响）
 #   2. 安装并（重）启 netgun-pwm-link.service（deploy/netgun_pwm_link.py serve）
-# 不改飞控参数、不发任何击发指令；最后打印链路状态（飞控心跳 + AUX5 参数只读核对）。
+# 不改飞控参数、不发击发高位（服务起来后只锁存 AUX5 待命低位）；最后打印链路状态（飞控心跳 +
+# AUX5 参数只读核对 + 待命低位）。
 # 拦截链运行中重跑会让击发服务重启约 1 s（期间开火的击发请求失败），先停链。
 set -euo pipefail
 

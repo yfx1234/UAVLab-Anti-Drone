@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""网枪实物击发链路（2026-10-23）：拦截链开火 → MAVLink → 飞控 FMU PWM OUT 5。
+"""网枪实物击发链路：拦截链开火 → MAVLink → 飞控 FMU PWM OUT 5（AUX5）。
+2026-10-23 建链；2026-10-24 按网枪触发模块说明改为"低位待命 → 跳高位击发"，击发参数可调。
 
 链路：netgun_strike_node 开火 → trigger_command（/bin/sh -c，环境变量
 NETGUN_SHOT_ID / NETGUN_SHOT_REASON）→ 本脚本 fire 客户端 → 本机 Unix 套接字
@@ -8,35 +9,55 @@ NETGUN_SHOT_ID / NETGUN_SHOT_REASON）→ 本脚本 fire 客户端 → 本机 Un
 不碰 ttyTHS1（uXRCE-DDS 专用）；拦截链 /fmu/in/vehicle_command 仍无发布者
 （rc_gated 红线不变）。本服务不发心跳、不改参数、不发解锁类指令。
 
+网枪触发模块（说明书）：PWM 50 Hz、900–2100 µs。上电 LED 5 Hz 闪 3 s 初始化、安全延时 5 s，
+之后 1 Hz 闪。待命态先要 ≤1300 µs（低位）持续 100 ms 才进入就绪——上电时就是高位不会触发；
+就绪后 ≥1700 µs（高位）持续 100 ms → 输出打开（击发），一直保持到 <1700 µs 持续 100 ms →
+关闭、回待命。所以击发 = 先低位 ≥0.1 s 再跳高位 ≥0.1 s，常态必须是低位。
+
+AUX5 脉冲时序：
+  未解锁：无脉冲（PWM_AUX_DIS5=0）。
+  已解锁常态：待命低位 low_us（默认 1000 µs）。服务启动、飞控重连、改参数、每次击发后都发
+    MAV_CMD_DO_SET_ACTUATOR(187) p1=低位，PX4 锁存（未解锁时也可发，解锁后才输出），飞控 ACK
+    后才算就绪。PX4 v1.15.4 的 Actuator Set 只认有限值、锁存到下一条指令或飞控重启（NaN 被
+    忽略，无法"释放"），所以常态锁存的只能是低位。
+  live（trigger_command 默认装订，仅已解锁）：确认低位已锁存（否则先补发）且已输出满 low_s
+    （默认 0.3 s；解锁/进执行器测试时 PX4 输出有 0.5 s 斜坡，从解锁起另加 0.5 s）→ 发高位
+    high_us（默认 2000 µs），ACK 后回复火控 → 保持 hold_s（默认 1.0 s）→ 回低位（锁存）。
+    未解锁时拒绝、不发高位：PX4 会锁存，解锁瞬间就输出高位（等于解锁即击发）。
+  bench（--bench，台架，仅未解锁）：MAV_CMD_ACTUATOR_TEST(310) p5=1301：低位 0.5 s+low_s →
+    高位 hold_s → 低位 low_s → 释放（回到 DIS5 无脉冲）。不锁存；COM_MOT_TEST_EN≠1 时拒绝。
+ACK 每次等 0.25 s，最多发 3 次（confirmation 0/1/2）。高位发出后无论 ACK 结果如何都回低位；
+回低位未被确认时每秒补发。同一时刻只允许一个击发序列（序列中再请求返回 BUSY）。
+
+击发参数：~/netgun_config/netgun_pwm.json（NETGUN_CONFIG_DIR 可改目录；文件不存在 = 默认值；
+文件无效时拒绝击发、不静默退回默认）。范围：low_us 1000–1250、high_us 1750–2000（模块门限
+1300/1700 各留 50 µs，且在 MIN5/MAX5 内）、hold_s 0.3–2.5 s、low_s 0.2–2.0 s（模块确认
+0.1 s）。只能在未解锁时改，立即生效：
+  python3 netgun_pwm_link.py params                                 查看
+  python3 netgun_pwm_link.py params --high-us 1900 --hold-s 0.8     修改（未给的项不变）
+  python3 netgun_pwm_link.py params --reset                         恢复默认（删文件）
+  面板「拦截任务 → 击发参数」（params save，stdin：{"config": {...}}）。
+  服务未运行时直接写文件，下次启动生效。
+
 用法：
-  python3 netgun_pwm_link.py serve [--fire-value -1] [--safe-value 1|none] [--hold-s 1.0]
-  python3 netgun_pwm_link.py fire [--bench] [--timeout 1.5]   （装订时用 python3 -I -S，启动更快）
+  python3 netgun_pwm_link.py serve [--listen 127.0.0.1:14555]
+  python3 netgun_pwm_link.py fire [--bench] [--timeout 5]   （装订时用 python3 -I -S，启动更快）
   python3 netgun_pwm_link.py status [--brief]
+  python3 netgun_pwm_link.py params [--low-us N] [--high-us N] [--hold-s S] [--low-s S] | --reset | save
 
 飞控（PX4 v1.15.4）配置：PWM_AUX_FUNC5=301（Peripheral via Actuator Set 1）、
-DIS5=0（未解锁无脉冲）、FAIL5=0、MIN5=1000、MAX5=2000、TIM1=50（AUX5–6 50 Hz）；
-其他 PWM_MAIN/AUX_FUNC1–8 不得再用 301。服务启动后只读核对（PARAM_REQUEST_READ，
-每 60 s 复核，不符时每 10 s），不符或未读到时拒绝击发。
-
-两种击发（击发值/安全值为归一化 −1..+1，对应 MIN5..MAX5）：
-  live（trigger_command 默认装订）：仅飞控已解锁时发 MAV_CMD_DO_SET_ACTUATOR(187)
-    p1=击发值（默认 −1 → 1000 µs），等 ACK；保持 hold_s（默认 1 s）后发安全值
-    （默认 +1 → 2000 µs；--safe-value none 不复位）。未解锁时直接拒绝、什么都
-    不发——PX4 会锁存设定值，未解锁时发出的值会在下次解锁瞬间输出。
-  bench（--bench，台架）：仅未解锁时发 MAV_CMD_ACTUATOR_TEST(310) p5=1301，
-    击发值保持 hold_s → 安全值 0.5 s → 释放（回到 DIS5 无脉冲）。不锁存；
-    已解锁或 COM_MOT_TEST_EN≠1 时拒绝。
-ACK 每次等 0.25 s，最多发 3 次（confirmation 0/1/2）。指令发出后无论 ACK 结果
-如何都执行复位/释放。同一时刻只允许一个击发序列（保持/复位期间再请求返回 BUSY）。
+DIS5=0（未解锁无脉冲；800–1250 也可）、FAIL5=0、MIN5=1000、MAX5=2000、TIM1=50（AUX5–6
+50 Hz）、PWM_AUX_REV 不含 AUX5；其他 PWM_MAIN/AUX_FUNC1–8 不得再用 301。服务启动后只读核对
+（PARAM_REQUEST_READ，每 60 s 复核，不符时每 10 s），不符或未读到时拒绝击发。
 
 fire 输出一行 "NETGUN_PWM_RESULT {json}"（经火控节点 stdout 进运行日志），退出码
-0=飞控已接受，1=拒绝/飞控未接受/回复超时，2=链路不可用（服务未运行或飞控无心跳，
+0=飞控已接受高位，1=拒绝/飞控未接受/回复超时，2=链路不可用（服务未运行或飞控无心跳，
 未发出任何指令）。status 输出 JSON（--brief 一行中文），退出码 0=就绪，1=未就绪，
-2=服务不可达。
+2=服务不可达。params 输出 JSON，退出码 0=成功，1=失败/被拒，2=用法错误。
 
 记录：每次请求（含拒绝）以 JSON 行追加到 $NETGUN_LOG_DIR/netgun_pwm_events.jsonl
 （默认 ~/netgun_logs）；请求带 NETGUN_REVIEW_DIR（run_interceptor_stack.sh 传给
-拦截链）时同时写入该复盘目录 pwm_events.jsonl（含复位结果与舵机输出回读）。
+拦截链）时同时写入该复盘目录 pwm_events.jsonl（含回低位结果与舵机输出回读）。
 
 控制套接字：$NETGUN_PWM_SOCKET，缺省 $NETGUN_LOG_DIR/netgun_pwm.sock（仅本用户可连）。
 客户端只用标准库（fire 路径约 0.1 s）；serve 需要 pymavlink。
@@ -59,18 +80,48 @@ CMD_DO_SET_ACTUATOR = 187
 CMD_ACTUATOR_TEST = 310
 ACTUATOR_SET1 = 301
 TEST_FUNCTION = 1000 + ACTUATOR_SET1  # ACTUATOR_TEST p5≥1000：直接按输出功能号
-EXPECTED = (
+PWM_MIN_US, PWM_MAX_US = 1000, 2000  # PWM_AUX_MIN5/MAX5：归一化 −1..+1 ↔ 1000..2000 µs
+MODULE_LOW_MAX_US = 1300  # 网枪触发模块：≤1300 µs 持续 100 ms = 低位（待命）
+MODULE_HIGH_MIN_US = 1700  # ≥1700 µs 持续 100 ms = 高位（击发）；<1700 µs 持续 100 ms = 关闭
+MARGIN_US = 50
+ARM_RAMP_S = 0.5  # PX4 解锁/进执行器测试时输出从 DIS5 线性斜坡 0.5 s 到设定值
+EXPECTED = (  # 推荐值（核对规则见 CHECKS）
     ("PWM_AUX_FUNC5", 301),
     ("PWM_AUX_DIS5", 0),
     ("PWM_AUX_FAIL5", 0),
-    ("PWM_AUX_MIN5", 1000),
-    ("PWM_AUX_MAX5", 2000),
+    ("PWM_AUX_MIN5", PWM_MIN_US),
+    ("PWM_AUX_MAX5", PWM_MAX_US),
     ("PWM_AUX_TIM1", 50),
+)
+CHECKS = (  # 参数名、合格判据、应为（问题文本）
+    ("PWM_AUX_FUNC5", lambda v: v == ACTUATOR_SET1, "301"),
+    ("PWM_AUX_DIS5", lambda v: v == 0 or 800 <= v <= MODULE_LOW_MAX_US - MARGIN_US, "0 或 800–1250"),
+    ("PWM_AUX_FAIL5", lambda v: v in (0, -1) or 800 <= v <= MODULE_LOW_MAX_US - MARGIN_US,
+     "0、-1 或 800–1250"),
+    ("PWM_AUX_MIN5", lambda v: v == PWM_MIN_US, str(PWM_MIN_US)),
+    ("PWM_AUX_MAX5", lambda v: v == PWM_MAX_US, str(PWM_MAX_US)),
+    ("PWM_AUX_TIM1", lambda v: v == 50, "50"),
 )
 OTHER_FUNCS = tuple("PWM_MAIN_FUNC%d" % i for i in range(1, 9)) + tuple(
     "PWM_AUX_FUNC%d" % i for i in range(1, 9) if i != 5)
-NOTES = ("COM_MOT_TEST_EN", "COM_PREARM_MODE")
-PWM_MIN_US, PWM_MAX_US = 1000, 2000
+NOTES = ("COM_MOT_TEST_EN", "COM_PREARM_MODE", "PWM_AUX_REV")
+AUX5_BIT = 1 << 4
+
+DEFAULT_PARAMS = {"low_us": 1000, "high_us": 2000, "hold_s": 1.0, "low_s": 0.3}
+PARAM_SPECS = (  # 键、名称、单位、下限、上限、整数、范围依据
+    ("low_us", "待命低位", "µs", PWM_MIN_US, MODULE_LOW_MAX_US - MARGIN_US, True,
+     "模块 ≤1300 µs 判低位，留 50 µs；不低于 MIN5"),
+    ("high_us", "击发高位", "µs", MODULE_HIGH_MIN_US + MARGIN_US, PWM_MAX_US, True,
+     "模块 ≥1700 µs 判高位，留 50 µs；不高于 MAX5"),
+    ("hold_s", "高位保持", "s", 0.3, 2.5, False, "模块要高位持续 0.1 s 才击发"),
+    ("low_s", "低位确认", "s", 0.2, 2.0, False, "模块要低位持续 0.1 s 才待命"),
+)
+PARAM_KEYS = tuple(spec[0] for spec in PARAM_SPECS)
+PARAM_OPTIONS = {"--low-us": "low_us", "--high-us": "high_us", "--hold-s": "hold_s", "--low-s": "low_s"}
+PARAMS_FILE = "netgun_pwm.json"
+PARAMS_SCHEMA = 1
+PARAMS_META_KEYS = ("schema_version", "saved_at")
+PARAMS_LIMIT_BYTES = 65536
 
 HEARTBEAT_STALE_S = 3.0
 ACK_TIMEOUT_S = 0.25
@@ -78,21 +129,25 @@ ACK_ATTEMPTS = 3
 PARAM_PERIOD_S = 60.0
 PARAM_RETRY_S = 10.0
 PARAM_GAP_S = 0.02
-BENCH_SAFE_S = 0.5
-FIRE_TIMEOUT_S = 1.5
+LATCH_RETRY_S = 1.0
+FIRE_TIMEOUT_S = 5.0
 STATUS_TIMEOUT_S = 0.5
+PARAMS_TIMEOUT_S = 3.0
 CONNECT_TIMEOUT_S = 0.3
 MAX_LINE = 65536
 WANTED = (0, 22, 36, 77)  # HEARTBEAT, PARAM_VALUE, SERVO_OUTPUT_RAW, COMMAND_ACK
 RESULT_NAMES = {0: "ACCEPTED", 1: "TEMPORARILY_REJECTED", 2: "DENIED",
                 3: "UNSUPPORTED", 4: "FAILED", 5: "IN_PROGRESS", 6: "CANCELLED"}
 REFUSALS = {
-    "BUSY": "上一次击发序列未结束（保持/复位中）",
+    "BUSY": "上一次击发序列未结束（低位确认/高位保持/回低位中）",
     "NO_LINK": "飞控无心跳（MAVProxy 转发 127.0.0.1:14555 未通或飞控未上电）",
     "CONFIG": "飞控 AUX5 参数不符或未读到",
-    "DISARMED": "飞控未解锁：不发击发指令（PX4 会锁存设定值，解锁瞬间才输出）；台架测试用 --bench",
+    "PARAMS": "击发参数无效",
+    "DISARMED": "飞控未解锁：不发击发高位（PX4 会锁存设定值，解锁瞬间就会输出）；台架测试用 --bench",
     "ARMED": "飞控已解锁：台架模式只在未解锁时可用",
     "MOT_TEST_DISABLED": "COM_MOT_TEST_EN≠1：飞控不接受执行器测试（台架模式不可用）",
+    "LOW_FAILED": "飞控未确认待命低位（网枪模块要先见低位才会被高位触发），未发高位",
+    "STOPPING": "击发服务正在停止，未发高位",
 }
 
 
@@ -106,10 +161,35 @@ def socket_path():
         log_dir(), "netgun_pwm.sock")
 
 
+def config_dir():
+    return (os.environ.get("NETGUN_CONFIG_DIR", "").strip()
+            or os.path.expanduser("~/netgun_config"))
+
+
+def params_path():
+    return os.path.join(config_dir(), PARAMS_FILE)
+
+
 def pwm_us(value):
+    """归一化值 −1..+1 → 脉宽（MIN5..MAX5）。"""
     if value is None:
         return None
     return int(round(PWM_MIN_US + (value + 1.0) * 0.5 * (PWM_MAX_US - PWM_MIN_US)))
+
+
+def unit_value(us):
+    """脉宽 → DO_SET_ACTUATOR/ACTUATOR_TEST 的归一化值（PX4 按 MIN5..MAX5 线性换算、四舍五入）。"""
+    return (float(us) - PWM_MIN_US) * 2.0 / (PWM_MAX_US - PWM_MIN_US) - 1.0
+
+
+def seconds_text(value):
+    text = "%.2f" % value
+    return text[:-1] if text.endswith("0") else text
+
+
+def plan_text(params):
+    return "待命 %d µs → 击发 %d µs 保持 %s s" % (
+        params["low_us"], params["high_us"], seconds_text(params["hold_s"]))
 
 
 def log_line(text, level="INFO"):
@@ -124,6 +204,118 @@ def emit(payload, prefix=None):
     except UnicodeEncodeError:  # 非 UTF-8 终端/日志：退回 ASCII 转义，结果行不能丢
         text = json.dumps(payload, sort_keys=True)
         print(("%s %s" % (prefix, text)) if prefix else text, flush=True)
+
+
+# ---------------------------------------------------------------- 击发参数
+
+class ParamsError(ValueError):
+    """击发参数无效。"""
+
+
+def validate_params(raw):
+    """完整校验四项击发参数，返回规整后的副本（µs 取整数，秒保留两位小数）。"""
+    if not isinstance(raw, dict):
+        raise ParamsError("击发参数需为 JSON 对象")
+    unknown = sorted(str(key) for key in raw if key not in PARAM_KEYS)
+    if unknown:
+        raise ParamsError("未知参数：%s（可用 %s）" % ("、".join(unknown), "、".join(PARAM_KEYS)))
+    params = {}
+    for key, label, unit, low, high, integer, why in PARAM_SPECS:
+        if key not in raw:
+            raise ParamsError("缺少%s（%s）" % (label, key))
+        value = raw[key]
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+            raise ParamsError("%s需为数字" % label)
+        if integer:
+            if value != int(value):
+                raise ParamsError("%s需为整数（µs）" % label)
+            value = int(value)
+        else:
+            value = round(float(value), 2)
+        if not low <= value <= high:
+            raise ParamsError("%s %s %s 超出范围 %s–%s %s（%s）" % (
+                label, value, unit, low, high, unit, why))
+        params[key] = value
+    return params
+
+
+def _meta(source="default", path=None, saved_at=None, error=None):
+    return {"source": source, "path": path, "saved_at": saved_at, "error": error}
+
+
+def load_params(path=None):
+    """(params, meta)：文件不存在 → 默认值；文件无效 → (None, meta.error)，不静默退回默认。"""
+    path = path or params_path()
+    try:
+        with open(path, encoding="utf-8") as f:
+            text = f.read(PARAMS_LIMIT_BYTES + 1)
+    except FileNotFoundError:
+        return dict(DEFAULT_PARAMS), _meta(path=path)
+    except (OSError, ValueError) as exc:
+        return None, _meta("file", path, error="击发参数文件读取失败（%s）：%s" % (path, exc))
+    try:
+        if len(text) > PARAMS_LIMIT_BYTES:
+            raise ParamsError("文件过大")
+        document = json.loads(text)
+        if not isinstance(document, dict):
+            raise ParamsError("内容需为 JSON 对象")
+        params = validate_params({k: v for k, v in document.items() if k not in PARAMS_META_KEYS})
+    except ValueError as exc:
+        return None, _meta("file", path, error="击发参数文件无效（%s）：%s" % (path, exc))
+    saved_at = document.get("saved_at")
+    return params, _meta("file", path, saved_at if isinstance(saved_at, str) else None)
+
+
+def save_params(params, path=None):
+    """校验后原子写入（同目录临时文件 + rename），返回 meta。"""
+    params = validate_params(params)
+    path = path or params_path()
+    stamp = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+    if len(stamp) > 5 and stamp[-5] in "+-":
+        stamp = stamp[:-2] + ":" + stamp[-2:]
+    document = {"schema_version": PARAMS_SCHEMA, "saved_at": stamp}
+    document.update(params)
+    directory = os.path.dirname(path)
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+    temporary = "%s.tmp%d" % (path, os.getpid())
+    try:
+        with open(temporary, "w", encoding="utf-8") as f:
+            f.write(json.dumps(document, ensure_ascii=False, indent=2) + "\n")
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temporary, path)
+    except BaseException:
+        try:
+            os.unlink(temporary)
+        except OSError:
+            pass
+        raise
+    return _meta("file", path, stamp)
+
+
+def remove_params(path=None):
+    """恢复默认 = 删除参数文件。"""
+    path = path or params_path()
+    try:
+        os.unlink(path)
+    except FileNotFoundError:
+        pass
+    return _meta(path=path)
+
+
+def options_info(params, meta):
+    """状态/面板用：四项参数（无效时为 null）+ 来源/路径/保存时间/错误 + 默认值与范围。"""
+    info = {key: (params or {}).get(key) for key in PARAM_KEYS}
+    info.update(meta)
+    info["defaults"] = dict(DEFAULT_PARAMS)
+    info["limits"] = {spec[0]: [spec[3], spec[4]] for spec in PARAM_SPECS}
+    return info
+
+
+def params_info(path=None):
+    """不经服务、直接读文件（服务未运行时面板/CLI 用）。"""
+    return options_info(*load_params(path))
 
 
 # ---------------------------------------------------------------- 客户端
@@ -178,7 +370,7 @@ def status(timeout_s=STATUS_TIMEOUT_S, path=None):
 
 
 def brief(info):
-    """一行中文摘要（run_interceptor_stack.sh start/status、日志）。"""
+    """一行中文摘要（run_interceptor_stack.sh start/status、预检、日志）。"""
     if not info.get("ok"):
         return "不可用：%s" % (info.get("error") or "击发服务未运行")
     link = info.get("link") or {}
@@ -190,12 +382,17 @@ def brief(info):
     if not config.get("ok"):
         return "参数不符：%s" % "；".join(config.get("problems") or ["未知"])
     options = info.get("options") or {}
-    safe = options.get("safe_value")
-    text = "就绪（飞控 %s · %s · AUX5 %+g→%s µs 保持 %.1f s%s）" % (
-        link.get("fc") or "?", "已解锁" if link.get("armed") else "未解锁",
-        options.get("fire_value", -1.0), options.get("fire_us"),
-        options.get("hold_s", 1.0),
-        " → %+g→%s µs" % (safe, options.get("safe_us")) if safe is not None else " · 不复位")
+    if "high_us" not in options:
+        return "击发服务是旧版本：板上重跑 install_netgun_pwm_link.sh"
+    if not isinstance(options.get("high_us"), int):
+        return "击发参数无效：%s" % (options.get("error") or "未知")
+    idle = info.get("idle") or {}
+    if not idle.get("latched"):
+        return "待命低位未设好（%s）" % (
+            idle.get("error") or "等待飞控确认 %s µs" % options.get("low_us"))
+    text = "就绪（飞控 %s · %s · AUX5 %s%s）" % (
+        link.get("fc") or "?", "已解锁" if link.get("armed") else "未解锁", plan_text(options),
+        " · 默认参数" if options.get("source") == "default" else "")
     if config.get("warnings"):
         text += "；注意：" + "；".join(config["warnings"])
     return text
@@ -244,6 +441,66 @@ def client_status(args):
     if not info.get("ok"):
         return 2
     return 0 if info.get("ready") else 1
+
+
+def _params_request(args):
+    """命令行 → 服务请求：None=查看；{"reset": True}；{"set": {...}}。"""
+    if args[:1] == ["save"]:
+        text = sys.stdin.read(PARAMS_LIMIT_BYTES + 1)
+        if len(text) > PARAMS_LIMIT_BYTES:
+            raise ParamsError("请求内容过大")
+        document = json.loads(text)
+        if not isinstance(document, dict) or set(document) != {"config"}:
+            raise ParamsError("请求格式无效（应为 {\"config\": {...}}）")
+        if not isinstance(document["config"], dict):
+            raise ParamsError("config 需为 JSON 对象")
+        return {"set": document["config"]}
+    if args == ["--reset"]:
+        return {"reset": True}
+    changes, rest = {}, list(args)
+    while rest:
+        name = rest.pop(0)
+        if name not in PARAM_OPTIONS or not rest:
+            raise ParamsError("用法：params [--low-us N] [--high-us N] [--hold-s S] [--low-s S] | --reset | save")
+        try:
+            changes[PARAM_OPTIONS[name]] = float(rest.pop(0))
+        except ValueError:
+            raise ParamsError("%s 需要数字" % name)
+    return {"set": changes} if changes else None
+
+
+def _params_offline(req, reason):
+    """服务未运行：直接读/写文件（下次启动生效）。"""
+    note = "击发服务未运行（%s）" % reason
+    if req is None:
+        return {"ok": True, "service": False, "note": note + "：显示文件内容", "options": params_info()}
+    if req.get("reset"):
+        remove_params()
+    else:
+        current, _ = load_params()
+        save_params(validate_params(dict(current or DEFAULT_PARAMS, **req["set"])))
+    return {"ok": True, "service": False, "applied": False,
+            "note": note + "：已写入文件，服务启动后生效", "options": params_info()}
+
+
+def client_params(args):
+    try:
+        req = _params_request(args)
+    except ValueError as exc:
+        emit({"ok": False, "error": str(exc)})
+        return 2
+    try:
+        reply = request(dict({"cmd": "params"}, **(req or {})), PARAMS_TIMEOUT_S)
+        reply.setdefault("service", True)
+    except LinkUnavailable as exc:
+        try:
+            reply = _params_offline(req, exc)
+        except (ValueError, OSError) as error:
+            reply = {"ok": False, "service": False, "error": str(error)}
+    except ReplyTimeout as exc:
+        reply = {"ok": False, "error": "%s（参数可能已保存，用 params 查看）" % exc}
+    emit(reply)
+    return 0 if reply.get("ok") else 1
 
 
 # ---------------------------------------------------------------- 常驻服务
@@ -301,6 +558,7 @@ class FcLink:
         self.fc = None
         self.hb_t = None
         self.armed = None
+        self.armed_t = None
         self.base_mode = None
         self.system_status = None
         self.datagrams = 0
@@ -370,10 +628,16 @@ class FcLink:
                 return
             armed = bool(msg.base_mode & 128)
             with self.cond:
+                fresh = self.hb_t is None or now - self.hb_t > HEARTBEAT_STALE_S or self.fc != src
                 if self.fc != src:
                     self.log("飞控 %d/%d 心跳" % src)
                 elif self.armed is not None and armed != self.armed:
                     self.log("飞控%s" % ("已解锁" if armed else "已上锁"))
+                # 解锁时刻按首次看到已解锁心跳记（晚于真实解锁，等待只会偏长）
+                if not armed:
+                    self.armed_t = None
+                elif fresh or not self.armed or self.armed_t is None:
+                    self.armed_t = now
                 self.fc, self.hb_t, self.armed = src, now, armed
                 self.base_mode, self.system_status = msg.base_mode, msg.system_status
             return
@@ -411,12 +675,19 @@ class FcLink:
                 "fc": "%d/%d" % self.fc if self.fc else None,
                 "heartbeat_age_s": None if hb_age is None else round(hb_age, 2),
                 "armed": self.armed,
+                "armed_for_s": (round(now - self.armed_t, 1)
+                                if self.armed and self.armed_t is not None else None),
                 "peer": "%s:%d" % self.peer if self.peer else None,
                 "rx_age_s": None if self.peer_t is None else round(now - self.peer_t, 2),
                 "datagrams": self.datagrams,
                 "bad": self.bad,
                 "listen": "%s:%d" % self.listen,
             }
+
+    def armed_since(self):
+        """本服务看到飞控解锁的时刻（clock）；未解锁为 None。"""
+        with self.cond:
+            return self.armed_t if self.armed else None
 
     def param(self, name):
         with self.cond:
@@ -491,13 +762,19 @@ class FcLink:
         self.sock.close()
 
 
+def _brief_result(result):
+    return {key: result.get(key) for key in ("result_name", "ack_ms", "attempts") if key in result}
+
+
 class PwmService:
-    def __init__(self, link, fire_value=-1.0, safe_value=1.0, hold_s=1.0,
-                 events_path=None, clock=time.monotonic, log=log_line):
+    def __init__(self, link, params=None, events_path=None, params_file=None,
+                 clock=time.monotonic, log=log_line):
         self.link = link
-        self.fire_value = fire_value
-        self.safe_value = safe_value
-        self.hold_s = hold_s
+        self.params_file = params_file or params_path()
+        if params is None:
+            self.params, self.params_meta = load_params(self.params_file)
+        else:
+            self.params, self.params_meta = validate_params(params), _meta("given")
         self.events_path = events_path or os.path.join(log_dir(), "netgun_pwm_events.jsonl")
         self.clock = clock
         self.log = log
@@ -508,6 +785,9 @@ class PwmService:
         self.param_sent = None
         self.was_alive = False
         self.last_state = None
+        self.latch = None  # 飞控已 ACK 的待命低位 {"low_us", "t", "why"}
+        self.latch_error = None
+        self.latch_try = None
         self.path = None
         self.sock_ino = None
 
@@ -516,14 +796,14 @@ class PwmService:
     def config(self):
         values, problems, missing, warnings = {}, [], [], []
         stamps = []
-        for name, expected in EXPECTED:
+        for name, good, expected in CHECKS:
             item = self.link.param(name)
             if item is None:
                 missing.append(name)
                 continue
             values[name] = item[0]
             stamps.append(item[1])
-            if item[0] != expected:
+            if not good(item[0]):
                 problems.append("%s=%s（应为 %s）" % (name, item[0], expected))
         for name in OTHER_FUNCS:
             item = self.link.param(name)
@@ -534,28 +814,63 @@ class PwmService:
             item = self.link.param(name)
             if item is not None:
                 values[name] = item[0]
+        if int(values.get("PWM_AUX_REV", 0)) & AUX5_BIT:
+            problems.append("PWM_AUX_REV=%s 含 AUX5（输出反向：待命低位会变成高位）" % values["PWM_AUX_REV"])
         if values.get("COM_MOT_TEST_EN", 1) != 1:
             warnings.append("COM_MOT_TEST_EN≠1，台架模式不可用")
         if values.get("COM_PREARM_MODE", 0) != 0:
-            warnings.append("COM_PREARM_MODE≠0，未解锁时也会输出锁存的击发/安全值")
+            warnings.append("COM_PREARM_MODE≠0，未解锁时也会输出锁存的待命低位")
         ok = False if problems else (None if missing else True)
         age = None if not stamps else round(self.clock() - min(stamps), 1)
         return {"ok": ok, "values": values, "problems": problems, "missing": missing,
                 "warnings": warnings, "age_s": age}
 
+    def options(self):
+        return options_info(self.params, self.params_meta)
+
+    def idle(self):
+        latch, params = self.latch, self.params
+        latched = bool(latch and params and latch["low_us"] == params["low_us"])
+        return {"latched": latched,
+                "low_us": latch["low_us"] if latch else None,
+                "age_s": None if not latch else round(self.clock() - latch["t"], 1),
+                "why": latch["why"] if latch else None,
+                "error": None if latched else self.latch_error}
+
+    def _latch_low(self, why, low_us=None):
+        """DO_SET_ACTUATOR 低位并等 ACK，ACCEPTED 才算已锁存。调用方持有 busy。"""
+        low = self.params["low_us"] if low_us is None else low_us
+        self.latch_try = self.clock()
+        result = self.link.command(CMD_DO_SET_ACTUATOR, self._set_params(unit_value(low)))
+        if result["result"] == 0:
+            recovered = self.latch_error is not None
+            self.latch = {"low_us": low, "t": self.clock(), "why": why}
+            self.latch_error = None
+            if why != "reset" or recovered:
+                self.log("待命低位 %d µs 已锁存（%s；ACK %s ms）" % (low, why, result.get("ack_ms")))
+        else:
+            self.latch = None
+            error = "飞控未确认低位 %d µs（%s）" % (low, result["result_name"])
+            if error != self.latch_error:
+                self.log("%s，每 %.0f s 重试" % (error, LATCH_RETRY_S), level="WARN")
+            self.latch_error = error
+        return result
+
     def maintain(self):
-        """周期只读核对参数；记录链路/参数状态变化。"""
+        """周期只读核对参数；锁存待命低位（链路恢复后重来）；记录链路/参数状态变化。"""
         link = self.link.snapshot()
         config = self.config()
         now = self.clock()
-        if link["alive"] and not self.was_alive:
-            self.param_sent = None  # 链路刚恢复（飞控可能重启过）：立即重读
+        if link["alive"] != self.was_alive:
+            self.latch = None  # 链路中断/恢复：飞控可能重启过（锁存值已丢），恢复后重新锁存
+            if link["alive"]:
+                self.param_sent = None  # 立即重读参数
         self.was_alive = link["alive"]
         if link["alive"]:
             period = PARAM_PERIOD_S if config["ok"] is True else PARAM_RETRY_S
             if self.param_sent is None or now - self.param_sent >= period:
                 self.param_sent = now
-                for name in [n for n, _ in EXPECTED] + list(OTHER_FUNCS) + list(NOTES):
+                for name in [n for n, _, _ in CHECKS] + list(OTHER_FUNCS) + list(NOTES):
                     if self.stop.is_set():
                         break
                     try:
@@ -563,6 +878,14 @@ class PwmService:
                     except OSError:
                         break
                     self.stop.wait(PARAM_GAP_S)
+        if (link["alive"] and config["ok"] is True and self.params is not None
+                and not self.idle()["latched"] and not self.stop.is_set()
+                and (self.latch_try is None or now - self.latch_try >= LATCH_RETRY_S)
+                and self.busy.acquire(blocking=False)):
+            try:
+                self._latch_low("链路就绪" if self.latch_error is None else "重试")
+            finally:
+                self.busy.release()
         state = (link["alive"], config["ok"], tuple(config["problems"]))
         if state != self.last_state:
             self.last_state = state
@@ -575,32 +898,70 @@ class PwmService:
     def status(self):
         link = self.link.snapshot()
         config = self.config()
+        idle = self.idle()
         return {
             "ok": True,
-            "ready": bool(link["alive"] and config["ok"] is True),
+            "ready": bool(link["alive"] and config["ok"] is True and self.params is not None
+                          and idle["latched"]),
             "link": link,
             "config": config,
-            "options": {"fire_value": self.fire_value, "fire_us": pwm_us(self.fire_value),
-                        "safe_value": self.safe_value, "safe_us": pwm_us(self.safe_value),
-                        "hold_s": self.hold_s},
+            "options": self.options(),
+            "idle": idle,
             "busy": self.busy.locked(),
             "last_fire": self.last_fire,
             "servo": self.link.servo_now(),
             "started": self.started,
         }
 
+    # ---- 击发参数 ----
+
+    def handle_params(self, request):
+        """cmd=params：无 set/reset = 查看；set = 部分或全部修改；reset = 恢复默认（删文件）。"""
+        reset = request.get("reset") is True
+        changes = request.get("set")
+        if not reset and changes is None:
+            return {"ok": True, "options": self.options(), "idle": self.idle()}
+        if not reset and not isinstance(changes, dict):
+            return {"ok": False, "error": "set 需为 JSON 对象"}
+        try:
+            params = (dict(DEFAULT_PARAMS) if reset
+                      else validate_params(dict(self.params or DEFAULT_PARAMS, **changes)))
+        except ParamsError as exc:
+            return {"ok": False, "error": str(exc)}
+        link = self.link.snapshot()
+        if link["alive"] and link["armed"]:
+            return {"ok": False, "error": "飞控已解锁：上锁后再改击发参数"}
+        if not self.busy.acquire(blocking=False):
+            return {"ok": False, "error": "击发序列进行中，结束后再改"}
+        try:
+            try:
+                meta = remove_params(self.params_file) if reset else save_params(params, self.params_file)
+            except OSError as exc:
+                return {"ok": False, "error": "击发参数写入失败：%s" % exc}
+            old, self.params, self.params_meta = self.params, params, meta
+            self.log("击发参数%s：%s，低位确认 %s s" % (
+                "恢复默认" if reset else "已保存", plan_text(params), seconds_text(params["low_s"])))
+            if old is None or old["low_us"] != params["low_us"]:
+                self.latch = None
+                if link["alive"] and self.config()["ok"] is True:
+                    self._latch_low("参数修改")
+            return {"ok": True, "applied": True, "options": self.options(), "idle": self.idle()}
+        finally:
+            self.busy.release()
+
     # ---- 击发 ----
 
     def fire(self, request):
         started = self.clock()
         mode = "bench" if request.get("mode") == "bench" else "live"
+        params = self.params
         record = {
             "event": "fire", "time": time.time(), "mode": mode,
             "shot_id": request.get("shot_id"), "reason": request.get("reason"),
-            "source": request.get("source"), "fire_value": self.fire_value,
-            "pwm_us": pwm_us(self.fire_value), "hold_s": self.hold_s,
-            "safe_value": self.safe_value, "ok": False,
+            "source": request.get("source"), "ok": False,
         }
+        if params:
+            record.update(params, pwm_us=params["high_us"])
         review_dir = request.get("review_dir")
         if not self.busy.acquire(blocking=False):
             return self._refuse(record, "BUSY", review_dir, started)
@@ -614,6 +975,8 @@ class PwmService:
             if config["ok"] is not True:
                 detail = "；".join(config["problems"]) or "未读到 " + "、".join(config["missing"])
                 return self._refuse(record, "CONFIG", review_dir, started, detail)
+            if params is None:
+                return self._refuse(record, "PARAMS", review_dir, started, self.params_meta.get("error"))
             if mode == "live" and not link["armed"]:
                 return self._refuse(record, "DISARMED", review_dir, started)
             if mode == "bench" and link["armed"]:
@@ -622,35 +985,88 @@ class PwmService:
                 return self._refuse(record, "MOT_TEST_DISABLED", review_dir, started)
             watch = self.link.watch_start()
             record["servo_before"] = self.link.servo_now()
+            try:
+                prepare = self._prepare_live if mode == "live" else self._prepare_bench
+                refusal = prepare(record, params)
+            except BaseException:
+                self.link.watch_stop(watch)
+                raise
+            if refusal:
+                record["servo"] = self.link.watch_stop(watch)
+                return self._refuse(record, refusal[0], review_dir, started, refusal[1])
+            high = unit_value(params["high_us"])
             if mode == "live":
-                result = self.link.command(CMD_DO_SET_ACTUATOR, self._set_params(self.fire_value))
+                result = self.link.command(CMD_DO_SET_ACTUATOR, self._set_params(high))
             else:
                 result = self.link.command(CMD_ACTUATOR_TEST, self._test_params(
-                    self.fire_value, self.hold_s + BENCH_SAFE_S))
+                    high, params["hold_s"] + 0.5))
             record.update(result)
             record["ok"] = result["result"] == 0
             if not record["ok"]:
-                record["reason_text"] = "飞控未接受击发指令（%s）" % result["result_name"]
+                record["reason_text"] = "飞控未接受击发高位（%s）" % result["result_name"]
             record["elapsed_ms"] = round((self.clock() - started) * 1000.0, 1)
             reply = {k: v for k, v in record.items() if k != "servo_before"}
             self.last_fire = dict(reply, pending=True)
-            if result["result_name"] != "SEND_ERROR" or result.get("attempts"):
-                worker = threading.Thread(target=self._complete, args=(record, watch, review_dir),
-                                          daemon=True)
-                worker.start()
-                handed_off = True
-            else:
-                self.link.watch_stop(watch)
-                self._record(record, review_dir)
-            self.log("击发 %s shot=%s %s ack=%s ms（%s 次）" % (
-                mode, record["shot_id"], result["result_name"], result.get("ack_ms", "—"),
-                result.get("attempts")), level="INFO" if record["ok"] else "ERROR")
+            worker = threading.Thread(target=self._complete, args=(record, watch, review_dir, params),
+                                      daemon=True)
+            worker.start()
+            handed_off = True
+            self.log("击发 %s shot=%s 高位 %d µs %s ack=%s ms（%s 次）%s" % (
+                mode, record["shot_id"], params["high_us"], result["result_name"],
+                result.get("ack_ms", "—"), result.get("attempts"),
+                "，先等低位 %s ms" % record["low_wait_ms"] if record.get("low_wait_ms") else ""),
+                level="INFO" if record["ok"] else "ERROR")
             return reply
         finally:
             if not handed_off:
                 self.busy.release()
 
-    def _set_params(self, value):
+    def _prepare_live(self, record, params):
+        """高位前：低位已锁存（否则补发）且已输出满 low_s（解锁斜坡另计 0.5 s）。"""
+        latch = self.latch
+        if not (latch and latch["low_us"] == params["low_us"]):
+            result = self._latch_low("击发前补发")
+            record["pre_low"] = _brief_result(result)
+            if result["result"] != 0:
+                return "LOW_FAILED", "%d µs %s" % (params["low_us"], result["result_name"])
+            latch = {"t": self.clock()}  # 不再读 self.latch：链路状态线程可能同时清掉它
+        starts = [latch["t"]]
+        armed_t = self.link.armed_since()
+        if armed_t is not None:
+            starts.append(armed_t + ARM_RAMP_S)
+        wait = max(starts) + params["low_s"] - self.clock()
+        if wait > 0:
+            record["low_wait_ms"] = round(wait * 1000.0, 1)
+            if self.stop.wait(wait):
+                return "STOPPING", None
+            link = self.link.snapshot()
+            record["armed"] = link["armed"]
+            if not link["alive"]:
+                return "NO_LINK", None
+            if not link["armed"]:
+                return "DISARMED", "等待低位期间飞控已上锁"
+        return None
+
+    def _prepare_bench(self, record, params):
+        """台架：执行器测试先给低位（PX4 进测试模式有 0.5 s 斜坡）再等 low_s。"""
+        pre = ARM_RAMP_S + params["low_s"]
+        result = self.link.command(CMD_ACTUATOR_TEST, self._test_params(
+            unit_value(params["low_us"]), pre + 0.5))
+        record["pre_low"] = _brief_result(result)
+        if result["result"] != 0:
+            self._release()
+            return "LOW_FAILED", "%d µs %s" % (params["low_us"], result["result_name"])
+        record["low_wait_ms"] = round(pre * 1000.0, 1)
+        if self.stop.wait(pre):
+            self._release()
+            return "STOPPING", None
+        return None
+
+    def _release(self):
+        return self.link.command(CMD_ACTUATOR_TEST, self._test_params(-1.0, 0.0))
+
+    @staticmethod
+    def _set_params(value):
         nan = float("nan")
         return (value, nan, nan, nan, nan, nan, 0.0)
 
@@ -658,36 +1074,29 @@ class PwmService:
     def _test_params(value, timeout_s):
         return (value, min(max(timeout_s, 0.0), 3.0), 0.0, 0.0, float(TEST_FUNCTION), 0.0, 0.0)
 
-    def _complete(self, record, watch, review_dir):
-        """保持 hold_s 后复位（live：安全值；bench：安全值 0.5 s 后释放）。"""
+    def _complete(self, record, watch, review_dir, params):
+        """保持 hold_s 后回低位（live：锁存低位；bench：低位 low_s 后释放）。"""
         try:
-            self.stop.wait(self.hold_s)
-            reset = {}
+            self.stop.wait(params["hold_s"])
+            reset = {"pwm_us": params["low_us"]}
             if record["mode"] == "live":
-                if self.safe_value is None:
-                    reset["skipped"] = "safe_value=none：保持击发值（锁存到重启飞控或下一条指令）"
-                else:
-                    result = self.link.command(CMD_DO_SET_ACTUATOR, self._set_params(self.safe_value))
-                    reset.update(value=self.safe_value, pwm_us=pwm_us(self.safe_value), **result)
+                reset.update(self._latch_low("reset", params["low_us"]))
             else:
-                if self.safe_value is not None:
-                    result = self.link.command(CMD_ACTUATOR_TEST, self._test_params(
-                        self.safe_value, BENCH_SAFE_S + 0.5))
-                    reset.update(value=self.safe_value, pwm_us=pwm_us(self.safe_value), **result)
-                    self.stop.wait(BENCH_SAFE_S)
-                release = self.link.command(CMD_ACTUATOR_TEST, self._test_params(self.safe_value or 0.0, 0.0))
-                reset["release"] = release["result_name"]
+                reset.update(self.link.command(CMD_ACTUATOR_TEST, self._test_params(
+                    unit_value(params["low_us"]), params["low_s"] + 0.5)))
+                self.stop.wait(params["low_s"])
+                reset["release"] = self._release()["result_name"]
             record["reset"] = reset
             record["servo"] = self.link.watch_stop(watch)
-            ok_reset = reset.get("result_name", "ACCEPTED") == "ACCEPTED" and reset.get(
+            ok_reset = reset.get("result_name") == "ACCEPTED" and reset.get(
                 "release", "ACCEPTED") == "ACCEPTED"
-            self.log("复位 %s：%s；舵机输出回读 %s" % (
+            self.log("回低位 %s：%s；舵机输出回读 %s" % (
                 record["mode"], json.dumps(reset, ensure_ascii=False, sort_keys=True),
                 json.dumps(record["servo"], sort_keys=True) if record["servo"] else "无变化/未收到"),
                 level="INFO" if ok_reset else "ERROR")
-        except Exception as exc:  # noqa: BLE001 —— 复位失败也要记录并释放 busy
+        except Exception as exc:  # noqa: BLE001 —— 回低位失败也要记录并释放 busy
             record["reset_error"] = str(exc)
-            self.log("复位异常：%s" % exc, level="ERROR")
+            self.log("回低位异常：%s" % exc, level="ERROR")
         finally:
             record["done_ms"] = round((time.time() - record["time"]) * 1000.0, 1)
             self._record(record, review_dir)
@@ -788,6 +1197,8 @@ class PwmService:
                     self._send(conn, self.fire(request))
                 elif cmd == "status":
                     self._send(conn, self.status())
+                elif cmd == "params":
+                    self._send(conn, self.handle_params(request))
                 elif cmd == "ping":
                     self._send(conn, {"ok": True, "pong": True})
                 else:
@@ -809,20 +1220,6 @@ def _option(args, name, default, parse):
         raise ValueError("%s 参数无效" % name)
 
 
-def _unit_value(text):
-    value = float(text)
-    if not math.isfinite(value) or not -1.0 <= value <= 1.0:
-        raise ValueError(text)
-    return value
-
-
-def _hold(text):
-    value = float(text)
-    if not math.isfinite(value) or not 0.1 <= value <= 2.5:
-        raise ValueError(text)
-    return value
-
-
 def _listen(text):
     host, _, port = text.rpartition(":")
     return (host or "127.0.0.1", int(port))
@@ -830,15 +1227,14 @@ def _listen(text):
 
 def serve(args):
     try:
-        fire_value = _option(args, "--fire-value", -1.0, _unit_value)
-        safe_value = _option(args, "--safe-value", 1.0,
-                             lambda t: None if t.lower() == "none" else _unit_value(t))
-        hold_s = _option(args, "--hold-s", 1.0, _hold)
         listen = _option(args, "--listen", LISTEN, _listen)
     except ValueError as exc:
-        log_line("%s（--fire-value/--safe-value 取 −1..1 或 none，--hold-s 取 0.1–2.5）" % exc,
-                 level="ERROR")
+        log_line("%s（--listen 取 主机:端口）" % exc, level="ERROR")
         return 2
+    legacy = [name for name in ("--fire-value", "--safe-value", "--hold-s") if name in args]
+    if legacy:
+        log_line("已忽略旧参数 %s：击发参数改在 %s（netgun_pwm_link.py params 或面板「击发参数」）" % (
+            "、".join(legacy), params_path()), level="WARN")
     try:
         from pymavlink.dialects.v20 import common as mavlink  # noqa: PLC0415 —— 仅服务端需要
     except ImportError as exc:
@@ -849,7 +1245,7 @@ def serve(args):
     except OSError as exc:
         log_line("UDP %s:%d 绑定失败：%s" % (listen[0], listen[1], exc), level="ERROR")
         return 1
-    service = PwmService(link, fire_value, safe_value, hold_s)
+    service = PwmService(link)
     for signum in (signal.SIGINT, signal.SIGTERM):
         signal.signal(signum, lambda *_: service.stop.set())
     path = socket_path()
@@ -859,9 +1255,14 @@ def serve(args):
         log_line("控制套接字未建立：%s" % exc, level="ERROR")
         link.close()
         return 1
-    log_line("击发服务启动：UDP %s:%d ↔ MAVProxy，控制 %s；击发值 %+g（%d µs）保持 %.1f s，安全值 %s" % (
-        link.listen[0], link.listen[1], path, fire_value, pwm_us(fire_value), hold_s,
-        "%+g（%d µs）" % (safe_value, pwm_us(safe_value)) if safe_value is not None else "无（不复位）"))
+    params = service.params
+    log_line("击发服务启动：UDP %s:%d ↔ MAVProxy，控制 %s；%s" % (
+        link.listen[0], link.listen[1], path,
+        "AUX5 %s → 回待命，低位确认 %s s（%s）" % (
+            plan_text(params), seconds_text(params["low_s"]),
+            "默认参数" if service.params_meta["source"] == "default" else service.params_file)
+        if params else "击发参数无效：%s；拒绝击发，修正后用 params --reset 或面板重新保存"
+        % service.params_meta["error"]), level="INFO" if params else "ERROR")
     threads = [threading.Thread(target=link.run, args=(service.stop,), daemon=True),
                threading.Thread(target=service.serve_forever, args=(sock,), daemon=True)]
     for thread in threads:
@@ -874,7 +1275,7 @@ def serve(args):
         service.stop.set()
         sock.close()
         service.unlink()
-        # 正在保持/复位的击发序列先收尾（stop 置位后保持立即结束、马上复位）
+        # 正在进行的击发序列先收尾（stop 置位后等待/保持立即结束、马上回低位）
         if service.busy.acquire(timeout=5.0):
             service.busy.release()
         for thread in threads:
@@ -892,7 +1293,11 @@ def main(argv):
         return client_fire(argv[2:])
     if action == "status":
         return client_status(argv[2:])
-    print("用法: netgun_pwm_link.py serve|fire [--bench]|status [--brief]", file=sys.stderr)
+    if action == "params":
+        return client_params(argv[2:])
+    print("用法: netgun_pwm_link.py serve | fire [--bench] | status [--brief] | "
+          "params [--low-us N] [--high-us N] [--hold-s S] [--low-s S] | params --reset | params save",
+          file=sys.stderr)
     return 2
 
 

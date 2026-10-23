@@ -63,4 +63,34 @@ class DashboardTests(unittest.TestCase):
             self.assertIn('缺少安装参数',job.get('error') or '')
             self.assertEqual(calls,[(dashboard.INTERCEPTOR_GEOMETRY_SAVE_CMD,{'config':{'camera_right_eye':'forward'}})])
         finally:dashboard.geometry=original;panel.close()
+    def test_trigger_params_save_is_format_checked_and_board_errors_surface(self):
+        # 击发参数：面板只查格式（四个已知键、有限数字），范围与解锁/击发中拒绝由板上击发服务负责
+        panel=Panel()
+        try:
+            self.assertEqual(panel.snapshot()['features'],['trigger_params'],'frontend gates saving on this flag')
+            good={'low_us':1000,'high_us':2000,'hold_s':1.0,'low_s':0.3}
+            for params in ({},{'config':{}},{'config':'x'},{'config':dict(good,fire_us=1000)},{'config':dict(good,hold_s=True)},
+                           {'config':dict(good,low_us='1000')},{'config':dict(good,hold_s=float('nan'))},{'config':good,'command':'rm -rf ~'}):
+                with self.assertRaises(ValueError):panel.submit({'action':'interceptor_trigger_save','params':params})
+            calls=[];replies=[{'ok':True,'applied':True,'options':dict(good,source='file')},ValueError('飞控已解锁：上锁后再改击发参数')]
+            class Board:
+                def exec_json(self,command,payload,timeout=30):
+                    calls.append((command,payload,timeout));reply=replies.pop(0)
+                    if isinstance(reply,Exception):raise reply
+                    return reply
+            panel.board=Board();panel.connected=True
+            def run(rid,config):
+                jid=panel.submit({'action':'interceptor_trigger_save','request_id':rid,'params':{'config':config}})
+                for _ in range(100):
+                    job=panel.jobs.get(jid)
+                    if job['state'] in ('complete','error'):return job
+                    time.sleep(0.02)
+                return job
+            job=run('trigger1',good)
+            self.assertEqual(job['state'],'complete',job.get('error'));self.assertTrue(job['result']['applied'])
+            job=run('trigger2',{'hold_s':1.5})
+            self.assertEqual(job['state'],'error');self.assertIn('飞控已解锁',job.get('error') or '')
+            self.assertEqual(calls,[(dashboard.INTERCEPTOR_TRIGGER_SAVE_CMD,{'config':good},20),(dashboard.INTERCEPTOR_TRIGGER_SAVE_CMD,{'config':{'hold_s':1.5}},20)])
+            self.assertEqual(dashboard.INTERCEPTOR_TRIGGER_SAVE_CMD,'python3 /home/uavlab/interceptor_ws/deploy/netgun_pwm_link.py params save')
+        finally:panel.close()
 if __name__=='__main__':unittest.main()

@@ -159,7 +159,7 @@ transferProgress({phase_code:'transfer',downloaded_bytes:1048576,total_bytes:209
 const assert=require('node:assert/strict'),crypto=require('node:crypto');
 let busy=true,controlBusy=false,restarted=false,mediaPhase='',mediaJob=false,sessions=[],sessionsLoading=false,renameTarget='',downloadRequest='active-download',knownRecordedSession='';
 const TOKEN='test',stopButtons=['stopCapture','stopRaw','stopLocal'],meta=null,image=null,draw=()=>{},state={connected:true,state:{camera_state:'stopped',pipeline:{}}};
-const cameraNames={},recordNames={},elements={},modelsLoaded=false,hydrateNotes=()=>{},updateRangeSizeControl=()=>{},updateMountingControl=()=>{};
+const cameraNames={},recordNames={},elements={},modelsLoaded=false,hydrateNotes=()=>{},updateRangeSizeControl=()=>{},updateMountingControl=()=>{},updateTriggerControl=()=>{};
 const byId=id=>elements[id]||(elements[id]={id,dataset:{},value:'',textContent:'',options:[{},{}],children:[],classList:{toggle(){},add(){},remove(){}},removeAttribute(){},setAttribute(){}});
 const document={querySelectorAll:()=>['startCapture','stopCapture','stopRaw','stopLocal'].map(byId)};
 const number=(v,d=2)=>typeof v==='number'&&Number.isFinite(v)?v.toFixed(d):'—',beijingTime=()=>'',selectedSession=()=>'',renderTargets=()=>{};

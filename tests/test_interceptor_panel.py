@@ -217,7 +217,7 @@ const base=()=>({connected:true,error:null,interceptor_error:null,interceptor_ag
   fire_link:{ok:true,link:{ready:true,phase:'就绪'},state:{fire_mode:'auto_manual',ready:true,latched:false,block:'NONE',shots:0}},
   review:{dir:'review_20261023_170000',recording:true,size_mb:12.3,topics:31,free_mb:40960},
   trigger:{bound:'python3 /home/uavlab/interceptor_ws/deploy/netgun_pwm_link.py fire',ok:true,ready:true,link:{alive:true,fc:'2/1',armed:false},
-   config:{ok:true,problems:[],missing:[],warnings:[]},options:{fire_value:-1,fire_us:1000,safe_value:1,safe_us:2000,hold_s:1},busy:false}}});
+   config:{ok:true,problems:[],missing:[],warnings:[]},options:{low_us:1000,high_us:2000,hold_s:1,low_s:0.3,source:'default'},idle:{latched:true,low_us:1000},busy:false}}});
 let state=base();
 """ + block + timing
         script = harness + "\n" + assertions
@@ -253,7 +253,7 @@ assert.equal(fireTiming({path:'server'},213),' · 0.21 s（常驻通道）');ass
 const show=()=>{renderInterceptor(true);const el=byId('chkTrigger');return [el.textContent,['good','bad','warn','idle'].find(n=>el.classList.contains(n))||'',el.title];};
 let [text,tone,title]=show();
 assert.equal(text,'就绪 · 未解锁');assert.equal(tone,'good');
-assert.match(title,/飞控 2\/1 · 击发 1000 µs 保持 1\.0 s → 安全值 2000 µs · 未解锁时开火被板上拒绝/);
+assert.match(title,/飞控 2\/1 · 待命 1000 µs → 击发 2000 µs 保持 1\.0 s · 未解锁时开火被板上拒绝（不发高位）/);
 state.interceptor.trigger.link.armed=true;assert.equal(show()[0],'就绪 · 已解锁');
 state=base();state.interceptor.trigger.bound='python3 x/netgun_pwm_link.py fire --bench';[text,tone,title]=show();
 assert.equal(text,'台架模式 · 未解锁');assert.equal(tone,'warn');assert.match(title,/实飞前去掉 --bench/);
@@ -265,12 +265,21 @@ state=base();state.interceptor.trigger.link={alive:false};assert.deepEqual(show(
 state=base();state.interceptor.trigger.config={ok:false,problems:['PWM_AUX_DIS5=1000（应为 0）'],missing:[]};[text,tone,title]=show();
 assert.equal(text,'AUX5 参数不符');assert.equal(tone,'bad');assert.match(title,/PWM_AUX_DIS5=1000/);
 state=base();state.interceptor.trigger.config={ok:null,problems:[],missing:['PWM_AUX_TIM1']};assert.deepEqual(show(),['参数核对中','warn','未读到 PWM_AUX_TIM1']);
-state=base();state.interceptor.trigger.last_fire={ok:true,mode:'live',shot_id:1,ack_ms:23.4,pwm_us:1000};[text,tone,title]=show();
-assert.equal(text,'已击发 · ACK 23 ms');assert.equal(tone,'good');assert.match(title,/第 1 发 · 1000 µs/);
+state=base();state.interceptor.trigger.last_fire={ok:true,mode:'live',shot_id:1,ack_ms:23.4,pwm_us:2000,low_us:1000,low_wait_ms:0};[text,tone,title]=show();
+assert.equal(text,'已击发 · ACK 23 ms');assert.equal(tone,'good');assert.equal(title,'第 1 发 · 2000 µs · 待命 1000 µs → 击发 2000 µs 保持 1.0 s');
+state.interceptor.trigger.last_fire.low_wait_ms=412;assert.match(show()[2],/第 1 发 · 2000 µs · 先等低位 412 ms · 待命/,'a fire right after arming waits for the low level');
 state.interceptor.trigger.last_fire.pending=true;assert.equal(show()[0],'击发中 · ACK 23 ms');
 state=base();state.interceptor.trigger.last_fire={ok:false,refused:'DISARMED',reason_text:'飞控未解锁：不发击发指令'};[text,tone,title]=show();
 assert.equal(text,'未击发 · 飞控未解锁');assert.equal(tone,'bad');assert.match(title,/不发击发指令/);
 state=base();state.interceptor.trigger.last_fire={ok:false,result_name:'NO_ACK',pending:true};assert.equal(show()[0],'未击发 · 飞控无应答');
+state=base();state.interceptor.trigger.last_fire={ok:false,refused:'LOW_FAILED'};assert.equal(show()[0],'未击发 · 低位未确认');
+state=base();state.interceptor.trigger.last_fire={ok:false,refused:'PARAMS'};assert.equal(show()[0],'未击发 · 击发参数无效');
+state=base();state.interceptor.trigger.options={low_us:null,high_us:null,hold_s:null,low_s:null,source:'file',error:'击发参数文件无效（/x/netgun_pwm.json）：缺少击发高位（high_us）'};[text,tone,title]=show();
+assert.equal(text,'击发参数无效');assert.equal(tone,'bad');assert.match(title,/缺少击发高位.*拒绝击发/);
+state=base();state.interceptor.trigger.options={fire_value:-1,fire_us:1000,safe_value:1,safe_us:2000,hold_s:1};assert.deepEqual(show().slice(0,2),['击发服务是旧版本','bad'],'old fire→reset service must be reinstalled');
+state=base();state.interceptor.trigger.idle={latched:false,low_us:null,error:'飞控未确认低位 1000 µs（DENIED）'};[text,tone,title]=show();
+assert.equal(text,'待命低位未设好');assert.equal(tone,'bad');assert.match(title,/DENIED.*先见低位/);
+state.interceptor.trigger.idle.error=null;assert.match(show()[2],/^等待飞控确认 1000 µs/);
 state=base();state.interceptor.trigger.bound=null;assert.equal(show()[0],'就绪 · 未解锁','old logs without NETGUN_TRIGGER still show the service');
 state=base();delete state.interceptor.trigger;assert.deepEqual(show().slice(0,2),['—','idle']);
 state=base();state.interceptor.running=false;renderInterceptor(false);assert.equal(byId('chkTrigger').textContent,'—');
