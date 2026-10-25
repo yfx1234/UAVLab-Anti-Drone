@@ -293,6 +293,7 @@ public:
               hold_target_[1] -= post_shot_retreat_m_ * std::sin(psi);
               retreat_then_spin_ = false;
               retreat_start_s_ = now().seconds();
+              retreat_pending_ = true;
               phase_ = Phase::RETREAT;
               RCLCPP_WARN(
                 get_logger(),
@@ -326,6 +327,7 @@ public:
             hold_target_[1] -= post_shot_retreat_m_ * std::sin(psi);
             retreat_then_spin_ = spin_flag_enabled_;
             retreat_start_s_ = shot_time_s_;
+            retreat_pending_ = true;
             phase_ = Phase::RETREAT;
             RCLCPP_INFO(
               get_logger(),
@@ -410,9 +412,13 @@ private:
     settle_ok_since_s_ = -1.0;
     ever_had_est_ = false;      // 重新搜索（自旋至再捕获）
     search_spin_logged_ = false;
-    hold_target_[0] = lp_ ? lp_->x : 0.0;
-    hold_target_[1] = lp_ ? lp_->y : 0.0;
-    hold_target_[2] = lp_ ? lp_->z : -takeoff_h_;
+    // 后撤未完成时保留锚定的后撤点：网弹落点让位是物理安全目标，
+    // 不随交战复位重置（re-entry 会 resume RETREAT 继续用它）
+    if (!retreat_pending_) {
+      hold_target_[0] = lp_ ? lp_->x : 0.0;
+      hold_target_[1] = lp_ ? lp_->y : 0.0;
+      hold_target_[2] = lp_ ? lp_->z : -takeoff_h_;
+    }
     last_vx_ = last_vy_ = last_vz_ = 0.0;
     est_lp_[0] = est_lp_[1] = est_lp_[2] = 0.0;
     est_lp_seeded_ = false;
@@ -599,17 +605,29 @@ private:
       // F-1：单发已激发（shot_seen_ 不再被复位清掉）且未开再追击开关时，
       // 二次进入 offboard 直接原地保持，不再重新 TAKEOFF 追击
       if (shot_seen_ && !post_shot_reengage_) {
-        hold_target_[0] = lp_->x;
-        hold_target_[1] = lp_->y;
-        hold_target_[2] = lp_->z;
-        // G-4：航向锚定当前实际航向——reset 不清 yaw_sp_，重进后
-        // frozen_yaw() 返回接管前的旧值，飞机会自己转回旧航向
-        yaw_sp_ = lp_->heading;
-        yaw_sp_init_ = true;
-        phase_ = Phase::DONE;
-        RCLCPP_INFO(
-          get_logger(),
-          "post-shot re-entry → DONE position hold (post_shot_reengage=false)");
+        if (retreat_pending_) {
+          // 后撤被断链打断（stale 复位回 WAITING）且未完成：当前位置可能
+          // 仍在网弹落点附近，继续退到锚定点而不是原地保持。hold_target_
+          // 保持已锚定的后撤点不重置；计时重置（断链可能已耗掉超时窗）
+          yaw_sp_ = lp_->heading;
+          yaw_sp_init_ = true;
+          retreat_start_s_ = now().seconds();
+          phase_ = Phase::RETREAT;
+          RCLCPP_WARN(
+            get_logger(), "post-shot re-entry → resume RETREAT to anchor");
+        } else {
+          hold_target_[0] = lp_->x;
+          hold_target_[1] = lp_->y;
+          hold_target_[2] = lp_->z;
+          // G-4：航向锚定当前实际航向——reset 不清 yaw_sp_，重进后
+          // frozen_yaw() 返回接管前的旧值，飞机会自己转回旧航向
+          yaw_sp_ = lp_->heading;
+          yaw_sp_init_ = true;
+          phase_ = Phase::DONE;
+          RCLCPP_INFO(
+            get_logger(),
+            "post-shot re-entry → DONE position hold (post_shot_reengage=false)");
+        }
       } else {
         on_engage_entry();
         phase_ = Phase::TAKEOFF;
@@ -635,6 +653,7 @@ private:
       const bool arrived = lp_ && std::hypot(
         lp_->x - hold_target_[0], lp_->y - hold_target_[1]) < 0.5;
       if (arrived || now_s6 - retreat_start_s_ >= retreat_timeout_s_) {
+        retreat_pending_ = false;
         if (retreat_then_spin_) {
           phase_ = Phase::SETTLE;
           spin_accum_rad_ = 0.0;
@@ -1435,6 +1454,9 @@ private:
   double retreat_timeout_s_{4.5};
   double retreat_start_s_{0.0};
   bool retreat_then_spin_{false};
+  // 后撤未完成标志（shot_seen_ 同款语义：不被 reset 清——网弹落点
+  // 让位是物理安全要求，断链复位后 re-entry 须继续完成而不是原地保持）
+  bool retreat_pending_{false};
   bool search_spin_enabled_{true};
   double search_spin_rate_rad_s_{0.42};
   bool ever_had_est_{false};

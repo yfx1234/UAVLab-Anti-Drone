@@ -60,6 +60,8 @@ LAUNCH_PKG="netgun_intercept"
 LAUNCH_FILE="netgun_real.launch.py"
 GEOMETRY_TOOL="$INTERCEPTOR_WS/deploy/mounting_geometry.py"
 GEOMETRY_FILE="${NETGUN_CONFIG_DIR:-$HOME/netgun_config}/mounting_geometry.json"
+INTERCEPT_PARAMS_TOOL="$INTERCEPTOR_WS/deploy/interception_params.py"
+INTERCEPT_PARAMS_FILE="${NETGUN_CONFIG_DIR:-$HOME/netgun_config}/interception_params.json"
 FIRE_TOOL="$INTERCEPTOR_WS/deploy/netgun_fire_button.py"
 PWM_TOOL="$INTERCEPTOR_WS/deploy/netgun_pwm_link.py"
 FIRE_PID_FILE="$LOG_DIR/netgun_fire_server.pid"
@@ -357,6 +359,21 @@ cmd_start() {
     geometry_summary="$(python3 "$GEOMETRY_TOOL" summary 2>/dev/null || true)"
     geometry_brief="$(python3 "$GEOMETRY_TOOL" brief 2>/dev/null || true)"
   fi
+  # 拦截参数（后撤/开火延迟，面板「拦截参数」保存）：文件在才透传，
+  # 无文件=launch 默认值；文件损坏拒绝启动（不静默回退默认）
+  local -a intercept_args=()
+  local intercept_out="" intercept_line=""
+  if [ -f "$INTERCEPT_PARAMS_TOOL" ] && [ -f "$INTERCEPT_PARAMS_FILE" ]; then
+    if ! intercept_out="$(python3 "$INTERCEPT_PARAMS_TOOL" launch-args 2>&1)"; then
+      echo "错误：${intercept_out}；拦截链未启动（在面板「拦截参数」修正后重试）" >&2
+      exit 1
+    fi
+    while IFS= read -r intercept_line; do
+      if [ -n "$intercept_line" ]; then
+        intercept_args+=("$intercept_line")
+      fi
+    done <<<"$intercept_out"
+  fi
   # 实物击发装订：默认常驻击发服务；NETGUN_TRIGGER_COMMAND 覆盖（空=仅虚拟），
   # 命令行 trigger_command:=… 排在最后、最终生效（日志按它记录）
   local trigger_command="" arg
@@ -385,7 +402,7 @@ cmd_start() {
   # G-1（2026-10-18）：必须用追加模式——run_start_check 会 >> 同一文件
   # 写告警，截断写会让 launch 按自己的旧偏移把追加行覆盖掉
   NETGUN_REVIEW_DIR="$review_dir" nohup setsid ros2 launch "$LAUNCH_PKG" "$LAUNCH_FILE" \
-    "${geometry_args[@]}" "${trigger_args[@]}" "${@:2}" >>"$log_file" 2>&1 &
+    "${geometry_args[@]}" "${intercept_args[@]}" "${trigger_args[@]}" "${@:2}" >>"$log_file" 2>&1 &
   local pid=$!
   echo "$pid" >"$PID_FILE"
   sleep 2

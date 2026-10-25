@@ -57,6 +57,11 @@ def generate_launch_description():
             # 授权延时（实机口径 2s；0=取消，慎用——失去就位防抖）
             DeclareLaunchArgument("attack_enable_delay_s", default_value="2.0"),
             DeclareLaunchArgument("stable_track_time_s", default_value="2.0"),
+            # 击发后安全后撤（2026-10-24）：沿机体后向水平退 post_shot_retreat_m
+            # 让出网弹落点再进稳定/旋转/结束；0=旧行为。面板「拦截参数」经
+            # deploy/interception_params.py 存 ~/netgun_config/ 并在栈启动时透传
+            DeclareLaunchArgument("post_shot_retreat_m", default_value="3.0"),
+            DeclareLaunchArgument("retreat_timeout_s", default_value="4.5"),
             DeclareLaunchArgument(
                 "primary_axis_error_rad", default_value="0.03490658503988659"
             ),
@@ -240,9 +245,13 @@ def generate_launch_description():
                         "spin_total_rad": 6.2832,
                         # 击发后安全后撤：网弹竖直上抛落回机体附近，先沿
                         # 机体后向水平退 post_shot_retreat_m 再稳定/旋转/
-                        # 结束；0=旧行为（击发点原地保持）
-                        "post_shot_retreat_m": 3.0,
-                        "retreat_timeout_s": 4.5,
+                        # 结束；0=旧行为（击发点原地保持）。面板可调
+                        "post_shot_retreat_m": ParameterValue(
+                            LaunchConfiguration("post_shot_retreat_m"),
+                            value_type=float),
+                        "retreat_timeout_s": ParameterValue(
+                            LaunchConfiguration("retreat_timeout_s"),
+                            value_type=float),
                         # 初始搜索慢自旋：无目标时原地转机头扫整圆天顶
                         "search_spin_enabled": True,
                         "search_spin_rate_rad_s": 0.42,

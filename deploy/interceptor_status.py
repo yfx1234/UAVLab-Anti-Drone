@@ -213,6 +213,19 @@ def trigger_status(log_text):
     return info
 
 
+def intercept_params_status():
+    """拦截参数（后撤/开火延迟，~/netgun_config/interception_params.json）。
+
+    纯文件读取（无服务）：面板「拦截参数」的 values/defaults/limits 来源；
+    保存只在栈下次启动时生效（run_interceptor_stack.sh launch-args 透传）。
+    """
+    try:
+        module = _sibling("interception_params")
+        return module.params_info()
+    except Exception as exc:  # noqa: BLE001 —— 旧部署缺脚本只降级本字段
+        return {"ok": False, "error": str(exc)}
+
+
 def _pid_with_cmdline(pid_file, needle):
     try:
         with open(pid_file) as f:
@@ -296,6 +309,7 @@ def main():
         result["log"] = None
         result["geometry"] = geometry_status("")
         result["trigger"] = trigger_status("")
+        result["intercept"] = intercept_params_status()
         print(json.dumps(result, ensure_ascii=False))
         return
     log_path = logs[-1]
@@ -341,6 +355,7 @@ def main():
     result["geometry"] = geometry_status(text)
     # 未运行时也给击发服务状态（面板「击发参数」要用）；装订只看本次运行日志
     result["trigger"] = trigger_status(text if running else "")
+    result["intercept"] = intercept_params_status()
 
     lines = [ln for ln in text.splitlines()
              if ln.strip() and not ln.startswith(("NETGUN_GEOMETRY ", "NETGUN_REVIEW ", "NETGUN_TRIGGER "))]
