@@ -238,6 +238,11 @@ def generate_launch_description():
                         "spin_flag_enabled": True,
                         "spin_rate_rad_s": 1.8,
                         "spin_total_rad": 6.2832,
+                        # 击发后安全后撤：网弹竖直上抛落回机体附近，先沿
+                        # 机体后向水平退 post_shot_retreat_m 再稳定/旋转/
+                        # 结束；0=旧行为（击发点原地保持）
+                        "post_shot_retreat_m": 3.0,
+                        "retreat_timeout_s": 4.5,
                         # 初始搜索慢自旋：无目标时原地转机头扫整圆天顶
                         "search_spin_enabled": True,
                         "search_spin_rate_rad_s": 0.42,

@@ -24,7 +24,7 @@ namespace netgun_intercept
 namespace
 {
 double clampd(double v, double lo, double hi) { return std::max(lo, std::min(hi, v)); }
-enum class Phase { WAITING, TAKEOFF, TRACK, AIM, SETTLE, SPIN, DONE };
+enum class Phase { WAITING, TAKEOFF, TRACK, AIM, RETREAT, SETTLE, SPIN, DONE };
 const char * phase_name(Phase p)
 {
   switch (p) {
@@ -32,6 +32,7 @@ const char * phase_name(Phase p)
     case Phase::TAKEOFF: return "TAKEOFF";
     case Phase::TRACK: return "TRACK";
     case Phase::AIM: return "AIM";
+    case Phase::RETREAT: return "RETREAT";
     case Phase::SETTLE: return "SETTLE";
     case Phase::SPIN: return "SPIN";
     case Phase::DONE: return "DONE";
@@ -204,6 +205,13 @@ public:
     spin_flag_enabled_ = declare_parameter<bool>("spin_flag_enabled", true);
     spin_rate_rad_s_ = declare_parameter<double>("spin_rate_rad_s", 1.8);
     spin_total_rad_ = declare_parameter<double>("spin_total_rad", 6.2832);
+    // 击发后安全后撤：网弹竖直上抛后落回机体附近（含风偏），先沿机体
+    // 后向水平后撤 post_shot_retreat_m 让出落点，再进 SETTLE/SPIN/DONE；
+    // 0=禁用（旧行为：击发点原地保持）。超时兜底防位置误差永远不到 0.5m
+    post_shot_retreat_m_ =
+      declare_parameter<double>("post_shot_retreat_m", 3.0);
+    retreat_timeout_s_ =
+      declare_parameter<double>("retreat_timeout_s", 4.5);
     // SETTLE 先悬停再旋转（2026-10-15 用户定案流程）：开火→制动悬停→
     // 速度归零确认→起旋。开火动量前冲（v²/2a）消耗在本阶段，旋转严格
     // 发生在停稳后，"原地"性质干净。确认窗防速度过零误触发（回拉段
@@ -277,9 +285,23 @@ public:
             hold_target_[0] = lp_->x;
             hold_target_[1] = lp_->y;
             hold_target_[2] = lp_->z;
-            phase_ = Phase::DONE;
-            RCLCPP_WARN(
-              get_logger(), "shot event during TAKEOFF → DONE position hold");
+            if (post_shot_retreat_m_ > 0.0) {
+              // 爬升中手动兜底击发同样要躲网弹落点；TAKEOFF 场景原本
+              // 无 spin 标志，后撤完直接 DONE
+              const double psi = lp_->heading;
+              hold_target_[0] -= post_shot_retreat_m_ * std::cos(psi);
+              hold_target_[1] -= post_shot_retreat_m_ * std::sin(psi);
+              retreat_then_spin_ = false;
+              retreat_start_s_ = now().seconds();
+              phase_ = Phase::RETREAT;
+              RCLCPP_WARN(
+                get_logger(),
+                "shot event during TAKEOFF → RETREAT then DONE position hold");
+            } else {
+              phase_ = Phase::DONE;
+              RCLCPP_WARN(
+                get_logger(), "shot event during TAKEOFF → DONE position hold");
+            }
           } else {
             RCLCPP_WARN(
               get_logger(),
@@ -294,12 +316,25 @@ public:
           hold_target_[0] = lp_ ? lp_->x : 0.0;
           hold_target_[1] = lp_ ? lp_->y : 0.0;
           hold_target_[2] = lp_ ? lp_->z : -takeoff_h_;
-          if (spin_flag_enabled_) {
+          shot_time_s_ = now().seconds();
+          (void)frozen_yaw();  // 锚定当前航向（yaw 伺服关闭时也正确起步）
+          if (post_shot_retreat_m_ > 0.0 && lp_) {
+            // 网弹落点让位：后撤目标直接锚定 hold_target_，到位后
+            // SETTLE/SPIN/DONE 的位置保持自动跟着退到新点（下游零改动）
+            const double psi = lp_->heading;
+            hold_target_[0] -= post_shot_retreat_m_ * std::cos(psi);
+            hold_target_[1] -= post_shot_retreat_m_ * std::sin(psi);
+            retreat_then_spin_ = spin_flag_enabled_;
+            retreat_start_s_ = shot_time_s_;
+            phase_ = Phase::RETREAT;
+            RCLCPP_INFO(
+              get_logger(),
+              "shot event → RETREAT (%.1f m back, heading %.0f°)",
+              post_shot_retreat_m_, psi * 57.29577951308232);
+          } else if (spin_flag_enabled_) {
             phase_ = Phase::SETTLE;
             spin_accum_rad_ = 0.0;
             settle_ok_since_s_ = -1.0;
-            shot_time_s_ = now().seconds();
-            (void)frozen_yaw();  // 锚定当前航向（yaw 伺服关闭时也正确起步）
             RCLCPP_INFO(
               get_logger(),
               "shot event → SETTLE (brake to stop, then 360° spin)");
@@ -589,6 +624,33 @@ private:
     // range 7.5→6.2 跳变后丢失目标）。
     const double vz_hold = clampd(
       v_gain_ * (hold_target_[2] - lp_->z), -max_vz_, max_vz_);
+
+    if (phase_ == Phase::RETREAT) {
+      // 后撤点已锚定 hold_target_：位置 setpoint 阶跃交给 PX4 位置控制
+      // 全速执行（实机 MPC_XY_VEL_MAX，3m 约 1-1.5s，先于网弹落地），
+      // yaw 冻结不转向。到位（水平 0.5m 内）或超时兜底后接既有流程。
+      send_pos_sp(hold_target_[0], hold_target_[1], hold_target_[2],
+        0.0, 0.0, 0.0, frozen_yaw());
+      const double now_s6 = now().seconds();
+      const bool arrived = lp_ && std::hypot(
+        lp_->x - hold_target_[0], lp_->y - hold_target_[1]) < 0.5;
+      if (arrived || now_s6 - retreat_start_s_ >= retreat_timeout_s_) {
+        if (retreat_then_spin_) {
+          phase_ = Phase::SETTLE;
+          spin_accum_rad_ = 0.0;
+          settle_ok_since_s_ = -1.0;
+          RCLCPP_INFO(
+            get_logger(), "retreat done (%s, %.1fs) → SETTLE",
+            arrived ? "arrived" : "timeout", now_s6 - retreat_start_s_);
+        } else {
+          phase_ = Phase::DONE;
+          RCLCPP_INFO(
+            get_logger(), "retreat done (%s, %.1fs) → DONE position hold",
+            arrived ? "arrived" : "timeout", now_s6 - retreat_start_s_);
+        }
+      }
+      return;
+    }
 
     if (phase_ == Phase::SETTLE) {
       // 开火后先悬停制动（位置保持照常、yaw 冻结），速度持续归零后
@@ -1369,6 +1431,10 @@ private:
   double spin_settle_timeout_s_{4.0};
   double shot_time_s_{0.0};
   double settle_ok_since_s_{-1.0};
+  double post_shot_retreat_m_{3.0};
+  double retreat_timeout_s_{4.5};
+  double retreat_start_s_{0.0};
+  bool retreat_then_spin_{false};
   bool search_spin_enabled_{true};
   double search_spin_rate_rad_s_{0.42};
   bool ever_had_est_{false};

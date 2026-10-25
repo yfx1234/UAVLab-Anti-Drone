@@ -168,8 +168,8 @@ function update(){
  updateTriggerControl();
 }
 function escapeHtml(text){return String(text).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));}
-const interceptorStageNames={WAITING:'待命',TAKEOFF:'起飞爬升',TRACK:'跟踪',AIM:'瞄准',SETTLE:'开火稳定',SPIN:'旋转标记',DONE:'完成'};
-const missionStepIndex={WAITING:0,TAKEOFF:1,TRACK:2,AIM:3,SETTLE:5,SPIN:6,DONE:7};
+const interceptorStageNames={WAITING:'待命',TAKEOFF:'起飞爬升',TRACK:'跟踪',AIM:'瞄准',RETREAT:'安全后撤',SETTLE:'开火稳定',SPIN:'旋转标记',DONE:'完成'};
+const missionStepIndex={WAITING:0,TAKEOFF:1,TRACK:2,AIM:3,RETREAT:4,SETTLE:5,SPIN:6,DONE:7};
 const fireModeNames={auto_manual:'自动单发 + 手动兜底',auto:'仅自动开火',manual:'仅手动发射'};
 const fireBlockText={FCU_STALE:'飞控数据缺失',NOT_ARMED:'未解锁',LOW_HEIGHT:'高度不足',TILT:'倾角过大',NOT_AUTHORIZED:'需授权+有效估计',LATCHED:'已发射',DISABLED:'按钮未启用'};
 const triggerFailText={DISARMED:'飞控未解锁',ARMED:'台架需未解锁',NO_LINK:'飞控无心跳',CONFIG:'参数不符',BUSY:'序列未结束',MOT_TEST_DISABLED:'执行器测试未启用',NO_ACK:'飞控无应答',DENIED:'飞控拒绝',TEMPORARILY_REJECTED:'飞控暂拒',UNSUPPORTED:'飞控不支持',FAILED:'飞控执行失败',SEND_ERROR:'发送失败',PARAMS:'击发参数无效',LOW_FAILED:'低位未确认',STOPPING:'服务停止中'};

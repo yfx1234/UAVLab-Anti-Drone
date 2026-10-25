@@ -68,8 +68,12 @@
   `DO_SET_ACTUATOR` 击发高位（默认 2000 µs）保持 1.0 s 再回低位；未解锁拒绝且不发高位。
   脉宽/时长存 `~/netgun_config/netgun_pwm.json`（面板「击发参数」或 `netgun_pwm_link.py params`）；
   接线、参数、台架与解锁实测见 `指令.md` 0.8。
-- 制导收到开火事件：TRACK/AIM → SETTLE→SPIN→DONE（原逻辑）；TAKEOFF 中 →
-  原地 DONE 保持；WAITING（未切 offboard）→ 闩锁，之后进 offboard 直接 DONE。
+- 制导收到开火事件：TRACK/AIM → RETREAT→（spin 开）SETTLE→SPIN→DONE；TAKEOFF 中 →
+  RETREAT→DONE 保持；WAITING（未切 offboard）→ 闩锁，之后进 offboard 直接 DONE。
+  RETREAT（2026-10-24，安全后撤）：网弹竖直上抛后落回机体附近，击发后先沿机体后向
+  水平退 `post_shot_retreat_m`（默认 3 m，launch 可调，0=旧行为），到位 0.5 m 内或
+  `retreat_timeout_s`（默认 4.5 s）兜底后接后续流程；后撤目标锚定 hold_target，
+  SETTLE/SPIN/DONE 自动保持在新点，yaw 冻结不转向。
 - 面板按钮的板上入口（2026-10-23）：`deploy/netgun_fire_button.py serve` 是常驻发射
   通道（节点 `netgun_fire_server`，随 `run_interceptor_stack.sh start` 启动，launch 退出即停）。
   火控进程运行满 3 s、端点进入图后才建状态订阅/发射发布端，提前完成匹配。
