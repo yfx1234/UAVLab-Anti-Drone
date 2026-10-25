@@ -31,20 +31,26 @@
 
 **Interfaces:** `supervise(device: Path, command: list[str], poll: float, settle: float, stop_timeout: float) -> int`; `render_unit(text: str, supervisor: Path) -> str`.
 
-- [ ] Write installer boundary tests and real Linux subprocess/device replacement tests; verify RED before implementation.
-- [ ] Implement device identity supervision, bounded child shutdown, CLI, atomic unit rewrite with backup and rollback instructions.
-- [ ] Run targeted tests on Windows and Linux (Linux covers the POSIX signal and device-replacement behavior).
-- [ ] Run the repository's Python suite and repository audit, report pre-existing failures separately.
-- [ ] Commit, obtain an independent review, fix meaningful findings with failing tests.
+- [x] Write installer boundary tests and real Linux subprocess/device replacement tests; verify RED before implementation.
+- [x] Implement device identity supervision, bounded child shutdown, CLI, atomic unit rewrite with backup and rollback instructions.
+- [x] Run targeted tests on Windows and Linux (Linux covers the POSIX signal and device-replacement behavior).
+- [x] Run the repository's Python suite and repository audit, report pre-existing failures separately.
+- [x] Commit, obtain an independent review, fix meaningful findings with failing tests.
 
 ### Task 2: Deploy and verify
 
-- [ ] Verify active service/deployment identity; copy only the tested tools and preserve the entire original service command.
-- [ ] Install the wrapper, restart only the forwarding service, verify USB ownership and real heartbeat on the existing UDP mirror.
-- [ ] Run isolated Linux replacement tests on NX; request one user-operated reboot for physical verification after deployment.
-- [ ] Record exact verified boundaries, rollback path, pending physical reboot validation; synchronize both project remotes and maintenance records.
+- [x] Verify active service/deployment identity; copy only the tested tools and preserve the entire original service command.
+- [x] Install the wrapper, restart only the forwarding service, verify USB ownership and real heartbeat on the existing UDP mirror.
+- [x] Run isolated Linux replacement tests on NX; request one user-operated reboot for physical verification after deployment.
+- [x] Record exact verified boundaries, rollback path, pending physical reboot validation; synchronize both project remotes and maintenance records.
 
 ## Execution notes
 
 - App-native worktree creation could not target this chat's parent directory (not a Git repository); used an isolated detached Git worktree of the confirmed project.
 - Execution proceeds inline under the user's repair request; no extra plan approval gate is needed for this reversible fix.
+
+- Task 1 complete: new tests observed RED before implementation; Linux targeted tests 9/9 PASS, Windows 4 PASS/5 POSIX skips. Windows full baseline 269 tests already had 3 failures/2 errors; after 278 tests retained the identical five failing tests.
+- Linux isolated full suite: 278 tests, 2 failures/21 errors/44 skips (unavailable imageio_ffmpeg/OpenCV and existing concurrency fixture timeouts); no new reconnect test failures. These unrelated suites were reported rather than altered.
+- Independent review: no Critical/Important issue. Deferred minors: child-crash exit-propagation regression test; installer rollback-failure regression test.
+- Review ruling: arbitrary subprocess descendants are outside this single foreground MAVProxy command; actual MAVProxy had no descendants. Parent cleanup and SIGINT escalation tests cover the direct child. Cost if changed: future plugin subprocesses require expanded process-group lifecycle coverage.
+- Task 2 complete: deployed with original-unit backup, verified unchanged outputs, rerun installer is a no-op; two user-operated reboots recovered automatically (9.25/9.27 s heartbeat gaps), with supervisor PID unchanged.
