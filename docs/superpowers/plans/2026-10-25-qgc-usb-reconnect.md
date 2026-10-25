@@ -53,4 +53,4 @@
 - Linux isolated full suite: 278 tests, 2 failures/21 errors/44 skips (unavailable imageio_ffmpeg/OpenCV and existing concurrency fixture timeouts); no new reconnect test failures. These unrelated suites were reported rather than altered.
 - Independent review: no Critical/Important issue. Deferred minors: child-crash exit-propagation regression test; installer rollback-failure regression test.
 - Review ruling: arbitrary subprocess descendants are outside this single foreground MAVProxy command; actual MAVProxy had no descendants. Parent cleanup and SIGINT escalation tests cover the direct child. Cost if changed: future plugin subprocesses require expanded process-group lifecycle coverage.
-- Task 2 complete: deployed with original-unit backup, verified unchanged outputs, rerun installer is a no-op; two user-operated reboots recovered automatically (9.25/9.27 s heartbeat gaps), with supervisor PID unchanged.
+- Task 2 complete: deployed with original-unit backup, verified unchanged outputs, rerun installer is a no-op; three user-operated reboots recovered automatically (9.25/9.27/8.88 s heartbeat gaps), with supervisor PID unchanged.
