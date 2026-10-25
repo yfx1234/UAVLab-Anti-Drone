@@ -118,7 +118,10 @@ def launch_args():
         return []
     merged = dict(DEFAULT_PARAMS)
     merged.update(params)
-    return ["%s:=%.6g" % (key, merged[key]) for key in PARAM_KEYS if key in merged]
+    # 始终带小数点（30 → 30.0）：launch 对无小数点的字符串按 int 推断，
+    # 节点 double 参数会因类型不符崩进程（launch 侧另有 ParameterValue 兜底）
+    return ["%s:=%.6g" % (key, merged[key]) if merged[key] % 1 else
+            "%s:=%.1f" % (key, merged[key]) for key in PARAM_KEYS if key in merged]
 
 
 def main(argv):

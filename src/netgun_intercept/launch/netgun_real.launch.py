@@ -314,13 +314,16 @@ def generate_launch_description():
                         # 实物击发钩子（PWM 脉冲命令，异步执行）；空=纯虚拟事件
                         "trigger_command": ParameterValue(
                             LaunchConfiguration("trigger_command"), value_type=str),
-                        # 实机口径 2s（仿真 12s=与虚拟目标起跑对齐，仅仿真用）
-                        "attack_enable_delay_s": LaunchConfiguration(
-                            "attack_enable_delay_s"
-                        ),
-                        "stable_track_time_s": LaunchConfiguration(
-                            "stable_track_time_s"
-                        ),
+                        # 实机口径 2s（仿真 12s=与虚拟目标起跑对齐，仅仿真用）；
+                        # ParameterValue 显式 float——面板/配置透传 "30" 这类
+                        # 整数字符串时 launch 会推断 int，与节点 double 声明
+                        # 类型冲突直接崩进程（2026-10-25 实测）
+                        "attack_enable_delay_s": ParameterValue(
+                            LaunchConfiguration("attack_enable_delay_s"),
+                            value_type=float),
+                        "stable_track_time_s": ParameterValue(
+                            LaunchConfiguration("stable_track_time_s"),
+                            value_type=float),
                         "engagement_timeout_s": 0.0,
                         "pursuer_velocity_compensation": False,
                         "weapon_authorization_topic": "/tracking/weapon_authorization",
