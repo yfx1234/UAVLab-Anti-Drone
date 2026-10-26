@@ -39,7 +39,7 @@ INTERCEPTOR_GEOMETRY_SAVE_CMD='python3 /home/uavlab/interceptor_ws/deploy/mounti
 # 拦截参数（击发后安全后撤/开火延迟）：面板「拦截参数」保存到板上
 # ~/netgun_config/interception_params.json，栈下次启动经 launch-args 透传生效
 INTERCEPTOR_INTERCEPT_SAVE_CMD='python3 /home/uavlab/interceptor_ws/deploy/interception_params.py save'
-INTERCEPT_PARAM_KEYS=('post_shot_retreat_m','retreat_timeout_s','attack_enable_delay_s')
+INTERCEPT_PARAM_KEYS=('post_shot_retreat_m','retreat_timeout_s','attack_enable_delay_s','post_shot_aim_hold_s')
 # 2026-10-24：击发参数（待命低位/击发高位/高位保持/低位确认）——JSON 经 stdin 交板上击发服务校验、
 # 写 ~/netgun_config/netgun_pwm.json 并立即生效（解锁中拒绝）；服务未运行时板上脚本直接写文件。不写飞控参数
 INTERCEPTOR_TRIGGER_SAVE_CMD='python3 /home/uavlab/interceptor_ws/deploy/netgun_pwm_link.py params save'

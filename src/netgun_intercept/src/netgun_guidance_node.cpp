@@ -212,6 +212,11 @@ public:
       declare_parameter<double>("post_shot_retreat_m", 3.0);
     retreat_timeout_s_ =
       declare_parameter<double>("retreat_timeout_s", 4.5);
+    // 出网前瞄准保持：发火→飞控 ~70ms + PWM ≤20ms + 网枪模块高位 0.1s
+    // → 网离膛 ≈0.19s；离膛前机体倾斜会带偏枪轴（1°≈13cm@7.5m）。
+    // 保持期内按击发点原地不动，0=击发后立即后撤（旧行为，有带偏风险）
+    post_shot_aim_hold_s_ =
+      declare_parameter<double>("post_shot_aim_hold_s", 0.5);
     // SETTLE 先悬停再旋转（2026-10-15 用户定案流程）：开火→制动悬停→
     // 速度归零确认→起旋。开火动量前冲（v²/2a）消耗在本阶段，旋转严格
     // 发生在停稳后，"原地"性质干净。确认窗防速度过零误触发（回拉段
@@ -287,12 +292,17 @@ public:
             hold_target_[2] = lp_->z;
             if (post_shot_retreat_m_ > 0.0) {
               // 爬升中手动兜底击发同样要躲网弹落点；TAKEOFF 场景原本
-              // 无 spin 标志，后撤完直接 DONE
+              // 无 spin 标志，后撤完直接 DONE。爬升中手动兜底击发同样
+              // 先保持出网前的瞄准（post_shot_aim_hold_s）
               const double psi = lp_->heading;
+              shot_hold_[0] = hold_target_[0];
+              shot_hold_[1] = hold_target_[1];
+              shot_hold_[2] = hold_target_[2];
               hold_target_[0] -= post_shot_retreat_m_ * std::cos(psi);
               hold_target_[1] -= post_shot_retreat_m_ * std::sin(psi);
               retreat_then_spin_ = false;
-              retreat_start_s_ = now().seconds();
+              retreat_go_s_ = now().seconds() + post_shot_aim_hold_s_;
+              retreat_start_s_ = retreat_go_s_;
               retreat_pending_ = true;
               phase_ = Phase::RETREAT;
               RCLCPP_WARN(
@@ -321,22 +331,33 @@ public:
           (void)frozen_yaw();  // 锚定当前航向（yaw 伺服关闭时也正确起步）
           if (post_shot_retreat_m_ > 0.0 && lp_) {
             // 网弹落点让位：后撤目标直接锚定 hold_target_，到位后
-            // SETTLE/SPIN/DONE 的位置保持自动跟着退到新点（下游零改动）
+            // SETTLE/SPIN/DONE 的位置保持自动跟着退到新点（下游零改动）。
+            // 出网前瞄准保持（post_shot_aim_hold_s）：发火→飞控 ~70ms
+            // + PWM ≤20ms + 模块高位 0.1s → 网离膛 ≈0.19s，且网离膛前
+            // 机体倾斜会带偏枪轴（1°≈13cm@7.5m）——先按击发点保持不动，
+            // hold 结束才开始后撤；超时锚同步移到 hold 结束时刻
+            shot_hold_[0] = hold_target_[0];
+            shot_hold_[1] = hold_target_[1];
+            shot_hold_[2] = hold_target_[2];
             const double psi = lp_->heading;
             hold_target_[0] -= post_shot_retreat_m_ * std::cos(psi);
             hold_target_[1] -= post_shot_retreat_m_ * std::sin(psi);
             retreat_then_spin_ = spin_flag_enabled_;
-            retreat_start_s_ = shot_time_s_;
+            retreat_go_s_ = shot_time_s_ + post_shot_aim_hold_s_;
+            retreat_start_s_ = retreat_go_s_;
             retreat_pending_ = true;
             phase_ = Phase::RETREAT;
             RCLCPP_INFO(
               get_logger(),
-              "shot event → RETREAT (%.1f m back, heading %.0f°)",
-              post_shot_retreat_m_, psi * 57.29577951308232);
+              "shot event → RETREAT (%.1f m back after %.1fs aim hold, "
+              "heading %.0f°)",
+              post_shot_retreat_m_, post_shot_aim_hold_s_,
+              psi * 57.29577951308232);
           } else if (spin_flag_enabled_) {
             phase_ = Phase::SETTLE;
             spin_accum_rad_ = 0.0;
             settle_ok_since_s_ = -1.0;
+            settle_enter_s_ = now().seconds();
             RCLCPP_INFO(
               get_logger(),
               "shot event → SETTLE (brake to stop, then 360° spin)");
@@ -606,15 +627,38 @@ private:
       // 二次进入 offboard 直接原地保持，不再重新 TAKEOFF 追击
       if (shot_seen_ && !post_shot_reengage_) {
         if (retreat_pending_) {
-          // 后撤被断链打断（stale 复位回 WAITING）且未完成：当前位置可能
+          // 后撤被中断（断链/飞手切出 offboard）且未完成：当前位置可能
           // 仍在网弹落点附近，继续退到锚定点而不是原地保持。hold_target_
-          // 保持已锚定的后撤点不重置；计时重置（断链可能已耗掉超时窗）
-          yaw_sp_ = lp_->heading;
-          yaw_sp_init_ = true;
-          retreat_start_s_ = now().seconds();
-          phase_ = Phase::RETREAT;
-          RCLCPP_WARN(
-            get_logger(), "post-shot re-entry → resume RETREAT to anchor");
+          // 保持已锚定的后撤点不重置；计时重置（中断可能已耗掉超时窗）。
+          // 防拖拽门：飞手接管后已明显飞离（>5m，含高度）或距击发太久
+          //（>60s，正常后撤+重进只需几秒）时放弃旧锚点，原地保持——
+          // 不把飞机拖回旧后撤点/旧高度
+          const double d3 = std::sqrt(
+            (lp_->x - hold_target_[0]) * (lp_->x - hold_target_[0]) +
+            (lp_->y - hold_target_[1]) * (lp_->y - hold_target_[1]) +
+            (lp_->z - hold_target_[2]) * (lp_->z - hold_target_[2]));
+          const bool near_anchor = d3 < 5.0;
+          const bool timely = now().seconds() - shot_time_s_ < 60.0;
+          if (near_anchor && timely) {
+            yaw_sp_ = lp_->heading;
+            yaw_sp_init_ = true;
+            retreat_go_s_ = now().seconds();
+            retreat_start_s_ = retreat_go_s_;
+            phase_ = Phase::RETREAT;
+            RCLCPP_WARN(
+              get_logger(), "post-shot re-entry → resume RETREAT to anchor");
+          } else {
+            hold_target_[0] = lp_->x;
+            hold_target_[1] = lp_->y;
+            hold_target_[2] = lp_->z;
+            retreat_pending_ = false;
+            phase_ = Phase::DONE;
+            RCLCPP_WARN(
+              get_logger(),
+              "post-shot re-entry: anchor too far (%.1fm)/stale (%.0fs) "
+              "→ DONE at current position",
+              d3, now().seconds() - shot_time_s_);
+          }
         } else {
           hold_target_[0] = lp_->x;
           hold_target_[1] = lp_->y;
@@ -644,12 +688,22 @@ private:
       v_gain_ * (hold_target_[2] - lp_->z), -max_vz_, max_vz_);
 
     if (phase_ == Phase::RETREAT) {
+      // 出网前瞄准保持（post_shot_aim_hold_s）：网离膛前机体倾斜会带偏
+      // 枪轴（发令→飞控 ~70ms + PWM ≤20ms + 模块高位 0.1s ≈0.19s，之后
+      // 网才脱离机体姿态影响）——hold 段按击发点保持（与瞄准末态同款
+      // 位置 setpoint，姿态不动），到时后才把目标阶跃到后撤点
+      const double now_s6 = now().seconds();
+      if (now_s6 < retreat_go_s_) {
+        send_pos_sp(shot_hold_[0], shot_hold_[1], shot_hold_[2],
+          0.0, 0.0, 0.0, frozen_yaw());
+        return;
+      }
       // 后撤点已锚定 hold_target_：位置 setpoint 阶跃交给 PX4 位置控制
       // 全速执行（实机 MPC_XY_VEL_MAX，3m 约 1-1.5s，先于网弹落地），
-      // yaw 冻结不转向。到位（水平 0.5m 内）或超时兜底后接既有流程。
+      // yaw 冻结不转向。到位（水平 0.5m 内）或超时兜底后接既有流程
+      //（超时锚=hold 结束时刻，hold 段不吃超时窗）。
       send_pos_sp(hold_target_[0], hold_target_[1], hold_target_[2],
         0.0, 0.0, 0.0, frozen_yaw());
-      const double now_s6 = now().seconds();
       const bool arrived = lp_ && std::hypot(
         lp_->x - hold_target_[0], lp_->y - hold_target_[1]) < 0.5;
       if (arrived || now_s6 - retreat_start_s_ >= retreat_timeout_s_) {
@@ -658,6 +712,7 @@ private:
           phase_ = Phase::SETTLE;
           spin_accum_rad_ = 0.0;
           settle_ok_since_s_ = -1.0;
+          settle_enter_s_ = now_s6;
           RCLCPP_INFO(
             get_logger(), "retreat done (%s, %.1fs) → SETTLE",
             arrived ? "arrived" : "timeout", now_s6 - retreat_start_s_);
@@ -674,7 +729,8 @@ private:
     if (phase_ == Phase::SETTLE) {
       // 开火后先悬停制动（位置保持照常、yaw 冻结），速度持续归零后
       // 才起旋。确认窗排除回拉段的过零点（实测回拉峰值 ~0.5m/s）；
-      // 超时兜底直接起旋（慢一点的原地旋转仍远优于无标志）。
+      // 超时兜底直接起旋（慢一点的原地旋转仍远优于无标志）。超时锚=
+      // 进入 SETTLE 时刻（后撤用时不再挤占制动判停窗）。
       send_pos_sp(hold_target_[0], hold_target_[1], hold_target_[2],
         0.0, 0.0, 0.0, frozen_yaw());
       const double spd = std::hypot(lp_->vx, lp_->vy);
@@ -687,14 +743,15 @@ private:
       const bool settled =
         (settle_ok_since_s_ > 0.0 &&
           now_s7 - settle_ok_since_s_ >= spin_settle_confirm_s_) ||
-        now_s7 - shot_time_s_ >= spin_settle_timeout_s_;
+        now_s7 - settle_enter_s_ >= spin_settle_timeout_s_;
       if (settled) {
         phase_ = Phase::SPIN;
         spin_accum_rad_ = 0.0;
         RCLCPP_INFO(
           get_logger(),
-          "settled (%.2f m/s after %.2fs) → SPIN (%.0f° in-place)",
-          spd, now_s7 - shot_time_s_, spin_total_rad_ * 180.0 / M_PI);
+          "settled (%.2f m/s, settle %.2fs, since-shot %.2fs) → SPIN (%.0f° in-place)",
+          spd, now_s7 - settle_enter_s_, now_s7 - shot_time_s_,
+          spin_total_rad_ * 180.0 / M_PI);
       }
       return;
     }
@@ -1452,6 +1509,10 @@ private:
   double settle_ok_since_s_{-1.0};
   double post_shot_retreat_m_{3.0};
   double retreat_timeout_s_{4.5};
+  double post_shot_aim_hold_s_{0.5};
+  double retreat_go_s_{0.0};        // 允许开始后撤的时刻（hold 结束）
+  double shot_hold_[3]{0.0, 0.0, 0.0};  // 击发时刻位置（hold 段保持点）
+  double settle_enter_s_{0.0};      // 进入 SETTLE 时刻（判停超时锚）
   double retreat_start_s_{0.0};
   bool retreat_then_spin_{false};
   // 后撤未完成标志（shot_seen_ 同款语义：不被 reset 清——网弹落点

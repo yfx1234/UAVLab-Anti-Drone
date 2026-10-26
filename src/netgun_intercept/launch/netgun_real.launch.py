@@ -62,6 +62,8 @@ def generate_launch_description():
             # deploy/interception_params.py 存 ~/netgun_config/ 并在栈启动时透传
             DeclareLaunchArgument("post_shot_retreat_m", default_value="3.0"),
             DeclareLaunchArgument("retreat_timeout_s", default_value="4.5"),
+            # 出网前瞄准保持（网离膛 ≈0.19s，期间机体倾斜会带偏枪轴）
+            DeclareLaunchArgument("post_shot_aim_hold_s", default_value="0.5"),
             DeclareLaunchArgument(
                 "primary_axis_error_rad", default_value="0.03490658503988659"
             ),
@@ -251,6 +253,9 @@ def generate_launch_description():
                             value_type=float),
                         "retreat_timeout_s": ParameterValue(
                             LaunchConfiguration("retreat_timeout_s"),
+                            value_type=float),
+                        "post_shot_aim_hold_s": ParameterValue(
+                            LaunchConfiguration("post_shot_aim_hold_s"),
                             value_type=float),
                         # 初始搜索慢自旋：无目标时原地转机头扫整圆天顶
                         "search_spin_enabled": True,

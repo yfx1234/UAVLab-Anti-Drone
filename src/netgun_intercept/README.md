@@ -74,6 +74,12 @@
   水平退 `post_shot_retreat_m`（默认 3 m，launch 可调，0=旧行为），到位 0.5 m 内或
   `retreat_timeout_s`（默认 4.5 s）兜底后接后续流程；后撤目标锚定 hold_target，
   SETTLE/SPIN/DONE 自动保持在新点，yaw 冻结不转向。
+  2026-10-26 复核补强：①`post_shot_aim_hold_s`（默认 0.5 s）出网前瞄准保持——
+  发令→飞控 ~70 ms + PWM ≤20 ms + 模块高位 0.1 s ≈0.19 s 网才离膛，期间机体倾斜
+  会带偏枪轴（1°≈13 cm@7.5 m），保持期内按击发点不动、超时锚同步后移；②SETTLE
+  判停超时改锚"进入 SETTLE 时刻"（后撤用时不再挤占制动窗）；③re-entry 防拖拽门：
+  后撤中断后重进 offboard，距锚点 >5 m（含高度）或距击发 >60 s 时放弃旧锚点原地
+  保持，不把飞机拖回旧后撤点/旧高度。
 - 面板按钮的板上入口（2026-10-23）：`deploy/netgun_fire_button.py serve` 是常驻发射
   通道（节点 `netgun_fire_server`，随 `run_interceptor_stack.sh start` 启动，launch 退出即停）。
   火控进程运行满 3 s、端点进入图后才建状态订阅/发射发布端，提前完成匹配。

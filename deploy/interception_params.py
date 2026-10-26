@@ -16,16 +16,19 @@ import os
 import sys
 from datetime import datetime, timezone, timedelta
 
-PARAM_KEYS = ("post_shot_retreat_m", "retreat_timeout_s", "attack_enable_delay_s")
+PARAM_KEYS = ("post_shot_retreat_m", "retreat_timeout_s", "attack_enable_delay_s",
+              "post_shot_aim_hold_s")
 DEFAULT_PARAMS = {
     "post_shot_retreat_m": 3.0,   # 击发后沿机体后向水平后撤距离（米），0=旧行为
     "retreat_timeout_s": 4.5,     # 后撤到位判据的超时兜底（秒）
     "attack_enable_delay_s": 2.0, # 就位后延迟开火（秒）；比赛跟踪计分需 ~30
+    "post_shot_aim_hold_s": 0.5,  # 出网前瞄准保持（秒）：网离膛≈0.19s，期间倾斜会带偏枪轴
 }
 LIMITS = {
     "post_shot_retreat_m": [0.0, 8.0],
     "retreat_timeout_s": [2.0, 10.0],
     "attack_enable_delay_s": [0.0, 120.0],
+    "post_shot_aim_hold_s": [0.0, 2.0],
 }
 CONFIG_PATH = os.path.join(
     os.environ.get("NETGUN_CONFIG_DIR",
