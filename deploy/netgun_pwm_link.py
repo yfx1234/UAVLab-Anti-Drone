@@ -85,27 +85,44 @@ MODULE_LOW_MAX_US = 1300  # 网枪触发模块：≤1300 µs 持续 100 ms = 低
 MODULE_HIGH_MIN_US = 1700  # ≥1700 µs 持续 100 ms = 高位（击发）；<1700 µs 持续 100 ms = 关闭
 MARGIN_US = 50
 ARM_RAMP_S = 0.5  # PX4 解锁/进执行器测试时输出从 DIS5 线性斜坡 0.5 s 到设定值
-EXPECTED = (  # 推荐值（核对规则见 CHECKS）
-    ("PWM_AUX_FUNC5", 301),
-    ("PWM_AUX_DIS5", 0),
-    ("PWM_AUX_FAIL5", 0),
-    ("PWM_AUX_MIN5", PWM_MIN_US),
-    ("PWM_AUX_MAX5", PWM_MAX_US),
-    ("PWM_AUX_TIM1", 50),
-)
-CHECKS = (  # 参数名、合格判据、应为（问题文本）
-    ("PWM_AUX_FUNC5", lambda v: v == ACTUATOR_SET1, "301"),
-    ("PWM_AUX_DIS5", lambda v: v == 0 or 800 <= v <= MODULE_LOW_MAX_US - MARGIN_US, "0 或 800–1250"),
-    ("PWM_AUX_FAIL5", lambda v: v in (0, -1) or 800 <= v <= MODULE_LOW_MAX_US - MARGIN_US,
-     "0、-1 或 800–1250"),
-    ("PWM_AUX_MIN5", lambda v: v == PWM_MIN_US, str(PWM_MIN_US)),
-    ("PWM_AUX_MAX5", lambda v: v == PWM_MAX_US, str(PWM_MAX_US)),
-    ("PWM_AUX_TIM1", lambda v: v == 50, "50"),
-)
-OTHER_FUNCS = tuple("PWM_MAIN_FUNC%d" % i for i in range(1, 9)) + tuple(
-    "PWM_AUX_FUNC%d" % i for i in range(1, 9) if i != 5)
-NOTES = ("COM_MOT_TEST_EN", "COM_PREARM_MODE", "PWM_AUX_REV")
-AUX5_BIT = 1 << 4
+BANKS = {  # 输出域 → 参数前缀/REV 参数/定时器核对；aux=FMU PWM OUT（AUX5），main=IO PWM OUT（MAIN5）
+    "aux":  {"prefix": "PWM_AUX",  "rev": "PWM_AUX_REV",  "timer": ("PWM_AUX_TIM1", 50)},
+    "main": {"prefix": "PWM_MAIN", "rev": "PWM_MAIN_REV", "timer": (None, None)},
+}
+DEFAULT_BANK = "aux"
+CHANNEL_BIT5 = 1 << 4
+
+
+def bank_checks(bank):
+    """核对清单：FUNC5/DIS5/FAIL5/MIN5/MAX5（两域同名规则）+ 域定时器。
+
+    main 域不核定时器（MAIN5–8 默认 50 Hz；MAIN_TIM1 属 MAIN1–4 不得动）。"""
+    prefix = BANKS[bank]["prefix"]
+    checks = [
+        (prefix + "FUNC5", lambda v: v == ACTUATOR_SET1, "301"),
+        (prefix + "DIS5", lambda v: v == 0 or 800 <= v <= MODULE_LOW_MAX_US - MARGIN_US, "0 或 800–1250"),
+        (prefix + "FAIL5", lambda v: v in (0, -1) or 800 <= v <= MODULE_LOW_MAX_US - MARGIN_US,
+         "0、-1 或 800–1250"),
+        (prefix + "MIN5", lambda v: v == PWM_MIN_US, str(PWM_MIN_US)),
+        (prefix + "MAX5", lambda v: v == PWM_MAX_US, str(PWM_MAX_US)),
+    ]
+    timer = BANKS[bank]["timer"]
+    if timer[0]:
+        checks.append((timer[0], lambda v, t=timer[1]: v == t, str(timer[1])))
+    return tuple(checks)
+
+
+def bank_conflicts(bank):
+    """301 冲突扫描范围：两域 FUNC1–8 除本通道外全部（301 不得重复指派）。"""
+    names = []
+    for key in BANKS:
+        prefix = BANKS[key]["prefix"]
+        names += [prefix + "FUNC%d" % i for i in range(1, 9) if not (key == bank and i == 5)]
+    return tuple(names)
+
+
+def bank_note_names(bank):
+    return ("COM_MOT_TEST_EN", "COM_PREARM_MODE", BANKS[bank]["rev"])
 
 DEFAULT_PARAMS = {"low_us": 1000, "high_us": 2000, "hold_s": 1.0, "low_s": 0.3}
 PARAM_SPECS = (  # 键、名称、单位、下限、上限、整数、范围依据
@@ -141,7 +158,7 @@ RESULT_NAMES = {0: "ACCEPTED", 1: "TEMPORARILY_REJECTED", 2: "DENIED",
 REFUSALS = {
     "BUSY": "上一次击发序列未结束（低位确认/高位保持/回低位中）",
     "NO_LINK": "飞控无心跳（MAVProxy 转发 127.0.0.1:14555 未通或飞控未上电）",
-    "CONFIG": "飞控 AUX5 参数不符或未读到",
+    "CONFIG": "飞控 PWM5 参数不符或未读到（核对当前输出域）",
     "PARAMS": "击发参数无效",
     "DISARMED": "飞控未解锁：不发击发高位（PX4 会锁存设定值，解锁瞬间就会输出）；台架测试用 --bench",
     "ARMED": "飞控已解锁：台架模式只在未解锁时可用",
@@ -239,12 +256,15 @@ def validate_params(raw):
     return params
 
 
-def _meta(source="default", path=None, saved_at=None, error=None):
-    return {"source": source, "path": path, "saved_at": saved_at, "error": error}
+def _meta(source="default", path=None, saved_at=None, error=None, bank=None):
+    return {"source": source, "path": path, "saved_at": saved_at, "error": error,
+            "bank": bank or DEFAULT_BANK}
 
 
 def load_params(path=None):
-    """(params, meta)：文件不存在 → 默认值；文件无效 → (None, meta.error)，不静默退回默认。"""
+    """(params, meta)：文件不存在 → 默认值；文件无效 → (None, meta.error)，不静默退回默认。
+
+    meta.bank = 输出域（"aux"=FMU PWM OUT/AUX5，"main"=IO PWM OUT/MAIN5）；无效 bank 视为文件无效。"""
     path = path or params_path()
     try:
         with open(path, encoding="utf-8") as f:
@@ -259,21 +279,29 @@ def load_params(path=None):
         document = json.loads(text)
         if not isinstance(document, dict):
             raise ParamsError("内容需为 JSON 对象")
-        params = validate_params({k: v for k, v in document.items() if k not in PARAMS_META_KEYS})
+        bank = document.get("bank", DEFAULT_BANK)
+        if bank not in BANKS:
+            raise ParamsError("bank 无效：%r（可用 aux/main）" % bank)
+        params = validate_params({k: v for k, v in document.items()
+                                  if k not in PARAMS_META_KEYS and k != "bank"})
     except ValueError as exc:
         return None, _meta("file", path, error="击发参数文件无效（%s）：%s" % (path, exc))
     saved_at = document.get("saved_at")
-    return params, _meta("file", path, saved_at if isinstance(saved_at, str) else None)
+    return params, _meta("file", path, saved_at if isinstance(saved_at, str) else None, bank=bank)
 
 
-def save_params(params, path=None):
+def save_params(params, path=None, bank=None):
     """校验后原子写入（同目录临时文件 + rename），返回 meta。"""
     params = validate_params(params)
+    if bank is not None and bank not in BANKS:
+        raise ParamsError("bank 无效：%r（可用 aux/main）" % bank)
     path = path or params_path()
     stamp = time.strftime("%Y-%m-%dT%H:%M:%S%z")
     if len(stamp) > 5 and stamp[-5] in "+-":
         stamp = stamp[:-2] + ":" + stamp[-2:]
     document = {"schema_version": PARAMS_SCHEMA, "saved_at": stamp}
+    if bank:
+        document["bank"] = bank
     document.update(params)
     directory = os.path.dirname(path)
     if directory:
@@ -305,9 +333,11 @@ def remove_params(path=None):
 
 
 def options_info(params, meta):
-    """状态/面板用：四项参数（无效时为 null）+ 来源/路径/保存时间/错误 + 默认值与范围。"""
+    """状态/面板用：四项参数（无效时为 null）+ 来源/路径/保存时间/错误 + 默认值与范围 + 输出域。"""
     info = {key: (params or {}).get(key) for key in PARAM_KEYS}
     info.update(meta)
+    info.setdefault("bank", DEFAULT_BANK)
+    info["bank"] = info.get("bank") or DEFAULT_BANK
     info["defaults"] = dict(DEFAULT_PARAMS)
     info["limits"] = {spec[0]: [spec[3], spec[4]] for spec in PARAM_SPECS}
     return info
@@ -390,8 +420,9 @@ def brief(info):
     if not idle.get("latched"):
         return "待命低位未设好（%s）" % (
             idle.get("error") or "等待飞控确认 %s µs" % options.get("low_us"))
-    text = "就绪（飞控 %s · %s · AUX5 %s%s）" % (
-        link.get("fc") or "?", "已解锁" if link.get("armed") else "未解锁", plan_text(options),
+    text = "就绪（飞控 %s · %s · %s5 %s%s）" % (
+        link.get("fc") or "?", "已解锁" if link.get("armed") else "未解锁",
+        (info.get("bank") or "aux").upper(), plan_text(options),
         " · 默认参数" if options.get("source") == "default" else "")
     if config.get("warnings"):
         text += "；注意：" + "；".join(config["warnings"])
@@ -450,11 +481,14 @@ def _params_request(args):
         if len(text) > PARAMS_LIMIT_BYTES:
             raise ParamsError("请求内容过大")
         document = json.loads(text)
-        if not isinstance(document, dict) or set(document) != {"config"}:
-            raise ParamsError("请求格式无效（应为 {\"config\": {...}}）")
-        if not isinstance(document["config"], dict):
+        if not isinstance(document, dict) or not set(document) <= {"config", "bank"}:
+            raise ParamsError("请求格式无效（应为 {\"config\": {...}}，可选 \"bank\"）")
+        if not isinstance(document.get("config", {}), dict):
             raise ParamsError("config 需为 JSON 对象")
-        return {"set": document["config"]}
+        request = {"set": document.get("config", {})}
+        if "bank" in document:
+            request["bank"] = document["bank"]
+        return request
     if args == ["--reset"]:
         return {"reset": True}
     changes, rest = {}, list(args)
@@ -477,8 +511,9 @@ def _params_offline(req, reason):
     if req.get("reset"):
         remove_params()
     else:
-        current, _ = load_params()
-        save_params(validate_params(dict(current or DEFAULT_PARAMS, **req["set"])))
+        current, current_meta = load_params()
+        save_params(validate_params(dict(current or DEFAULT_PARAMS, **req["set"])),
+                    bank=req.get("bank") or current_meta.get("bank") or DEFAULT_BANK)
     return {"ok": True, "service": False, "applied": False,
             "note": note + "：已写入文件，服务启动后生效", "options": params_info()}
 
@@ -775,6 +810,7 @@ class PwmService:
             self.params, self.params_meta = load_params(self.params_file)
         else:
             self.params, self.params_meta = validate_params(params), _meta("given")
+        self.bank = self.params_meta.get("bank") or DEFAULT_BANK
         self.events_path = events_path or os.path.join(log_dir(), "netgun_pwm_events.jsonl")
         self.clock = clock
         self.log = log
@@ -796,7 +832,7 @@ class PwmService:
     def config(self):
         values, problems, missing, warnings = {}, [], [], []
         stamps = []
-        for name, good, expected in CHECKS:
+        for name, good, expected in bank_checks(self.bank):
             item = self.link.param(name)
             if item is None:
                 missing.append(name)
@@ -805,17 +841,19 @@ class PwmService:
             stamps.append(item[1])
             if not good(item[0]):
                 problems.append("%s=%s（应为 %s）" % (name, item[0], expected))
-        for name in OTHER_FUNCS:
+        for name in bank_conflicts(self.bank):
             item = self.link.param(name)
             if item is not None and item[0] == ACTUATOR_SET1:
                 values[name] = item[0]
                 problems.append("%s=301（Actuator Set 1 同时驱动另一路输出）" % name)
-        for name in NOTES:
+        for name in bank_note_names(self.bank):
             item = self.link.param(name)
             if item is not None:
                 values[name] = item[0]
-        if int(values.get("PWM_AUX_REV", 0)) & AUX5_BIT:
-            problems.append("PWM_AUX_REV=%s 含 AUX5（输出反向：待命低位会变成高位）" % values["PWM_AUX_REV"])
+        rev_param = BANKS[self.bank]["rev"]
+        if int(values.get(rev_param, 0)) & CHANNEL_BIT5:
+            problems.append("%s=%s 含 5 号通道（输出反向：待命低位会变成高位）"
+                            % (rev_param, values[rev_param]))
         if values.get("COM_MOT_TEST_EN", 1) != 1:
             warnings.append("COM_MOT_TEST_EN≠1，台架模式不可用")
         if values.get("COM_PREARM_MODE", 0) != 0:
@@ -870,7 +908,8 @@ class PwmService:
             period = PARAM_PERIOD_S if config["ok"] is True else PARAM_RETRY_S
             if self.param_sent is None or now - self.param_sent >= period:
                 self.param_sent = now
-                for name in [n for n, _, _ in CHECKS] + list(OTHER_FUNCS) + list(NOTES):
+                for name in [n for n, _, _ in bank_checks(self.bank)] \
+                        + list(bank_conflicts(self.bank)) + list(bank_note_names(self.bank)):
                     if self.stop.is_set():
                         break
                     try:
@@ -923,11 +962,16 @@ class PwmService:
             return {"ok": True, "options": self.options(), "idle": self.idle()}
         if not reset and not isinstance(changes, dict):
             return {"ok": False, "error": "set 需为 JSON 对象"}
+        changes = dict(changes) if changes else {}
+        bank = changes.pop("bank", None)
+        if bank is not None and bank not in BANKS:
+            return {"ok": False, "error": "bank 无效：%r（可用 aux/main）" % bank}
         try:
             params = (dict(DEFAULT_PARAMS) if reset
                       else validate_params(dict(self.params or DEFAULT_PARAMS, **changes)))
         except ParamsError as exc:
             return {"ok": False, "error": str(exc)}
+        new_bank = self.bank if (reset or bank is None) else bank
         link = self.link.snapshot()
         if link["alive"] and link["armed"]:
             return {"ok": False, "error": "飞控已解锁：上锁后再改击发参数"}
@@ -935,16 +979,23 @@ class PwmService:
             return {"ok": False, "error": "击发序列进行中，结束后再改"}
         try:
             try:
-                meta = remove_params(self.params_file) if reset else save_params(params, self.params_file)
+                meta = (remove_params(self.params_file) if reset
+                        else save_params(params, self.params_file, bank=new_bank))
             except OSError as exc:
                 return {"ok": False, "error": "击发参数写入失败：%s" % exc}
             old, self.params, self.params_meta = self.params, params, meta
+            old_bank, self.bank = self.bank, new_bank
             self.log("击发参数%s：%s，低位确认 %s s" % (
                 "恢复默认" if reset else "已保存", plan_text(params), seconds_text(params["low_s"])))
             if old is None or old["low_us"] != params["low_us"]:
                 self.latch = None
                 if link["alive"] and self.config()["ok"] is True:
                     self._latch_low("参数修改")
+            if old_bank != self.bank:
+                self.latch = None
+                self.log("输出域切换：%s5（%s PWM OUT 座）" % (
+                    self.bank.upper(),
+                    "FMU" if self.bank == "aux" else "I/O"))
             return {"ok": True, "applied": True, "options": self.options(), "idle": self.idle()}
         finally:
             self.busy.release()
@@ -1258,7 +1309,8 @@ def serve(args):
     params = service.params
     log_line("击发服务启动：UDP %s:%d ↔ MAVProxy，控制 %s；%s" % (
         link.listen[0], link.listen[1], path,
-        "AUX5 %s → 回待命，低位确认 %s s（%s）" % (
+        "%s5 %s → 回待命，低位确认 %s s（%s）" % (
+            (service.bank if params else "aux").upper(),
             plan_text(params), seconds_text(params["low_s"]),
             "默认参数" if service.params_meta["source"] == "default" else service.params_file)
         if params else "击发参数无效：%s；拒绝击发，修正后用 params --reset 或面板重新保存"
