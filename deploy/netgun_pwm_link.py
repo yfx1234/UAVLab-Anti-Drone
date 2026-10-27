@@ -422,7 +422,8 @@ def brief(info):
             idle.get("error") or "等待飞控确认 %s µs" % options.get("low_us"))
     text = "就绪（飞控 %s · %s · %s5 %s%s）" % (
         link.get("fc") or "?", "已解锁" if link.get("armed") else "未解锁",
-        (info.get("bank") or "aux").upper(), plan_text(options),
+        ((info.get("options") or {}).get("bank") or (options or {}).get("bank") or "aux").upper(),
+        plan_text(options),
         " · 默认参数" if options.get("source") == "default" else "")
     if config.get("warnings"):
         text += "；注意：" + "；".join(config["warnings"])
