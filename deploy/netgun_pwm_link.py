@@ -85,9 +85,9 @@ MODULE_LOW_MAX_US = 1300  # 网枪触发模块：≤1300 µs 持续 100 ms = 低
 MODULE_HIGH_MIN_US = 1700  # ≥1700 µs 持续 100 ms = 高位（击发）；<1700 µs 持续 100 ms = 关闭
 MARGIN_US = 50
 ARM_RAMP_S = 0.5  # PX4 解锁/进执行器测试时输出从 DIS5 线性斜坡 0.5 s 到设定值
-BANKS = {  # 输出域 → 参数前缀/REV 参数/定时器核对；aux=FMU PWM OUT（AUX5），main=IO PWM OUT（MAIN5）
-    "aux":  {"prefix": "PWM_AUX",  "rev": "PWM_AUX_REV",  "timer": ("PWM_AUX_TIM1", 50)},
-    "main": {"prefix": "PWM_MAIN", "rev": "PWM_MAIN_REV", "timer": (None, None)},
+BANKS = {  # 输出域 → 参数名前缀/REV 参数/定时器核对；aux=FMU PWM OUT（AUX5），main=IO PWM OUT（MAIN5）
+    "aux":  {"prefix": "PWM_AUX_",  "rev": "PWM_AUX_REV",  "timer": ("PWM_AUX_TIM1", 50)},
+    "main": {"prefix": "PWM_MAIN_", "rev": "PWM_MAIN_REV", "timer": (None, None)},
 }
 DEFAULT_BANK = "aux"
 CHANNEL_BIT5 = 1 << 4
@@ -963,7 +963,7 @@ class PwmService:
         if not reset and not isinstance(changes, dict):
             return {"ok": False, "error": "set 需为 JSON 对象"}
         changes = dict(changes) if changes else {}
-        bank = changes.pop("bank", None)
+        bank = request.get("bank", changes.pop("bank", None))
         if bank is not None and bank not in BANKS:
             return {"ok": False, "error": "bank 无效：%r（可用 aux/main）" % bank}
         try:
