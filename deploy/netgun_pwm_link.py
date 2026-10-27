@@ -319,7 +319,7 @@ def save_params(params, path=None, bank=None):
         except OSError:
             pass
         raise
-    return _meta("file", path, stamp)
+    return _meta("file", path, stamp, bank=bank or DEFAULT_BANK)
 
 
 def remove_params(path=None):
