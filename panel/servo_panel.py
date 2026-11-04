@@ -8,12 +8,14 @@
 用法：python servo_panel.py  →  浏览器 http://127.0.0.1:8769/
 """
 import json
+import math
 import os
 import shlex
 import threading
 import time
 import http.server
 import urllib.parse
+from pathlib import Path
 
 try:
     import paramiko
@@ -96,18 +98,36 @@ def _servo(payload):
     if op == "check":
         op = "state"
     if op == "move":
-        cmd = "%s move --slot %d --norm %.4f --ack 1" % (
-            BOARD_CLI, int(payload["slot"]), float(payload["norm"]))
+        mode = str(payload.get("mode", "pulse"))
+        hold_s = float(payload.get("hold_s", 1))
+        norm = float(payload["norm"])
+        if mode not in ("pulse", "hold") or not math.isfinite(hold_s) or not 0.2 <= hold_s <= 30:
+            raise ValueError("动作模式或保持时长无效（0.2–30 秒）")
+        if not math.isfinite(norm) or not -1 <= norm <= 1:
+            raise ValueError("目标位置超出范围")
+        cmd = "%s move --slot %d --norm %.4f --ack 1 --mode %s --hold-s %.3f" % (
+            BOARD_CLI, int(payload["slot"]), norm, mode, hold_s)
         timeout = 12.0
     elif op == "seq":
         pts = json.dumps(payload["points"], ensure_ascii=False)
-        cmd = "%s seq --points %s" % (BOARD_CLI, shlex.quote(pts))
+        after = str(payload.get("after", "center"))
+        if after not in ("center", "hold"):
+            raise ValueError("序列结束方式无效")
+        cmd = "%s seq --points %s --after %s" % (BOARD_CLI, shlex.quote(pts), after)
         timeout = 20.0
     elif op == "stop":
         cmd = "%s stop" % BOARD_CLI
         timeout = 8.0
     elif op == "state":
         cmd = "%s state" % BOARD_CLI
+        if payload.get("lease_id"):
+            cmd += " --lease-id %s" % shlex.quote(str(payload["lease_id"]))
+        timeout = 8.0
+    elif op == "inspect":
+        bank, channel = str(payload.get("bank", "MAIN")), int(payload.get("channel", 5))
+        if bank not in ("MAIN", "AUX") or not 1 <= channel <= 8:
+            raise ValueError("输出接口或通道无效")
+        cmd = "%s inspect --bank %s --channel %d" % (BOARD_CLI, bank, channel)
         timeout = 8.0
     else:
         return {"ok": False, "error": "未知 op"}
@@ -120,192 +140,7 @@ def _servo(payload):
     return {"ok": False, "error": "板上无响应（exit %d）：%s" % (code, text[-200:])}
 
 
-PAGE = r"""<!doctype html>
-<html lang="zh"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>舵机控制面板</title>
-<style>
-:root{--bg:#0f1420;--card:#1a2233;--line:#2a3650;--fg:#e6ebf5;--dim:#8b98b3;--acc:#4f8cff;--ok:#3ecf8e;--bad:#ff6b6b}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.6 system-ui,"Microsoft YaHei";padding:20px}
-.wrap{max-width:980px;margin:0 auto}
-h1{font-size:20px;margin:0 0 4px}.sub{color:var(--dim);font-size:12px;margin-bottom:16px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:14px}
-h2{font-size:14px;margin:0 0 10px;color:var(--acc)}
-label{font-size:12px;color:var(--dim)}
-input,button,select{background:#121a2b;color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:6px 10px;font:inherit}
-input:focus{outline:1px solid var(--acc)}
-button{cursor:pointer}button:hover{border-color:var(--acc)}
-button.pri{background:var(--acc);border-color:var(--acc);color:#fff}
-button.dan{background:#7a2727;border-color:#a33;color:#fff}
-button.gh{background:transparent}
-.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-.row>*{flex:0 0 auto}
-.stat{font-size:12px;padding:3px 10px;border-radius:10px;background:#0d1119;border:1px solid var(--line)}
-.stat.ok{color:var(--ok)}.stat.bad{color:var(--bad)}
-#sliderWrap{margin:14px 0}
-input[type=range]{width:100%;height:34px;accent-color:var(--acc)}
-.big{font-size:26px;font-weight:600;text-align:center;padding:6px}
-.seqtab{width:100%;border-collapse:collapse;font-size:13px}
-.seqtab th,.seqtab td{border-bottom:1px solid var(--line);padding:5px 6px;text-align:center}
-.seqtab input{width:70px;text-align:center}
-.msg{font-size:12px;color:var(--dim);min-height:18px;margin-top:8px;white-space:pre-wrap}
-.err{color:var(--bad)}
-kbd{background:#0d1119;border:1px solid var(--line);border-radius:4px;padding:0 5px;font-size:11px}
-</style></head><body><div class="wrap">
-<h1>舵机控制面板</h1>
-<div class="sub">独立舵机台架 · 仅未解锁时测试 · 单次动作 1 秒后自动结束</div>
-
-<div class="card">
- <h2>连接</h2>
- <div class="row">
-  <label>板子IP <input id="host" value="192.168.50.100" size="14"></label>
-  <label>用户 <input id="user" value="uavlab" size="8"></label>
-  <label>密码 <input id="pass" type="password" size="10"></label>
-  <label><input type="checkbox" id="remember"> 记住</label>
-  <button class="pri" id="btnConn">连接板子</button>
-  <span class="stat" id="connStat">未连接</span>
- </div>
- <div class="msg" id="connMsg">输入板子地址和账号；优先使用本机 SSH 密钥，也可输入 SSH 密码。</div>
-</div>
-
-<div class="card">
- <h2>通道配置（保存到本机）</h2>
- <div class="row">
-  <label>槽位（功能号=300+槽位）
-   <select id="slot"><option value="1">1 (FUNC301)</option><option value="2" selected>2 (FUNC302)</option><option value="3">3 (FUNC303)</option><option value="4">4 (FUNC304)</option><option value="5">5 (FUNC305)</option><option value="6">6 (FUNC306)</option></select></label>
-  <label>行程下限µs <input id="usMin" value="1000" size="6"></label>
-  <label>行程上限µs <input id="usMax" value="2000" size="6"></label>
-  <label>角度行程° <input id="deg" value="180" size="5"></label>
-  <span class="stat">物理口：<b id="phys">?</b></span>
- </div>
- <div class="msg">QGC 对应参数：PWM_MAIN/AUX_FUNC<b>通道号</b>=<span id="funcHint">302</span>、MIN/MAX=行程上下限。槽≠物理通道：槽是 PX4 内部 Actuator Set 编号，物理通道由 FUNC 参数绑定。</div>
-</div>
-
-<div class="card">
- <h2>手动控制</h2>
-<div class="msg">单次动作保持 1 秒后恢复未解锁输出；序列结束也会自动恢复。角度是按脉宽范围估算的目标值。</div>
-<div id="sliderWrap"><input type="range" id="slider" min="0" max="1000" value="500"></div>
- <div class="big" id="angleShow">90.0°</div>
- <div class="row" style="justify-content:center">
-  <label>精确µs <input id="usIn" size="7"></label>
-  <button class="pri" id="btnGo">转到</button>
-  <span class="stat" id="lastStat">—</span>
- </div>
-</div>
-
-<div class="card">
- <h2>动作序列（从哪转到哪再转到哪）</h2>
- <table class="seqtab"><thead><tr><th>#</th><th>角度°</th><th>转到用时ms</th><th>保持ms</th><th></th></tr></thead>
- <tbody id="seqBody"></tbody></table>
- <div class="row" style="margin-top:10px">
-  <button id="btnAdd">+ 加一点</button>
-  <button class="pri" id="btnRun">▶ 执行序列</button>
-  <button class="dan" id="btnStop">■ 停止</button>
-  <span class="stat" id="seqStat">空闲</span>
- </div>
- <div class="msg">分步平滑转动，实际用时受链路响应影响；停止会结束测试并恢复未解锁输出。</div>
-</div>
-
-<div class="card">
- <h2>使用说明</h2>
- <div class="msg" style="min-height:0">
- 1. 先核对舵机供电和物理通道，再在 QGC 查看该通道的输出功能及脉宽范围。<br>
- 2. 槽位 N 对应功能号 300+N；槽位不等于转接板插口编号。<br>
- 3. ACK 只表示飞控接收结果；实际输出仍由飞控状态、输出配置与供电决定。角度为按行程估算值。
- </div>
-</div>
-</div>
-
-<script>
-const $=id=>document.getElementById(id);
-function cfg(){const mn=parseFloat($('usMin').value)||1000,mx=parseFloat($('usMax').value)||2000;
- return {slot:parseInt($('slot').value),mn,mx,deg:parseFloat($('deg').value)||180,
-         ch:parseInt($('slot').dataset.ch||'6')};}
-function us2norm(us){const c=cfg(),mid=(c.mn+c.mx)/2;return (us-mid)/((c.mx-c.mn)/2);}
-function norm2us(n){const c=cfg(),mid=(c.mn+c.mx)/2;return mid+n*((c.mx-c.mn)/2);}
-function ang2us(a){const c=cfg();return c.mn+(a/c.deg)*(c.mx-c.mn);}
-function us2ang(us){const c=cfg();return (us-c.mn)/(c.mx-c.mn)*c.deg;}
-// localStorage 恢复
-(function(){try{
- const saved=JSON.parse(localStorage.getItem('servoCfg')||'{}');
- if(saved.slot)$('slot').value=saved.slot;
- if(saved.mn)$('usMin').value=saved.mn;
- if(saved.mx)$('usMax').value=saved.mx;
- if(saved.deg)$('deg').value=saved.deg;
- const p=JSON.parse(localStorage.getItem('servoConn')||'{}');
- if(p.host)$('host').value=p.host; if(p.user)$('user').value=p.user;
- if(p.remember&&p.pass){$('pass').value=p.pass;$('remember').checked=true;}
-}catch(e){}
- const seq=JSON.parse(localStorage.getItem('servoSeq')||'null');
- if(seq&&seq.length)seq.forEach(p=>addRow(p));
- else{addRow({a:85,h:500,i:600});addRow({a:95,h:500,i:600});addRow({a:90,h:1000,i:600});}
- refreshPhys();
-})();
-function saveCfg(){localStorage.setItem('servoCfg',JSON.stringify(cfg()));
- localStorage.setItem('servoConn',JSON.stringify({host:$('host').value,user:$('user').value,
-   remember:$('remember').checked,pass:$('remember').checked?$('pass').value:''}));
- localStorage.setItem('servoSeq',JSON.stringify(seqPts()));refreshPhys();}
-function refreshPhys(){const s=parseInt($('slot').value),func=300+s;
- const isMain=localStorage.getItem('servoDomain')!=='aux';
- const ch=localStorage.getItem('servoCh');$('phys').textContent=ch?((isMain?'MAIN':'AUX')+ch):'尚未确认';
- $('funcHint').textContent=func;document.querySelectorAll('.funcEcho').forEach(e=>e.textContent=func);}
-['slot','usMin','usMax','deg'].forEach(id=>$(id).onchange=saveCfg);
-// ---- 滑条 ----
-let sliderTimer=null;
-$('slider').oninput=()=>{const v=parseInt($('slider').value);const ang=v/1000*cfg().deg;
- $('angleShow').textContent=ang.toFixed(1)+'°';$('usIn').value=Math.round(ang2us(ang));
- clearTimeout(sliderTimer);sliderTimer=setTimeout(()=>sendMove(ang2us(ang)),150);};
-$('btnGo').onclick=()=>{const us=parseFloat($('usIn').value);if(!isNaN(us)){sendMove(us);
- $('angleShow').textContent=us2ang(us).toFixed(1)+'°';}};
-function sendMove(us){const c=cfg();
- api({op:'move',slot:c.slot,norm:us2norm(us)},d=>{$('lastStat').textContent=d.ok?
-   ('飞控已接收 · 目标 '+Math.round(us)+'µs · '+ (d.result_name||'')):('未接收 · '+(d.result_name||d.error||'失败'));showErr('connMsg',d);});}
-// ---- 序列 ----
-function addRow(p){p=p||{a:90,h:500,i:600};const tb=$('seqBody');const tr=document.createElement('tr');
- tr.innerHTML='<td></td><td><input class="a" value="'+(p.a!==undefined?p.a:'')+'"></td>'+
-  '<td><input class="i" value="'+(p.i||600)+'"></td><td><input class="h" value="'+(p.h||500)+'"></td>'+
-  '<td><button class="gh del">删</button></td>';
- tr.querySelector('.del').onclick=()=>{tr.remove();renum();saveCfg();};
- tb.appendChild(tr);renum();}
-function renum(){[...$('seqBody').children].forEach((tr,i)=>tr.children[0].textContent=i+1);}
-function seqPts(){return [...$('seqBody').children].map(tr=>({
- a:parseFloat(tr.querySelector('.a').value),i:parseFloat(tr.querySelector('.i').value)||0,
- h:parseFloat(tr.querySelector('.h').value)||0}));}
-$('btnAdd').onclick=()=>{addRow({a:90,h:500,i:600});saveCfg();};
-$('btnRun').onclick=()=>{const c=cfg();const pts=seqPts();if(!pts.length)return message('序列为空');
- // 角度→µs→norm
- const out=pts.map(p=>({slot:c.slot,norm:us2norm(ang2us(p.a)),interp_ms:p.i||0,hold_ms:p.h||0}));
- api({op:'seq',points:out},d=>{$('seqStat').textContent=d.ok?'执行中('+out.length+'点)':'失败';
-  $('seqStat').className='stat '+(d.ok?'ok':'bad');if(d.ok)pollSeq();showErr('seqStat',d);});};
-$('btnStop').onclick=()=>api({op:'stop'},d=>{$('seqStat').textContent='已停止';});
-function pollSeq(){const t=setInterval(()=>api({op:'state'},d=>{
- if(!d.seq_running){clearInterval(t);$('seqStat').textContent='空闲';$('seqStat').className='stat';}
- else{$('seqStat').textContent='执行中…';}},800),800);}
-// ---- API ----
-async function api(payload,cb){try{
- const r=await fetch('/api',{method:'POST',headers:{'Content-Type':'application/json'},
-   body:JSON.stringify(payload)});
- const d=await r.json();cb&&cb(d);
-}catch(e){cb&&cb({ok:false,error:'本机面板异常：'+e});}}
-function message(t){$('connMsg').textContent=t;}
-function showErr(id,d){if(d&&d.ok===false&&d.error){const el=$(id);el.textContent=
- (el.textContent?el.textContent+'\n':'')+d.error;el.classList.add('err');
- setTimeout(()=>el.classList.remove('err'),4000);}}
-// ---- 连接 ----
-$('btnConn').onclick=async()=>{saveCfg();
- $('connStat').textContent='连接中…';$('connStat').className='stat';
- const d=await new Promise(res=>fetch('/api',{method:'POST',
-  headers:{'Content-Type':'application/json'},
-  body:JSON.stringify({op:'connect',host:$('host').value,user:$('user').value,
-   pass:$('pass').value})}).then(r=>r.json()).catch(e=>({ok:false,error:''+e})));
- if(d.ok){$('connStat').textContent='已连接 '+$('host').value;$('connStat').className='stat ok';
-  message('连接成功');refreshPhys();
-  api({op:'state'},s=>{if(s.alive!==undefined)$('lastStat').textContent=
-   '链路'+(s.alive?'正常':'等待MAVProxy流')+(s.last?(' · 最近槽值 '+JSON.stringify(s.last)):'');});
- }else{$('connStat').textContent='失败';$('connStat').className='stat bad';
-  message('连接失败：'+(d.error||''));}};
-</script></body></html>
-"""
+_PANEL_DIR = Path(__file__).resolve().parent
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -321,35 +156,65 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _page(self):
-        body = PAGE.encode()
+        body = (_PANEL_DIR / "servo_panel.html").read_bytes()
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
 
     def do_GET(self):
-        if urllib.parse.urlparse(self.path).path in ("/", "/index.html"):
+        path = urllib.parse.urlparse(self.path).path
+        if path in ("/", "/index.html"):
             self._page()
+        elif path in ("/servo_panel.css", "/servo_panel.js"):
+            body = (_PANEL_DIR / path[1:]).read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/css; charset=utf-8" if path.endswith(".css") else "text/javascript; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
         else:
             self.send_error(404)
 
     def do_POST(self):
+        global _SSH
         if urllib.parse.urlparse(self.path).path != "/api":
             self.send_error(404)
             return
+        origin = self.headers.get("Origin")
+        if origin and origin not in ("http://127.0.0.1:%d" % PORT, "http://localhost:%d" % PORT):
+            self._json({"ok": False, "error": "请从本机面板操作"}, 403)
+            return
         try:
             length = int(self.headers.get("Content-Length") or 0)
+            if not 0 <= length <= 131072:
+                raise ValueError("请求过大")
             payload = json.loads(self.rfile.read(length) or b"{}")
+            if not isinstance(payload, dict):
+                raise ValueError("请求应为对象")
         except ValueError:
             self._json({"ok": False, "error": "请求 JSON 无效"})
             return
         op = payload.get("op")
         try:
-            if op == "connect":
+            if op == "connection":
+                transport = _SSH.get_transport() if _SSH is not None else None
+                self._json({"ok": True, "connected": bool(transport and transport.is_active()),
+                            "host": _CFG["host"], "user": _CFG["user"]})
+            elif op == "connect":
                 _ssh_connect_capped(str(payload["host"]).strip(),
                                     str(payload["user"]).strip(),
                                     str(payload.get("pass", "")))
+                self._json({"ok": True})
+            elif op == "disconnect":
+                if _SSH is not None:
+                    _servo({"op": "stop"})
+                    with _LOCK:
+                        _SSH.close()
+                        _SSH = None
                 self._json({"ok": True})
             elif _SSH is None:
                 self._json({"ok": False, "error": "未连接板子（先点连接板子）"})

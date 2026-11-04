@@ -13,7 +13,8 @@
   servo_mavlink.py ping                      # 服务存活检查
 
 面板使用 ACTUATOR_TEST(310)，仅未解锁且遥测新鲜时允许，单条命令最多保持 1 秒。
-序列保持期间续发短时测试，完成或停止后释放；不修改飞控参数，不发送解锁命令。
+保持及序列由页面续期；可配置完成后释放或保持末点，停止及页面失联后释放。
+不修改飞控参数，不发送解锁命令；短时回中可设 0.2–30 秒。
 槽位 1-6 对应输出功能 301-306（Peripheral via Actuator Set 1-6）；
 每个槽位由飞控输出功能参数映射到物理接口；本工具仅用于独立舵机台架。
 
@@ -31,6 +32,7 @@ import struct
 import sys
 import threading
 import time
+import uuid
 
 LISTEN = ("127.0.0.1", 14560)
 CONTROL_PATH = os.path.expanduser("~/servo_panel.sock")
@@ -78,6 +80,7 @@ class ServoLink:
         self.params = {}        # PX4 parameters received via read-only requests.
         self.armed = None
         self.outputs = {}
+        self.output_t = None
         self._tx = None         # 惰性创建（需要 pymavlink，仅 serve 模式）
         self.rx_pkts = 0        # 诊断：收到 UDP 包数
         self.rx_bad = 0         # 诊断：解码失败数
@@ -157,6 +160,7 @@ class ServoLink:
                         self.params[name.rstrip("\x00")] = value
                         self.cond.notify_all()
                 elif mtype == "SERVO_OUTPUT_RAW":
+                    self.output_t = self.clock()
                     self.outputs[str(msg.port)] = {
                         str(n): getattr(msg, "servo%d_raw" % n) for n in range(1, 9)}
                 elif mtype == "COMMAND_ACK":
@@ -277,137 +281,226 @@ class _UdpWriter:
 # ---- 服务 ----
 
 class ServoService:
-    def __init__(self):
-        self.link = ServoLink()
+    def __init__(self, link=None, lease_timeout_s=2.5):
+        self.link = link if link is not None else ServoLink()
         self.stop = threading.Event()
-        self.busy = threading.Lock()      # 一次一个序列
+        self.busy = threading.RLock()
         self.seq_stop = threading.Event()
         self.seq_thread = None
-        self.last = {}                    # slot -> 最近下发的归一化值
+        self.last = {}
         self.last_t = 0.0
+        self.mode = "idle"
+        self.motion_error = None
+        self.seq_index = 0
+        self.seq_total = 0
+        self.session = None
+        self.lease_timeout_s = lease_timeout_s
 
-    # ---- 服务端命令 ----
     def handle(self, request):
         action = request.get("action")
         try:
             if action == "move":
                 return self.move(int(request["slot"]), float(request["norm"]),
-                                 bool(request.get("ack", True)))
+                                 bool(request.get("ack", True)),
+                                 mode=request.get("mode", "pulse"),
+                                 hold_s=float(request.get("hold_s", 1)))
             if action == "seq":
-                return self.seq_start(request.get("points") or [])
+                return self.seq_start(request.get("points") or [],
+                                      after=request.get("after", "center"))
             if action == "stop":
-                self.seq_stop.set()
-                if self.seq_thread and self.seq_thread.is_alive():
-                    self.seq_thread.join(1)
-                for slot in list(self.last):
-                    self.link.send_test(slot, 0, timeout_s=0)
+                with self.busy:
+                    if not self._cancel(release=True):
+                        return {"ok": False, "error": "动作尚未结束，请稍后再试"}
+                    self.mode = "idle"
                 return {"ok": True, "stopped": True}
             if action == "state":
+                session = self.session
+                if session and request.get("lease_id") == session["id"]:
+                    session["lease_t"] = time.monotonic()
                 return self.state()
             if action == "inspect":
-                names = ["PWM_%s_%s5" % (bank, field)
-                         for bank in ("MAIN", "AUX")
-                         for field in ("FUNC", "MIN", "MAX", "DIS", "FAIL")]
-                return {**self.state(), "params": self.link.read_parameters(names)}
+                bank = str(request.get("bank", "MAIN"))
+                channel = int(request.get("channel", 5))
+                if bank not in ("MAIN", "AUX") or not 1 <= channel <= 8:
+                    return {"ok": False, "error": "输出接口或通道无效"}
+                names = ["PWM_%s_FUNC%d" % (b, c)
+                         for b in ("MAIN", "AUX") for c in range(1, 9)]
+                names += ["PWM_%s_%s%d" % (bank, field, channel)
+                          for field in ("MIN", "MAX", "DIS", "FAIL")]
+                params = self.link.read_parameters(names)
+                return {**self.state(), "params": params, "bank": bank, "channel": channel}
             if action == "ping":
                 return {"ok": True, "pong": True}
-            return {"ok": False, "error": "未知 action：%r" % action}
-        except (KeyError, TypeError, ValueError, LinkUnavailable) as exc:
+            return {"ok": False, "error": "未知操作"}
+        except (KeyError, TypeError, ValueError, OverflowError, LinkUnavailable) as exc:
             return {"ok": False, "error": "参数无效：%s" % exc}
 
-    def move(self, slot, norm, wait_ack):
-        if not SLOT_MIN <= slot <= SLOT_MAX:
-            return {"ok": False, "error": "槽位需在 %d-%d" % (SLOT_MIN, SLOT_MAX)}
-        if not math.isfinite(norm) or not -1.0 <= norm <= 1.0:
-            return {"ok": False, "error": "位置需为 -1..1 范围内的有限数值"}
-        if self.seq_thread and self.seq_thread.is_alive():
-            return {"ok": False, "error": "序列正在运行，请先停止"}
+    def _cancel(self, release=True):
+        session = self.session
+        if session and session["thread"].is_alive():
+            session["release"] = release
+            session["stop"].set()
+            session["thread"].join(1.5)
+            if session["thread"].is_alive():
+                return False
+        return True
+
+    def _new_session(self, mode, slots, duration=None):
+        now = time.monotonic()
+        session = {"id": uuid.uuid4().hex, "lease_t": now,
+                   "started": now, "until": now + duration if duration is not None else None,
+                   "stop": threading.Event(), "release": True, "slots": set(slots)}
+        self.session = session
+        self.mode = mode
+        self.motion_error = None
+        self.seq_stop = session["stop"]
+        return session
+
+    def _start_worker(self, session, target):
+        def work():
+            try:
+                target(session)
+            except Exception as exc:
+                self.motion_error = "动作已结束：%s" % exc
+            finally:
+                if session["release"]:
+                    for slot in session["slots"]:
+                        try:
+                            self.link.send_test(slot, 0, timeout_s=0)
+                        except Exception:
+                            pass  # Every flight-controller test also expires independently.
+                if self.session is session:
+                    self.mode = "idle"
+        session["thread"] = threading.Thread(target=work, daemon=True)
+        self.seq_thread = session["thread"]
+        session["thread"].start()
+
+    def _active(self, session):
+        if session["stop"].is_set() or self.stop.is_set():
+            return False
+        if time.monotonic() - session["lease_t"] > self.lease_timeout_s:
+            self.motion_error = "页面连接中断，测试已自动结束"
+            return False
+        return True
+
+    def _send(self, slot, norm):
         result = self.link.send_test(slot, norm)
-        ok = result.get("result") == 0
-        if ok:
+        if result.get("result") != 0:
+            self.motion_error = result.get("error") or "飞控未接受动作：%s" % result.get("result_name", "未知结果")
+            return False
+        self.last[slot] = norm
+        self.last_t = time.time()
+        return True
+
+    def _maintain(self, session, slot, norm, duration=None):
+        deadline = time.monotonic() + duration if duration is not None else None
+        while self._active(session):
+            if deadline is not None and time.monotonic() >= deadline:
+                break
+            wait_s = min(0.25, max(0, deadline - time.monotonic())) if deadline is not None else 0.25
+            if session["stop"].wait(wait_s) or not self._active(session):
+                break
+            if deadline is not None and time.monotonic() >= deadline:
+                break
+            if not self._send(slot, norm):
+                session["stop"].set()
+                break
+
+    def move(self, slot, norm, wait_ack=True, mode="pulse", hold_s=1.0):
+        if not SLOT_MIN <= slot <= SLOT_MAX:
+            return {"ok": False, "error": "槽位需在 1–6"}
+        if not math.isfinite(norm) or not -1 <= norm <= 1:
+            return {"ok": False, "error": "位置需为 -1..1 范围内的有限数值"}
+        if mode not in ("pulse", "hold") or not math.isfinite(hold_s) or not 0.2 <= hold_s <= 30:
+            return {"ok": False, "error": "请选择有效动作模式，时长范围为 0.2–30 秒"}
+        with self.busy:
+            if self.mode == "sequence":
+                return {"ok": False, "error": "序列正在运行，请先停止"}
+            if not self._cancel(release=False):
+                return {"ok": False, "error": "上一动作尚未结束"}
+            result = self.link.send_test(slot, norm)
+            if result.get("result") != 0:
+                return {"ok": False, **result, "error": result.get("error") or result.get("result_name", "飞控未接受动作")}
             self.last[slot] = norm
             self.last_t = time.time()
-        return {"ok": ok, "slot": slot, "norm": round(norm, 4), **result}
+            duration = hold_s if mode == "pulse" else None
+            session = self._new_session(mode, [slot], duration)
+            self.seq_index = self.seq_total = 0
+            self._start_worker(session, lambda current: self._maintain(current, slot, norm, duration))
+            return {"ok": True, "slot": slot, "norm": norm, "mode": mode,
+                    "hold_s": hold_s, "lease_id": session["id"], **result}
 
-    def seq_start(self, points):
-        if not isinstance(points, list) or not points:
-            return {"ok": False, "error": "points 需为非空数组"}
-        if len(points) > 200:
-            return {"ok": False, "error": "点数过多（≤200）"}
+    def seq_start(self, points, after="center"):
+        if not isinstance(points, list) or not 1 <= len(points) <= 200:
+            return {"ok": False, "error": "序列需包含 1–200 个动作点"}
+        if after not in ("center", "hold"):
+            return {"ok": False, "error": "序列结束方式无效"}
         parsed = []
-        for i, p in enumerate(points):
-            if not isinstance(p, dict):
-                return {"ok": False, "error": "第 %d 点需为对象" % (i + 1)}
-            try:
-                slot = int(p.get("slot", 2))
-                norm = float(p["norm"])
-                hold = max(0, int(p.get("hold_ms", 0)))
-                interp = max(0, int(p.get("interp_ms", 0)))
-            except (KeyError, TypeError, ValueError) as exc:
-                return {"ok": False, "error": "第 %d 点字段无效：%s" % (i + 1, exc)}
-            if not SLOT_MIN <= slot <= SLOT_MAX:
-                return {"ok": False, "error": "第 %d 点槽位越界" % (i + 1)}
-            if not math.isfinite(norm) or not -1.0 <= norm <= 1.0:
-                return {"ok": False, "error": "第 %d 点位置需为 -1..1 范围内的有限数值" % (i + 1)}
-            parsed.append({"slot": slot, "norm": norm,
-                           "hold_ms": hold, "interp_ms": interp})
-        if self.seq_thread and self.seq_thread.is_alive():
-            return {"ok": False, "error": "已有序列在执行（先 stop）"}
-        self.seq_stop.clear()
-        self.seq_thread = threading.Thread(
-            target=self._seq_run, args=(parsed,), daemon=True)
-        self.seq_thread.start()
-        return {"ok": True, "seq_started": True, "points": len(parsed)}
+        try:
+            for point in points:
+                slot, norm = int(point.get("slot", 2)), float(point["norm"])
+                hold, interp = int(point.get("hold_ms", 0)), int(point.get("interp_ms", 0))
+                if (not SLOT_MIN <= slot <= SLOT_MAX or not math.isfinite(norm)
+                        or not -1 <= norm <= 1 or not 0 <= hold <= 30000 or not 0 <= interp <= 30000):
+                    raise ValueError("位置或时长超出范围")
+                parsed.append({"slot": slot, "norm": norm, "hold_ms": hold, "interp_ms": interp})
+        except (KeyError, TypeError, AttributeError, ValueError, OverflowError) as exc:
+            return {"ok": False, "error": "动作点无效：%s" % exc}
+        with self.busy:
+            if not self._cancel(release=False):
+                return {"ok": False, "error": "上一动作尚未结束"}
+            if not self.link.alive() or self.link.armed is not False:
+                return {"ok": False, "error": "请先连接未解锁的飞控"}
+            session = self._new_session("sequence", [p["slot"] for p in parsed])
+            self.seq_index, self.seq_total = 0, len(parsed)
+            self._start_worker(session, lambda current: self._seq_run(parsed, current, after))
+            return {"ok": True, "seq_started": True, "points": len(parsed), "lease_id": session["id"]}
 
-    def _seq_run(self, points):
-        started = self.clock_ms()
-        for idx, p in enumerate(points):
-            if self.seq_stop.is_set():
+    def _seq_run(self, points, session, after="center"):
+        for index, point in enumerate(points):
+            if not self._active(session):
                 break
-            slot, target = p["slot"], p["norm"]
-            current = self.last.get(slot, 0.0)
-            steps = max(1, int(p["interp_ms"] / (STEP_S * 1000)))
-            for s in range(1, steps + 1):
-                if self.seq_stop.is_set():
-                    break
-                v = current + (target - current) * s / steps
-                result = self.link.send_test(slot, v)
-                if result.get("result") == 0:
-                    self.last[slot] = v
-                else:
-                    self.seq_stop.set()
-                    break
-                self.stop.wait(STEP_S)
-            if self.seq_stop.is_set():
-                break
-            remain = p["hold_ms"] / 1000.0
-            while remain > 0 and not self.seq_stop.is_set():
-                duration = min(remain, 0.4)
-                self.seq_stop.wait(duration)
-                remain -= duration
-                if remain > 0 and not self.seq_stop.is_set():
-                    if self.link.send_test(slot, target).get("result") != 0:
-                        self.seq_stop.set()
-        for slot in {p["slot"] for p in points}:
-            self.link.send_test(slot, 0, timeout_s=0)
-        log_line("序列结束（%d 点，用时 %.1f s%s）" % (
-            len(points), (self.clock_ms() - started) / 1000.0,
-            "，中途停止" if self.seq_stop.is_set() else ""))
+            self.seq_index = index + 1
+            slot, target = point["slot"], point["norm"]
+            current = self.last.get(slot, 0)
+            steps = max(1, int(point["interp_ms"] / (STEP_S * 1000)))
+            for step in range(1, steps + 1):
+                if not self._active(session):
+                    return
+                tick = time.monotonic()
+                if not self._send(slot, current + (target - current) * step / steps):
+                    return
+                session["stop"].wait(max(0, STEP_S - (time.monotonic() - tick)))
+            self._maintain(session, slot, target, point["hold_ms"] / 1000)
+            if self.motion_error or not self._active(session):
+                return
+        else:
+            if after == "hold" and self._active(session):
+                self.mode = "hold"
+                last = points[-1]
+                self._maintain(session, last["slot"], last["norm"])
 
     def state(self):
-        lnk = self.link
-        with lnk.cond:
-            acks = len(lnk.acks)
-        return {"ok": True, "alive": lnk.alive(), "fc": lnk.fc,
-                "armed": lnk.armed, "outputs": lnk.outputs,
-                "last": self.last, "last_age_s": round(time.time() - self.last_t, 1) if self.last_t else None,
-                "seq_running": bool(self.seq_thread and self.seq_thread.is_alive()),
-                "rx_pkts": lnk.rx_pkts, "rx_bad": lnk.rx_bad, "rx_msgs": lnk.rx_msgs,
-                "acks": acks, "dest": str(lnk.dest), "hb_age": round(lnk.clock() - lnk.hb_t, 1) if lnk.hb_t else None}
+        link, session = self.link, self.session
+        now = time.monotonic()
+        with link.cond:
+            acks = len(link.acks)
+        return {"ok": True, "alive": link.alive(), "fc": link.fc, "armed": link.armed,
+                "outputs": link.outputs,
+                "output_age_s": round(now - link.output_t, 2) if getattr(link, "output_t", None) else None,
+                "last": dict(self.last), "last_age_s": round(time.time() - self.last_t, 1) if self.last_t else None,
+                "mode": self.mode, "manual_running": self.mode in ("hold", "pulse"),
+                "remaining_s": round(max(0, session["until"] - now), 1)
+                    if self.mode == "pulse" and session and session["until"] is not None else None,
+                "seq_running": self.mode == "sequence", "seq_index": self.seq_index,
+                "seq_total": self.seq_total, "motion_error": self.motion_error,
+                "rx_pkts": link.rx_pkts, "rx_bad": link.rx_bad, "rx_msgs": link.rx_msgs,
+                "acks": acks, "dest": str(link.dest),
+                "hb_age": round(link.clock() - link.hb_t, 1) if link.hb_t else None}
 
     @staticmethod
     def clock_ms():
-        return time.monotonic() * 1000.0
+        return time.monotonic() * 1000
 
     # ---- 控制套接字 ----
     def bind(self, path):
@@ -538,7 +631,9 @@ def main(argv):
                     return 2
                 norm = (us - mid) / half
             _emit(_control_request({"action": "move", "slot": slot, "norm": norm,
-                                    "ack": _opt("--ack", int, 1) == 1}))
+                                    "ack": _opt("--ack", int, 1) == 1,
+                                    "mode": _opt("--mode", str, "pulse"),
+                                    "hold_s": _opt("--hold-s", float, 1.0)}))
             return 0
         if cmd == "seq":
             raw = _opt("--points", str, "[]")
@@ -547,10 +642,14 @@ def main(argv):
             except ValueError as exc:
                 _emit({"ok": False, "error": "points JSON 无效：%s" % exc})
                 return 2
-            _emit(_control_request({"action": "seq", "points": points}, timeout_s=15.0))
+            _emit(_control_request({"action": "seq", "points": points,
+                                    "after": _opt("--after", str, "center")}, timeout_s=15.0))
             return 0
         if cmd in ("stop", "state", "ping", "inspect"):
-            _emit(_control_request({"action": cmd}, timeout_s=5.0))
+            _emit(_control_request({"action": cmd,
+                                    "lease_id": _opt("--lease-id", str, None),
+                                    "bank": _opt("--bank", str, "MAIN"),
+                                    "channel": _opt("--channel", int, 5)}, timeout_s=5.0))
             return 0
     except LinkUnavailable as exc:
         _emit({"ok": False, "error": str(exc)})

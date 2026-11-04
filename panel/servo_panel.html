@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>舵机工作台 · UAVLab</title>
+  <link rel="stylesheet" href="/servo_panel.css">
+  <script src="/servo_panel.js" defer></script>
+</head>
+<body>
+<svg class="icon-defs" aria-hidden="true"><defs>
+  <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="m9 5 11 7-11 7z"/></symbol>
+  <symbol id="i-center" viewBox="0 0 24 24"><circle cx="12" cy="12" r="6"/><path d="M12 2v5m0 10v5M2 12h5m10 0h5"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="m8 5 7 7-7 7"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V3m-5 5 5-5 5 5M4 15v5h16v-5"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v13m-5-5 5 5 5-5M4 17v4h16v-4"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 10a8 8 0 1 0-2 8M20 4v6h-6"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 6h16M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7m4-7v7"/></symbol>
+</defs></svg>
+
+<div class="app-shell">
+  <header class="app-header">
+    <div class="identity"><span class="brand">UAVLab</span><span class="identity-rule"></span><h1>舵机工作台</h1></div>
+    <div class="header-actions">
+      <button class="connection-status" id="headerStatus" type="button" title="查看设备连接"><span class="status-dot"></span>连接设备</button>
+      <button class="button stop-button" id="stopBtn" disabled><svg><use href="#i-stop"/></svg>停止<span class="key-hint">Esc</span></button>
+    </div>
+  </header>
+
+  <div class="workspace">
+    <main class="control-column">
+      <section class="surface manual-panel" aria-labelledby="manualHeading">
+        <div class="section-head"><h2 id="manualHeading">位置控制</h2><span class="motion-status" id="motionStatus">待机</span></div>
+        <div class="target-heading"><div><label for="angleInput">目标角度<span class="muted"> · 换算值</span></label><div class="angle-entry"><input id="angleInput" type="number" min="0" max="180" step="0.1" value="90" inputmode="decimal"><span>°</span></div></div><div class="target-pulse"><label for="pulseInput">目标脉宽</label><div><input id="pulseInput" type="number" min="1000" max="2000" step="1" value="1500" inputmode="numeric"><span>µs</span></div></div></div>
+        <div class="position-track"><input id="positionSlider" type="range" min="1000" max="2000" step="1" value="1500" aria-label="目标脉宽滑块"><div class="range-labels"><span id="rangeMin">0° / 1000 µs</span><span>中位</span><span id="rangeMax">180° / 2000 µs</span></div></div>
+        <div class="position-tools"><div class="nudge-buttons"><button class="button secondary small" data-nudge="-5" data-motion disabled>−5°</button><button class="button secondary small" id="centerBtn" data-motion disabled><svg><use href="#i-center"/></svg>回中</button><button class="button secondary small" data-nudge="5" data-motion disabled>+5°</button></div><label class="check-label"><input id="liveFollow" type="checkbox">拖动即发送</label></div>
+        <div class="behavior-row"><fieldset class="behavior"><legend>动作方式</legend><div class="segmented"><label><input type="radio" name="behavior" value="pulse" checked><span>短时后回中</span></label><label><input type="radio" name="behavior" value="hold"><span>保持当前位置</span></label></div></fieldset><label class="duration-field" id="durationField">保持时长<div class="input-unit"><input id="holdSeconds" type="number" min="0.2" max="30" step="0.1" value="1"><span>秒</span></div></label></div>
+        <div class="manual-bottom"><p class="helper" id="behaviorHelp">保持 1 秒后，恢复默认输出。</p><button class="button primary" id="applyBtn" data-motion disabled>应用位置<svg><use href="#i-arrow"/></svg></button></div>
+        <div class="compact-feedback"><span>飞控 PWM</span><strong id="compactOutput">—</strong><span>µs</span><span id="compactFreshness">等待反馈</span></div>
+        <p class="feedback-message" id="actionMessage" role="status" aria-live="polite">连接设备后，即可控制当前位置。</p>
+      </section>
+
+      <section class="surface sequence-panel" aria-labelledby="sequenceHeading">
+        <div class="section-head"><div class="section-title"><h2 id="sequenceHeading">动作序列</h2><span class="muted" id="sequenceSummary">3 个动作点</span></div><div class="icon-actions"><button class="icon-button" id="importBtn" aria-label="导入动作序列" title="导入 JSON"><svg><use href="#i-upload"/></svg></button><button class="icon-button" id="exportBtn" aria-label="导出动作序列" title="导出 JSON"><svg><use href="#i-download"/></svg></button><input type="file" id="importFile" accept=".json,application/json" hidden></div></div>
+        <div class="sequence-toolbar"><div class="preset-buttons"><button class="text-button" id="smallSweepBtn">小幅往返</button><span class="toolbar-divider"></span><button class="text-button" id="clearSequenceBtn">清空</button></div><span class="sequence-time" id="sequenceTime">预计 3.8 秒</span></div>
+        <div class="table-scroll"><table class="sequence-table"><thead><tr><th class="row-number">点</th><th>目标角度 <span>°</span></th><th>转动用时 <span>ms</span></th><th>停留 <span>ms</span></th><th class="row-actions-heading">操作</th></tr></thead><tbody id="sequenceBody"></tbody></table></div>
+        <button class="add-point" id="addPointBtn"><svg><use href="#i-plus"/></svg>添加动作点</button>
+        <div class="sequence-footer"><div class="sequence-options"><label>重复<input id="repeatCount" type="number" min="1" max="20" value="1"><span>次</span></label><label>结束后<select id="sequenceAfter"><option value="center">回到中位</option><option value="hold">保持末点</option></select></label></div><button class="button primary" id="runSequenceBtn" data-motion disabled><svg><use href="#i-play"/></svg>执行序列</button></div>
+        <div class="sequence-progress" id="sequenceProgress" hidden><div><span id="sequenceProgressText">准备执行</span><span id="sequenceProgressCount"></span></div><progress id="sequenceProgressBar" max="1" value="0"></progress></div>
+      </section>
+    </main>
+
+    <aside class="device-column">
+      <section class="surface device-panel" aria-labelledby="deviceHeading">
+        <div class="section-head"><h2 id="deviceHeading">设备连接</h2><span class="state-label" id="deviceState">未连接</span></div>
+        <form id="connectForm"><label class="field-label" for="boardHost">板子地址</label><input id="boardHost" value="192.168.50.100" autocomplete="off" spellcheck="false"><div class="connection-row"><div><label class="field-label" for="boardUser">用户名</label><input id="boardUser" value="uavlab" autocomplete="username" spellcheck="false"></div><button class="button primary" id="connectBtn" type="submit">连接设备</button></div><details class="password-option"><summary>密码登录（可选）</summary><input id="boardPassword" type="password" aria-label="SSH 密码" autocomplete="current-password" placeholder="留空时使用本机 SSH 密钥"></details></form>
+        <p id="connectMessage" class="helper">使用本机已有的 SSH 密钥连接。</p>
+        <div class="device-state-rows"><div><span>飞控状态</span><span id="armedState">尚未读取</span></div><div><span>控制输出</span><strong id="physicalOutput">I/O · 5 号口</strong></div><div><span>通道映射</span><span id="slotMapping">连接后核对</span></div></div>
+        <details class="output-settings"><summary>输出与行程设置</summary><div class="settings-grid"><label>接口<select id="outputBank"><option value="MAIN">I/O PWM（MAIN）</option><option value="AUX">FMU PWM（AUX）</option></select></label><label>物理通道<select id="outputChannel"><option>1</option><option>2</option><option>3</option><option>4</option><option selected>5</option><option>6</option><option>7</option><option>8</option></select></label><label>下限 µs<input id="configMin" type="number" value="1000" readonly></label><label>上限 µs<input id="configMax" type="number" value="2000" readonly></label><label>角度行程 °<input id="angleRange" type="number" min="1" max="360" value="180"></label><button class="button secondary small" id="inspectBtn" type="button"><svg><use href="#i-refresh"/></svg>重新读取</button></div><p class="helper">脉宽范围读取自飞控；角度行程仅用于界面换算。</p></details>
+      </section>
+
+      <section class="surface feedback-panel" aria-labelledby="feedbackHeading"><div class="section-head"><h2 id="feedbackHeading">输出反馈</h2><span class="live-label" id="telemetryState">等待数据</span></div><div class="output-reading"><strong id="actualOutput">—</strong><span>µs</span><span class="output-source">飞控 PWM</span></div><div class="chart-wrap"><svg id="feedbackChart" viewBox="0 0 320 116" role="img" aria-label="最近的飞控 PWM 输出曲线"><path class="chart-grid" d="M0 16H320 M0 58H320 M0 100H320"/><path id="targetChartLine" class="chart-target" d=""/><path id="actualChartLine" class="chart-output" d=""/><text id="chartMax" x="0" y="12" class="chart-scale"></text><text id="chartMin" x="0" y="114" class="chart-scale"></text></svg><p id="chartEmpty">连接后显示输出变化</p></div><div class="chart-legend"><span><i class="legend-line actual"></i>输出反馈</span><span><i class="legend-line target"></i>目标预设</span><span id="chartPeriod">最近 30 秒</span></div><p class="helper feedback-note">PWM 是飞控的输出反馈，舵机实体角度需另行测量。</p></section>
+
+      <section class="activity-panel" aria-labelledby="activityHeading"><div class="section-head"><h2 id="activityHeading">操作记录</h2><button class="text-button" id="clearLogBtn">清空</button></div><ol class="activity-list" id="activityList"><li class="empty-log">连接设备后，动作与异常会记录在这里。</li></ol></section>
+    </aside>
+  </div>
+  <footer class="app-footer"><span>独立舵机台架</span><span id="footerStatus">未连接 · 不发送动作</span></footer>
+</div>
+
+<template id="sequenceRow"><tr><td class="row-number"></td><td><input class="point-angle" type="number" min="0" max="180" step="0.1" aria-label="动作点角度"></td><td><input class="point-duration" type="number" min="0" max="30000" step="50" aria-label="转动用时毫秒"></td><td><input class="point-hold" type="number" min="0" max="30000" step="50" aria-label="停留毫秒"></td><td class="row-actions"><button class="move-up icon-button" aria-label="向上移动动作点" title="上移"><svg class="rotate-up"><use href="#i-arrow"/></svg></button><button class="remove-point icon-button" aria-label="删除动作点" title="删除"><svg><use href="#i-trash"/></svg></button></td></tr></template>
+</body>
+</html>
