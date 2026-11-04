@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
-"""舵机控制面板（独立小面板，端口 8768）。
+"""独立舵机台架面板（默认端口 8769，可设 SERVO_PANEL_PORT）。
 
 本机 ──SSH──> 板上 deploy/servo_mavlink.py ──UDP/MAVProxy──> 飞控 PWM ──> 舵机。
 板上零配置依赖：只要 servo_mavlink.py 在板 + MAVProxy 含
 --out=udp:127.0.0.1:14560 输出口（install_servo_mavlink.sh 自动处理）。
 
-用法：python servo_panel.py  →  浏览器 http://127.0.0.1:8768/
+用法：python servo_panel.py  →  浏览器 http://127.0.0.1:8769/
 """
 import json
 import os
 import shlex
 import threading
+import time
 import http.server
 import urllib.parse
 
@@ -19,8 +20,8 @@ try:
 except ImportError:
     paramiko = None
 
-HOST, PORT = "127.0.0.1", 8768
-BOARD_CLI = "python3 $HOME/interceptor_ws/deploy/servo_cmd.py"
+HOST, PORT = "127.0.0.1", int(os.environ.get("SERVO_PANEL_PORT", "8769"))
+BOARD_CLI = "python3 $HOME/interceptor_ws/deploy/servo_mavlink.py"
 
 _LOCK = threading.Lock()
 _SSH = None          # paramiko.SSHClient
@@ -58,7 +59,7 @@ def _ssh_connect(host, user, password):
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     client.connect(host, username=user, password=password,
                    timeout=10, banner_timeout=10, auth_timeout=10,
-                   allow_agent=False, look_for_keys=False)
+                   allow_agent=True, look_for_keys=True)
     with _LOCK:
         if _SSH is not None:
             try:
@@ -93,9 +94,7 @@ def _servo(payload):
     """通过 SSH 调板上 servo CLI，解析 SERVO_RESULT JSON。"""
     op = payload["op"]
     if op == "check":
-        code, text = _ssh_exec("echo ok && ls $HOME/interceptor_ws/deploy/servo_cmd.py")
-        ok = code == 0 and "ok" in text
-        return {"ok": ok, "error": None if ok else "脚本不在板上：deploy/servo_cmd.py 缺失"}
+        op = "state"
     if op == "move":
         cmd = "%s move --slot %d --norm %.4f --ack 1" % (
             BOARD_CLI, int(payload["slot"]), float(payload["norm"]))
@@ -154,7 +153,7 @@ input[type=range]{width:100%;height:34px;accent-color:var(--acc)}
 kbd{background:#0d1119;border:1px solid var(--line);border-radius:4px;padding:0 5px;font-size:11px}
 </style></head><body><div class="wrap">
 <h1>舵机控制面板</h1>
-<div class="sub">本机 → SSH → 板上 servo_mavlink.py → MAVProxy → 飞控 PWM → 舵机 ｜ 无任何使用限制，点击即发</div>
+<div class="sub">独立舵机台架 · 仅未解锁时测试 · 单次动作 1 秒后自动结束</div>
 
 <div class="card">
  <h2>连接</h2>
@@ -166,14 +165,14 @@ kbd{background:#0d1119;border:1px solid var(--line);border-radius:4px;padding:0 
   <button class="pri" id="btnConn">连接板子</button>
   <span class="stat" id="connStat">未连接</span>
  </div>
- <div class="msg" id="connMsg">首次使用：装依赖 pip install paramiko；密码为板子 SSH 密码（三个空格）。</div>
+ <div class="msg" id="connMsg">输入板子地址和账号；优先使用本机 SSH 密钥，也可输入 SSH 密码。</div>
 </div>
 
 <div class="card">
  <h2>通道配置（保存到本机）</h2>
  <div class="row">
-  <label>槽位(功能301+槽)
-   <select id="slot"><option value="1">1 (FUNC301，网枪未装时舵机用这个)</option><option value="2">2 (FUNC302)</option><option value="3">3 (FUNC303)</option><option value="4">4 (FUNC304)</option><option value="5">5 (FUNC305)</option><option value="6">6 (FUNC306)</option></select></label>
+  <label>槽位（功能号=300+槽位）
+   <select id="slot"><option value="1">1 (FUNC301)</option><option value="2" selected>2 (FUNC302)</option><option value="3">3 (FUNC303)</option><option value="4">4 (FUNC304)</option><option value="5">5 (FUNC305)</option><option value="6">6 (FUNC306)</option></select></label>
   <label>行程下限µs <input id="usMin" value="1000" size="6"></label>
   <label>行程上限µs <input id="usMax" value="2000" size="6"></label>
   <label>角度行程° <input id="deg" value="180" size="5"></label>
@@ -184,7 +183,8 @@ kbd{background:#0d1119;border:1px solid var(--line);border-radius:4px;padding:0 
 
 <div class="card">
  <h2>手动控制</h2>
- <div id="sliderWrap"><input type="range" id="slider" min="0" max="1000" value="500"></div>
+<div class="msg">单次动作保持 1 秒后恢复未解锁输出；序列结束也会自动恢复。角度是按脉宽范围估算的目标值。</div>
+<div id="sliderWrap"><input type="range" id="slider" min="0" max="1000" value="500"></div>
  <div class="big" id="angleShow">90.0°</div>
  <div class="row" style="justify-content:center">
   <label>精确µs <input id="usIn" size="7"></label>
@@ -203,16 +203,15 @@ kbd{background:#0d1119;border:1px solid var(--line);border-radius:4px;padding:0 
   <button class="dan" id="btnStop">■ 停止</button>
   <span class="stat" id="seqStat">空闲</span>
  </div>
- <div class="msg">插值时间=从上一个位置转到本位置的时长（板端 20ms 步进平滑）。</div>
+ <div class="msg">分步平滑转动，实际用时受链路响应影响；停止会结束测试并恢复未解锁输出。</div>
 </div>
 
 <div class="card">
  <h2>使用说明</h2>
  <div class="msg" style="min-height:0">
- 1. QGC 一次性设置（例：舵机接 I/O 座 6 号通道）：PWM_MAIN_FUNC6=<span class="funcEcho">302</span>、
- PWM_MAIN_MIN6/MAX6=行程脉宽；想未解锁也能动舵机就设 PWM_MAIN_DIS6=中位脉宽(如1500)。<br>
- 2. 槽位与 FUNC 的关系：槽 N ⇔ 功能号 300+N ⇔ DO_SET_ACTUATOR param N。槽1 通常留给网枪(301)。<br>
- 3. 所有命令立即下发，无解锁/高度等任何限制。
+ 1. 先核对舵机供电和物理通道，再在 QGC 查看该通道的输出功能及脉宽范围。<br>
+ 2. 槽位 N 对应功能号 300+N；槽位不等于转接板插口编号。<br>
+ 3. ACK 只表示飞控接收结果；实际输出仍由飞控状态、输出配置与供电决定。角度为按行程估算值。
  </div>
 </div>
 </div>
@@ -230,8 +229,8 @@ function us2ang(us){const c=cfg();return (us-c.mn)/(c.mx-c.mn)*c.deg;}
 (function(){try{
  const saved=JSON.parse(localStorage.getItem('servoCfg')||'{}');
  if(saved.slot)$('slot').value=saved.slot;
- if(saved.usMin)$('usMin').value=saved.usMin;
- if(saved.usMax)$('usMax').value=saved.usMax;
+ if(saved.mn)$('usMin').value=saved.mn;
+ if(saved.mx)$('usMax').value=saved.mx;
  if(saved.deg)$('deg').value=saved.deg;
  const p=JSON.parse(localStorage.getItem('servoConn')||'{}');
  if(p.host)$('host').value=p.host; if(p.user)$('user').value=p.user;
@@ -239,7 +238,7 @@ function us2ang(us){const c=cfg();return (us-c.mn)/(c.mx-c.mn)*c.deg;}
 }catch(e){}
  const seq=JSON.parse(localStorage.getItem('servoSeq')||'null');
  if(seq&&seq.length)seq.forEach(p=>addRow(p));
- else{addRow({a:45,h:500,i:600});addRow({a:135,h:500,i:600});addRow({a:90,h:1000,i:600});}
+ else{addRow({a:85,h:500,i:600});addRow({a:95,h:500,i:600});addRow({a:90,h:1000,i:600});}
  refreshPhys();
 })();
 function saveCfg(){localStorage.setItem('servoCfg',JSON.stringify(cfg()));
@@ -248,7 +247,7 @@ function saveCfg(){localStorage.setItem('servoCfg',JSON.stringify(cfg()));
  localStorage.setItem('servoSeq',JSON.stringify(seqPts()));refreshPhys();}
 function refreshPhys(){const s=parseInt($('slot').value),func=300+s;
  const isMain=localStorage.getItem('servoDomain')!=='aux';
- $('phys').textContent=isMain?('MAIN'+localStorage.getItem('servoCh')):'AUX'+localStorage.getItem('servoCh');
+ const ch=localStorage.getItem('servoCh');$('phys').textContent=ch?((isMain?'MAIN':'AUX')+ch):'尚未确认';
  $('funcHint').textContent=func;document.querySelectorAll('.funcEcho').forEach(e=>e.textContent=func);}
 ['slot','usMin','usMax','deg'].forEach(id=>$(id).onchange=saveCfg);
 // ---- 滑条 ----
@@ -260,7 +259,7 @@ $('btnGo').onclick=()=>{const us=parseFloat($('usIn').value);if(!isNaN(us)){send
  $('angleShow').textContent=us2ang(us).toFixed(1)+'°';}};
 function sendMove(us){const c=cfg();
  api({op:'move',slot:c.slot,norm:us2norm(us)},d=>{$('lastStat').textContent=d.ok?
-   ('已下发 '+Math.round(us)+'µs · ACK '+ (d.result_name||'')):'';showErr('connMsg',d);});}
+   ('飞控已接收 · 目标 '+Math.round(us)+'µs · '+ (d.result_name||'')):('未接收 · '+(d.result_name||d.error||'失败'));showErr('connMsg',d);});}
 // ---- 序列 ----
 function addRow(p){p=p||{a:90,h:500,i:600};const tb=$('seqBody');const tr=document.createElement('tr');
  tr.innerHTML='<td></td><td><input class="a" value="'+(p.a!==undefined?p.a:'')+'"></td>'+
@@ -275,7 +274,7 @@ function seqPts(){return [...$('seqBody').children].map(tr=>({
 $('btnAdd').onclick=()=>{addRow({a:90,h:500,i:600});saveCfg();};
 $('btnRun').onclick=()=>{const c=cfg();const pts=seqPts();if(!pts.length)return message('序列为空');
  // 角度→µs→norm
- const out=pts.map(p=>({norm:us2norm(ang2us(p.a)),interp_ms:p.i||0,hold_ms:p.h||0}));
+ const out=pts.map(p=>({slot:c.slot,norm:us2norm(ang2us(p.a)),interp_ms:p.i||0,hold_ms:p.h||0}));
  api({op:'seq',points:out},d=>{$('seqStat').textContent=d.ok?'执行中('+out.length+'点)':'失败';
   $('seqStat').className='stat '+(d.ok?'ok':'bad');if(d.ok)pollSeq();showErr('seqStat',d);});};
 $('btnStop').onclick=()=>api({op:'stop'},d=>{$('seqStat').textContent='已停止';});

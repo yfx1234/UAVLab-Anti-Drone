@@ -12,9 +12,10 @@
   servo_mavlink.py state                     # 服务状态（链路/最近值/序列进度）
   servo_mavlink.py ping                      # 服务存活检查
 
-DO_SET_ACTUATOR(187)：param[slot]=归一化值，param7 恒 0，其余 NaN（PX4 忽略=保持原值）。
+面板使用 ACTUATOR_TEST(310)，仅未解锁且遥测新鲜时允许，单条命令最多保持 1 秒。
+序列保持期间续发短时测试，完成或停止后释放；不修改飞控参数，不发送解锁命令。
 槽位 1-6 对应输出功能 301-306（Peripheral via Actuator Set 1-6）；
-槽 1 一般留给网枪（FUNC301），舵机用槽 2 起（FUNC302 起，即 param2 起）。
+每个槽位由飞控输出功能参数映射到物理接口；本工具仅用于独立舵机台架。
 
 QGC 一次性配置（例：舵机接 I/O PWM 座 6 号通道 = MAIN6）：
   PWM_MAIN_FUNC6=302
@@ -23,6 +24,7 @@ QGC 一次性配置（例：舵机接 I/O PWM 座 6 号通道 = MAIN6）：
 服务只发命令、只读核对，不改任何飞控参数。
 """
 import json
+import math
 import os
 import socket
 import struct
@@ -33,6 +35,7 @@ import time
 LISTEN = ("127.0.0.1", 14560)
 CONTROL_PATH = os.path.expanduser("~/servo_panel.sock")
 CMD_DO_SET_ACTUATOR = 187
+CMD_ACTUATOR_TEST = 310
 SLOT_MIN, SLOT_MAX = 1, 6          # command_long 只有 7 个参数位，param7 恒 0 → 槽 1-6
 ACK_TIMEOUT_S = 0.25
 ACK_ATTEMPTS = 3
@@ -64,6 +67,7 @@ class ServoLink:
         self.sock.settimeout(0.5)
         self.listen = self.sock.getsockname()
         self.tx_lock = threading.Lock()
+        self.command_lock = threading.Lock()
         self.dest = None
         self.peer_t = None
         self.fc = None          # 飞控 (sysid, comp)，从任意消息源地址学习
@@ -71,6 +75,9 @@ class ServoLink:
         self.last_rx_t = None   # 最后收到流的时刻（链路存活判据）
         self.ack_seq = 0        # 收到的 ACK 计数（等待窗口用）
         self.acks = []          # (seq, t, command, result, sysid, comp)
+        self.params = {}        # PX4 parameters received via read-only requests.
+        self.armed = None
+        self.outputs = {}
         self._tx = None         # 惰性创建（需要 pymavlink，仅 serve 模式）
         self.rx_pkts = 0        # 诊断：收到 UDP 包数
         self.rx_bad = 0         # 诊断：解码失败数
@@ -82,7 +89,7 @@ class ServoLink:
     def tx(self):
         if self._tx is None:
             import pymavlink.dialects.v20.common as mavlink
-            self._tx = mavlink.MAVLink(_UdpWriter(self), srcSystem=2, srcComponent=1)
+            self._tx = mavlink.MAVLink(_UdpWriter(self), srcSystem=255, srcComponent=191)
         return self._tx
 
     # ---- 接收线程 ----
@@ -108,7 +115,7 @@ class ServoLink:
                 if m0 == 0xFD:
                     if len(self.rxbuf) < 10:
                         break
-                    total = 12 + self.rxbuf[1] +                         (13 if self.rxbuf[3] & 0x01 else 2)
+                    total = 12 + self.rxbuf[1] + (13 if self.rxbuf[2] & 0x01 else 0)
                 elif m0 == 0xFE:
                     if len(self.rxbuf) < 8:
                         break
@@ -118,9 +125,8 @@ class ServoLink:
                     continue
                 if len(self.rxbuf) < total:
                     break                # 帧未收完整，等下一包
-                frame = bytes(self.rxbuf[:total])
+                frame = bytearray(self.rxbuf[:total])
                 del self.rxbuf[:total]
-                self.rx_msgs += 1
                 try:
                     msg = rx.decode(frame)
                 except Exception:
@@ -128,15 +134,31 @@ class ServoLink:
                     continue
                 if msg is None:
                     continue
-                # fc 从任意消息源地址学习（板子的流以 Auterion 自定义消息为主，
-                # 常见方言解不出 HEARTBEAT——pwm_link 同此行为）。
-                # 过滤 (0,0)/GCS(255) 之类的非法源
+                self.rx_msgs += 1
+                # 只从飞控组件学习目标，排除地面站及其他组件。
                 src_sys, src_comp = msg.get_srcSystem(), msg.get_srcComponent()
-                if 1 <= src_sys <= 250 and 0 < src_comp <= 250:
+                if 1 <= src_sys <= 250 and src_comp == 1:
                     self.fc = (src_sys, src_comp)
                 mtype = msg.get_type()
+                if (src_sys, src_comp) != self.fc:
+                    continue
                 if mtype == "HEARTBEAT":
                     self.hb_t = self.clock()
+                    self.armed = bool(msg.base_mode & mavlink.MAV_MODE_FLAG_SAFETY_ARMED)
+                elif mtype == "PARAM_VALUE":
+                    name = msg.param_id
+                    if isinstance(name, bytes):
+                        name = name.decode("ascii", "replace")
+                    value = msg.param_value
+                    if msg.param_type == mavlink.MAV_PARAM_TYPE_INT32:
+                        # PX4 uses the bytewise parameter protocol, not a float cast.
+                        value = struct.unpack("<i", struct.pack("<f", value))[0]
+                    with self.cond:
+                        self.params[name.rstrip("\x00")] = value
+                        self.cond.notify_all()
+                elif mtype == "SERVO_OUTPUT_RAW":
+                    self.outputs[str(msg.port)] = {
+                        str(n): getattr(msg, "servo%d_raw" % n) for n in range(1, 9)}
                 elif mtype == "COMMAND_ACK":
                     with self.cond:
                         self.ack_seq += 1
@@ -144,6 +166,28 @@ class ServoLink:
                                           msg.result, msg.get_srcSystem(), msg.get_srcComponent()))
                         if len(self.acks) > 64:
                             del self.acks[:-32]
+                        self.cond.notify_all()
+
+    def read_parameters(self, names, timeout_s=3.0):
+        """Read PX4 parameters; never write parameters or command an actuator."""
+        if not self.alive():
+            raise LinkUnavailable("未收到飞控遥测，暂不能读取输出配置")
+        with self.cond:
+            for name in names:
+                self.params.pop(name, None)
+        tx = self.tx()
+        with self.tx_lock:
+            for name in names:
+                tx.send(tx.param_request_read_encode(self.fc[0], self.fc[1],
+                                                     name.encode("ascii"), -1))
+        deadline = self.clock() + timeout_s
+        with self.cond:
+            while any(name not in self.params for name in names):
+                remain = deadline - self.clock()
+                if remain <= 0:
+                    break
+                self.cond.wait(remain)
+            return {name: self.params[name] for name in names if name in self.params}
 
     # ---- 发送 ----
     def send_command(self, slot, value, attempts=ACK_ATTEMPTS):
@@ -188,6 +232,33 @@ class ServoLink:
                     return None
                 self.cond.wait(min(remain, 0.05))
 
+    def send_test(self, slot, value, timeout_s=1.0):
+        """Bench-test a peripheral for at most one second, without arming."""
+        if (not SLOT_MIN <= slot <= SLOT_MAX or not math.isfinite(value)
+                or not -1 <= value <= 1 or not 0 <= timeout_s <= 1):
+            return {"result": None, "error": "台架测试位置、槽位或时限无效"}
+        if (self.armed is not False or not self.alive() or self.hb_t is None
+                or self.clock() - self.hb_t > HEARTBEAT_STALE_S):
+            return {"result": None, "error": "台架测试需要新鲜遥测且飞控处于未解锁状态"}
+        tx = self.tx()
+        with self.command_lock:
+            first = self.clock()
+            for attempt in range(ACK_ATTEMPTS):
+                with self.cond:
+                    since = self.ack_seq
+                # PX4-specific output function: 1000 + Peripheral Set (300 + slot).
+                message = tx.command_long_encode(
+                    self.fc[0], self.fc[1], CMD_ACTUATOR_TEST, attempt,
+                    value, timeout_s, 0, 0, 1300 + slot, 0, 0)
+                with self.tx_lock:
+                    tx.send(message)
+                ack = self._wait_ack(CMD_ACTUATOR_TEST, since, self.clock() + ACK_TIMEOUT_S)
+                if ack is not None:
+                    return {"result": ack[3], "result_name": RESULT_NAMES.get(ack[3], str(ack[3])),
+                            "command": CMD_ACTUATOR_TEST, "timeout_s": timeout_s,
+                            "ack_ms": round((ack[1] - first) * 1000, 1)}
+        return {"result": None, "result_name": "NO_ACK", "error": "台架测试未收到飞控确认"}
+
     def alive(self):
         with self.cond:
             return bool(self.fc and self.last_rx_t is not None
@@ -195,17 +266,12 @@ class ServoLink:
 
 
 class _UdpWriter:
-    class _MavFile:
-        def __init__(self, link):
-            self.link = link
-
-        def write(self, buf):
-            with self.link.tx_lock:
-                self.link.sock.sendto(buf, self.link.dest)
-
     def __init__(self, link):
-        self.mav = type("M", (), {})()
-        self.mav.file = self._MavFile(link)
+        self.link = link
+
+    def write(self, buf):
+        # send_command holds tx_lock around MAVLink.send; do not acquire it twice.
+        return self.link.sock.sendto(buf, self.link.dest)
 
 
 # ---- 服务 ----
@@ -231,20 +297,32 @@ class ServoService:
                 return self.seq_start(request.get("points") or [])
             if action == "stop":
                 self.seq_stop.set()
+                if self.seq_thread and self.seq_thread.is_alive():
+                    self.seq_thread.join(1)
+                for slot in list(self.last):
+                    self.link.send_test(slot, 0, timeout_s=0)
                 return {"ok": True, "stopped": True}
             if action == "state":
                 return self.state()
+            if action == "inspect":
+                names = ["PWM_%s_%s5" % (bank, field)
+                         for bank in ("MAIN", "AUX")
+                         for field in ("FUNC", "MIN", "MAX", "DIS", "FAIL")]
+                return {**self.state(), "params": self.link.read_parameters(names)}
             if action == "ping":
                 return {"ok": True, "pong": True}
             return {"ok": False, "error": "未知 action：%r" % action}
-        except (KeyError, TypeError, ValueError) as exc:
+        except (KeyError, TypeError, ValueError, LinkUnavailable) as exc:
             return {"ok": False, "error": "参数无效：%s" % exc}
 
     def move(self, slot, norm, wait_ack):
         if not SLOT_MIN <= slot <= SLOT_MAX:
-            return {"ok": False, "error": "槽位需在 %d-%d（槽 1 一般留给网枪）" % (SLOT_MIN, SLOT_MAX)}
-        norm = max(-1.0, min(1.0, norm))
-        result = self.link.send_command(slot, norm)
+            return {"ok": False, "error": "槽位需在 %d-%d" % (SLOT_MIN, SLOT_MAX)}
+        if not math.isfinite(norm) or not -1.0 <= norm <= 1.0:
+            return {"ok": False, "error": "位置需为 -1..1 范围内的有限数值"}
+        if self.seq_thread and self.seq_thread.is_alive():
+            return {"ok": False, "error": "序列正在运行，请先停止"}
+        result = self.link.send_test(slot, norm)
         ok = result.get("result") == 0
         if ok:
             self.last[slot] = norm
@@ -269,7 +347,9 @@ class ServoService:
                 return {"ok": False, "error": "第 %d 点字段无效：%s" % (i + 1, exc)}
             if not SLOT_MIN <= slot <= SLOT_MAX:
                 return {"ok": False, "error": "第 %d 点槽位越界" % (i + 1)}
-            parsed.append({"slot": slot, "norm": max(-1.0, min(1.0, norm)),
+            if not math.isfinite(norm) or not -1.0 <= norm <= 1.0:
+                return {"ok": False, "error": "第 %d 点位置需为 -1..1 范围内的有限数值" % (i + 1)}
+            parsed.append({"slot": slot, "norm": norm,
                            "hold_ms": hold, "interp_ms": interp})
         if self.seq_thread and self.seq_thread.is_alive():
             return {"ok": False, "error": "已有序列在执行（先 stop）"}
@@ -291,16 +371,25 @@ class ServoService:
                 if self.seq_stop.is_set():
                     break
                 v = current + (target - current) * s / steps
-                result = self.link.send_command(slot, v)
+                result = self.link.send_test(slot, v)
                 if result.get("result") == 0:
                     self.last[slot] = v
+                else:
+                    self.seq_stop.set()
+                    break
                 self.stop.wait(STEP_S)
             if self.seq_stop.is_set():
                 break
             remain = p["hold_ms"] / 1000.0
             while remain > 0 and not self.seq_stop.is_set():
-                self.stop.wait(min(remain, 0.1))
-                remain -= 0.1
+                duration = min(remain, 0.4)
+                self.seq_stop.wait(duration)
+                remain -= duration
+                if remain > 0 and not self.seq_stop.is_set():
+                    if self.link.send_test(slot, target).get("result") != 0:
+                        self.seq_stop.set()
+        for slot in {p["slot"] for p in points}:
+            self.link.send_test(slot, 0, timeout_s=0)
         log_line("序列结束（%d 点，用时 %.1f s%s）" % (
             len(points), (self.clock_ms() - started) / 1000.0,
             "，中途停止" if self.seq_stop.is_set() else ""))
@@ -310,6 +399,7 @@ class ServoService:
         with lnk.cond:
             acks = len(lnk.acks)
         return {"ok": True, "alive": lnk.alive(), "fc": lnk.fc,
+                "armed": lnk.armed, "outputs": lnk.outputs,
                 "last": self.last, "last_age_s": round(time.time() - self.last_t, 1) if self.last_t else None,
                 "seq_running": bool(self.seq_thread and self.seq_thread.is_alive()),
                 "rx_pkts": lnk.rx_pkts, "rx_bad": lnk.rx_bad, "rx_msgs": lnk.rx_msgs,
@@ -459,7 +549,7 @@ def main(argv):
                 return 2
             _emit(_control_request({"action": "seq", "points": points}, timeout_s=15.0))
             return 0
-        if cmd in ("stop", "state", "ping"):
+        if cmd in ("stop", "state", "ping", "inspect"):
             _emit(_control_request({"action": cmd}, timeout_s=5.0))
             return 0
     except LinkUnavailable as exc:
