@@ -181,6 +181,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def do_POST(self):
         global _SSH
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                               "servo_panel_requests.log"), "a", encoding="utf-8") as f:
+            f.write("%s POST %s from %s\n" % (time.strftime("%H:%M:%S"), self.path,
+                                              self.client_address))
         if urllib.parse.urlparse(self.path).path != "/api":
             self.send_error(404)
             return

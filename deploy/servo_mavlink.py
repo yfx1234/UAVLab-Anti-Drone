@@ -236,6 +236,14 @@ class ServoLink:
                     return None
                 self.cond.wait(min(remain, 0.05))
 
+    def send_motion(self, slot, value):
+        """动作下发通道：未解锁走 ACTUATOR_TEST（1s 自动过期，台架安全）；
+        已解锁走 DO_SET_ACTUATOR（PX4 允许 armed 下正常输出外设指令，值锁存
+        到下一次设置——飞行中随时可控，pulse/结束回中由服务端计时发回中值）。"""
+        if self.armed:
+            return self.send_command(slot, value)
+        return self.send_test(slot, value)
+
     def send_test(self, slot, value, timeout_s=1.0):
         """Bench-test a peripheral for at most one second, without arming."""
         if (not SLOT_MIN <= slot <= SLOT_MAX or not math.isfinite(value)
@@ -366,9 +374,9 @@ class ServoService:
                 if session["release"]:
                     for slot in session["slots"]:
                         try:
-                            self.link.send_test(slot, 0, timeout_s=0)
+                            self.link.send_motion(slot, 0.0)
                         except Exception:
-                            pass  # Every flight-controller test also expires independently.
+                            pass  # 未解锁：测试自行过期；已解锁：已发回中值
                 if self.session is session:
                     self.mode = "idle"
         session["thread"] = threading.Thread(target=work, daemon=True)
@@ -384,7 +392,7 @@ class ServoService:
         return True
 
     def _send(self, slot, norm):
-        result = self.link.send_test(slot, norm)
+        result = self.link.send_motion(slot, norm)
         if result.get("result") != 0:
             self.motion_error = result.get("error") or "飞控未接受动作：%s" % result.get("result_name", "未知结果")
             return False
@@ -418,7 +426,7 @@ class ServoService:
                 return {"ok": False, "error": "序列正在运行，请先停止"}
             if not self._cancel(release=False):
                 return {"ok": False, "error": "上一动作尚未结束"}
-            result = self.link.send_test(slot, norm)
+            result = self.link.send_motion(slot, norm)
             if result.get("result") != 0:
                 return {"ok": False, **result, "error": result.get("error") or result.get("result_name", "飞控未接受动作")}
             self.last[slot] = norm
@@ -449,8 +457,8 @@ class ServoService:
         with self.busy:
             if not self._cancel(release=False):
                 return {"ok": False, "error": "上一动作尚未结束"}
-            if not self.link.alive() or self.link.armed is not False:
-                return {"ok": False, "error": "请先连接未解锁的飞控"}
+            if not self.link.alive():
+                return {"ok": False, "error": "飞控无心跳（MAVProxy 未通）"}
             session = self._new_session("sequence", [p["slot"] for p in parsed])
             self.seq_index, self.seq_total = 0, len(parsed)
             self._start_worker(session, lambda current: self._seq_run(parsed, current, after))

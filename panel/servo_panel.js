@@ -79,7 +79,7 @@ function updateBehavior() {
 
 function updateAvailability() {
   const state=model.state;
-  const ready=model.connected && model.configured && state?.alive && state.armed===false;
+  const ready=model.connected && model.configured && !!state?.alive;
   const sequence=state?.mode==='sequence';
   document.querySelectorAll('[data-motion]').forEach(button=>button.disabled=!ready || model.actionPending || sequence);
   $('stopBtn').disabled=!model.connected;
@@ -152,8 +152,8 @@ async function connect(event) {
 
 function renderState(state) {
   model.state=state;
-  $('armedState').textContent=state.armed===false?'未解锁':state.armed===true?'已解锁 · 台架测试不可用':'尚未读取';
-  $('armedState').classList.toggle('error-text',state.armed===true);
+  $('armedState').textContent=state.armed===false?'未解锁':state.armed===true?'已解锁 · 可随时控制':'尚未读取';
+  $('armedState').classList.toggle('error-text',false);
   const label={idle:'待机',pulse:`短时测试 · ${state.remaining_s??0} 秒`,hold:'保持位置',sequence:`序列 · ${state.seq_index}/${state.seq_total}`};
   $('motionStatus').textContent=label[state.mode] || '待机';
   $('motionStatus').classList.toggle('active',state.mode && state.mode!=='idle');
