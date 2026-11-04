@@ -57,7 +57,8 @@ def _ssh_connect(host, user, password):
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     client.connect(host, username=user, password=password,
-                   timeout=10, allow_agent=False, look_for_keys=False)
+                   timeout=10, banner_timeout=10, auth_timeout=10,
+                   allow_agent=False, look_for_keys=False)
     with _LOCK:
         if _SSH is not None:
             try:
@@ -66,6 +67,26 @@ def _ssh_connect(host, user, password):
                 pass
         _SSH = client
         _CFG = {"host": host, "user": user, "password": password}
+
+
+def _ssh_connect_capped(host, user, password, cap_s=15.0):
+    """连接硬超时：图传链路闪断时 paramiko 可能挂死，超过 cap_s 强制报错返回。"""
+    result = {"done": False, "error": None}
+
+    def _work():
+        try:
+            _ssh_connect(host, user, password)
+        except Exception as exc:
+            result["error"] = str(exc) or type(exc).__name__
+        result["done"] = True
+
+    worker = threading.Thread(target=_work, daemon=True)
+    worker.start()
+    worker.join(cap_s)
+    if not result["done"]:
+        raise RuntimeError("连接超时（%ds）：图传链路闪断，稍等几秒重试" % int(cap_s))
+    if result["error"]:
+        raise RuntimeError(result["error"])
 
 
 def _servo(payload):
@@ -327,8 +348,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         op = payload.get("op")
         try:
             if op == "connect":
-                _ssh_connect(str(payload["host"]).strip(), str(payload["user"]).strip(),
-                             str(payload.get("pass", "")))
+                _ssh_connect_capped(str(payload["host"]).strip(),
+                                    str(payload["user"]).strip(),
+                                    str(payload.get("pass", "")))
                 self._json({"ok": True})
             elif _SSH is None:
                 self._json({"ok": False, "error": "未连接板子（先点连接板子）"})
@@ -339,7 +361,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
 
 def main():
-    server = http.server.ThreadingHTTPServer((HOST, PORT), Handler)
+    try:
+        server = http.server.ThreadingHTTPServer((HOST, PORT), Handler)
+    except OSError as exc:
+        print("启动失败：端口 %d 被占用（%s）。" % (PORT, exc))
+        print("可能已有一个面板实例在运行：先关掉旧的命令行窗口，或重启电脑后重试。")
+        input("按回车退出...")
+        return 1
     print("舵机面板 http://%s:%d/  （Ctrl+C 停止）" % (HOST, PORT), flush=True)
     try:
         server.serve_forever()
