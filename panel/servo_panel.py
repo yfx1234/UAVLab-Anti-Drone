@@ -20,7 +20,7 @@ except ImportError:
     paramiko = None
 
 HOST, PORT = "127.0.0.1", 8768
-BOARD_CLI = "python3 $HOME/interceptor_ws/deploy/servo_mavlink.py"
+BOARD_CLI = "python3 $HOME/interceptor_ws/deploy/servo_cmd.py"
 
 _LOCK = threading.Lock()
 _SSH = None          # paramiko.SSHClient
@@ -72,9 +72,9 @@ def _servo(payload):
     """通过 SSH 调板上 servo CLI，解析 SERVO_RESULT JSON。"""
     op = payload["op"]
     if op == "check":
-        code, text = _ssh_exec("echo ok && ls $HOME/interceptor_ws/deploy/servo_mavlink.py")
+        code, text = _ssh_exec("echo ok && ls $HOME/interceptor_ws/deploy/servo_cmd.py")
         ok = code == 0 and "ok" in text
-        return {"ok": ok, "error": None if ok else "脚本不在板上：deploy/servo_mavlink.py 缺失"}
+        return {"ok": ok, "error": None if ok else "脚本不在板上：deploy/servo_cmd.py 缺失"}
     if op == "move":
         cmd = "%s move --slot %d --norm %.4f --ack 1" % (
             BOARD_CLI, int(payload["slot"]), float(payload["norm"]))
@@ -152,7 +152,7 @@ kbd{background:#0d1119;border:1px solid var(--line);border-radius:4px;padding:0 
  <h2>通道配置（保存到本机）</h2>
  <div class="row">
   <label>槽位(功能301+槽)
-   <select id="slot"><option value="2">2 (FUNC302)</option><option value="3">3 (FUNC303)</option><option value="4">4 (FUNC304)</option><option value="5">5 (FUNC305)</option><option value="6">6 (FUNC306)</option></select></label>
+   <select id="slot"><option value="1">1 (FUNC301，网枪未装时舵机用这个)</option><option value="2">2 (FUNC302)</option><option value="3">3 (FUNC303)</option><option value="4">4 (FUNC304)</option><option value="5">5 (FUNC305)</option><option value="6">6 (FUNC306)</option></select></label>
   <label>行程下限µs <input id="usMin" value="1000" size="6"></label>
   <label>行程上限µs <input id="usMax" value="2000" size="6"></label>
   <label>角度行程° <input id="deg" value="180" size="5"></label>

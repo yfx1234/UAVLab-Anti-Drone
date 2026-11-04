@@ -66,11 +66,18 @@ class ServoLink:
         self.tx_lock = threading.Lock()
         self.dest = None
         self.peer_t = None
-        self.fc = None          # 飞控 (sysid, comp)，从心跳学习
+        self.fc = None          # 飞控 (sysid, comp)，从任意消息源地址学习
         self.hb_t = None
+        self.last_rx_t = None   # 最后收到流的时刻（链路存活判据）
         self.ack_seq = 0        # 收到的 ACK 计数（等待窗口用）
         self.acks = []          # (seq, t, command, result, sysid, comp)
         self._tx = None         # 惰性创建（需要 pymavlink，仅 serve 模式）
+        self.rx_pkts = 0        # 诊断：收到 UDP 包数
+        self.rx_bad = 0         # 诊断：解码失败数
+        self.rx_msgs = 0        # 诊断：解码成功数
+        self.rxbuf = bytearray()  # 跨包帧缓冲（MAVProxy 一包可能含多帧，
+                                  # 且板上 pymavlink 2.4.49 decode 是无状态单帧解码，
+                                  # 必须自行按帧头+长度精确切片后喂入）
 
     def tx(self):
         if self._tx is None:
@@ -92,21 +99,51 @@ class ServoLink:
                 break
             self.dest = addr
             self.peer_t = self.clock()
-            try:
-                msg = rx.decode(data)
-            except Exception:
-                continue
-            mtype = msg.get_type()
-            if mtype == "HEARTBEAT" and msg.type != mavlink.MAV_TYPE_GCS:
-                self.fc = (msg.get_srcSystem(), msg.get_srcComponent())
-                self.hb_t = self.clock()
-            elif mtype == "COMMAND_ACK":
-                with self.cond:
-                    self.ack_seq += 1
-                    self.acks.append((self.ack_seq, self.clock(), msg.command,
-                                      msg.result, msg.get_srcSystem(), msg.get_srcComponent()))
-                    if len(self.acks) > 64:
-                        del self.acks[:-32]
+            self.last_rx_t = self.clock()
+            self.rx_pkts += 1
+            self.rxbuf += data
+            # 帧提取循环：跳过垃圾字节 → 按帧头/长度切出完整帧 → 单帧喂解码
+            while self.rxbuf:
+                m0 = self.rxbuf[0]
+                if m0 == 0xFD:
+                    if len(self.rxbuf) < 10:
+                        break
+                    total = 12 + self.rxbuf[1] +                         (13 if self.rxbuf[3] & 0x01 else 2)
+                elif m0 == 0xFE:
+                    if len(self.rxbuf) < 8:
+                        break
+                    total = 8 + self.rxbuf[1]
+                else:
+                    del self.rxbuf[0]   # 垃圾字节（非帧头）逐个跳过
+                    continue
+                if len(self.rxbuf) < total:
+                    break                # 帧未收完整，等下一包
+                frame = bytes(self.rxbuf[:total])
+                del self.rxbuf[:total]
+                self.rx_msgs += 1
+                try:
+                    msg = rx.decode(frame)
+                except Exception:
+                    self.rx_bad += 1
+                    continue
+                if msg is None:
+                    continue
+                # fc 从任意消息源地址学习（板子的流以 Auterion 自定义消息为主，
+                # 常见方言解不出 HEARTBEAT——pwm_link 同此行为）。
+                # 过滤 (0,0)/GCS(255) 之类的非法源
+                src_sys, src_comp = msg.get_srcSystem(), msg.get_srcComponent()
+                if 1 <= src_sys <= 250 and 0 < src_comp <= 250:
+                    self.fc = (src_sys, src_comp)
+                mtype = msg.get_type()
+                if mtype == "HEARTBEAT":
+                    self.hb_t = self.clock()
+                elif mtype == "COMMAND_ACK":
+                    with self.cond:
+                        self.ack_seq += 1
+                        self.acks.append((self.ack_seq, self.clock(), msg.command,
+                                          msg.result, msg.get_srcSystem(), msg.get_srcComponent()))
+                        if len(self.acks) > 64:
+                            del self.acks[:-32]
 
     # ---- 发送 ----
     def send_command(self, slot, value, attempts=ACK_ATTEMPTS):
@@ -153,8 +190,8 @@ class ServoLink:
 
     def alive(self):
         with self.cond:
-            return bool(self.fc and self.hb_t is not None
-                        and self.clock() - self.hb_t <= HEARTBEAT_STALE_S)
+            return bool(self.fc and self.last_rx_t is not None
+                        and self.clock() - self.last_rx_t <= HEARTBEAT_STALE_S)
 
 
 class _UdpWriter:
@@ -269,9 +306,14 @@ class ServoService:
             "，中途停止" if self.seq_stop.is_set() else ""))
 
     def state(self):
-        return {"ok": True, "alive": self.link.alive(), "fc": self.link.fc,
+        lnk = self.link
+        with lnk.cond:
+            acks = len(lnk.acks)
+        return {"ok": True, "alive": lnk.alive(), "fc": lnk.fc,
                 "last": self.last, "last_age_s": round(time.time() - self.last_t, 1) if self.last_t else None,
-                "seq_running": bool(self.seq_thread and self.seq_thread.is_alive())}
+                "seq_running": bool(self.seq_thread and self.seq_thread.is_alive()),
+                "rx_pkts": lnk.rx_pkts, "rx_bad": lnk.rx_bad, "rx_msgs": lnk.rx_msgs,
+                "acks": acks, "dest": str(lnk.dest), "hb_age": round(lnk.clock() - lnk.hb_t, 1) if lnk.hb_t else None}
 
     @staticmethod
     def clock_ms():

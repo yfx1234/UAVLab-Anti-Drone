@@ -79,6 +79,7 @@ SRC_COMPONENT = 191
 CMD_DO_SET_ACTUATOR = 187
 CMD_ACTUATOR_TEST = 310
 ACTUATOR_SET1 = 301
+SERVO_SLOT_MIN, SERVO_SLOT_MAX = 2, 6   # 槽 1 = 网枪（FUNC301/param1），舵机用 2-6
 TEST_FUNCTION = 1000 + ACTUATOR_SET1  # ACTUATOR_TEST p5≥1000：直接按输出功能号
 PWM_MIN_US, PWM_MAX_US = 1000, 2000  # PWM_AUX_MIN5/MAX5：归一化 −1..+1 ↔ 1000..2000 µs
 MODULE_LOW_MAX_US = 1300  # 网枪触发模块：≤1300 µs 持续 100 ms = 低位（待命）
@@ -818,6 +819,11 @@ class PwmService:
         self.stop = threading.Event()
         self.busy = threading.Lock()
         self.last_fire = None
+        self.servo_last = {}          # slot -> 最近下发的归一化值
+        self.servo_seq_thread = None
+        self.servo_seq_stop = threading.Event()
+        self.servo_lock = threading.Lock()
+        self.servo_progress = {}
         self.started = time.time()
         self.param_sent = None
         self.was_alive = False
@@ -1000,6 +1006,116 @@ class PwmService:
             return {"ok": True, "applied": True, "options": self.options(), "idle": self.idle()}
         finally:
             self.busy.release()
+
+    # ---- 舵机（独立槽位，param 与网枪槽 1 互不影响：NaN 槽 PX4 保持原值） ----
+
+    @staticmethod
+    def _servo_params(slot, value):
+        nan = float("nan")
+        params = [nan] * 7
+        params[slot - 1] = value
+        params[6] = 0.0
+        return tuple(params)
+
+    def servo_handle(self, request):
+        action = request.get("action")
+        try:
+            if action == "move":
+                return self.servo_move(int(request["slot"]), float(request["norm"]))
+            if action == "seq":
+                return self.servo_seq_start(request.get("points") or [])
+            if action == "stop":
+                self.servo_seq_stop.set()
+                return {"ok": True, "stopped": True}
+            if action == "state":
+                return self.servo_state()
+            if action == "ping":
+                return {"ok": True, "pong": True}
+            return {"ok": False, "error": "未知 action：%r" % action}
+        except (KeyError, TypeError, ValueError) as exc:
+            return {"ok": False, "error": "参数无效：%s" % exc}
+
+    def servo_state(self):
+        with self.servo_lock:
+            running = bool(self.servo_seq_thread and self.servo_seq_thread.is_alive())
+            prog = dict(self.servo_progress)
+        return {"ok": True, "alive": self.link.alive(), "armed": self.link.armed,
+                "last": dict(self.servo_last), "seq_running": running, "progress": prog}
+
+    def servo_move(self, slot, norm):
+        if not SERVO_SLOT_MIN <= slot <= SERVO_SLOT_MAX:
+            return {"ok": False, "error": "槽位需在 %d-%d（槽 1 为网枪保留）" % (SERVO_SLOT_MIN, SERVO_SLOT_MAX)}
+        norm = max(-1.0, min(1.0, norm))
+        link = self.link.snapshot()
+        if not link["alive"]:
+            return {"ok": False, "error": "飞控无心跳（MAVProxy 未通）"}
+        result = self.link.command(CMD_DO_SET_ACTUATOR, self._servo_params(slot, norm))
+        ok = result.get("result") == 0
+        if ok:
+            with self.servo_lock:
+                self.servo_last[slot] = norm
+        return {"ok": ok, "slot": slot, "norm": round(norm, 4), **result}
+
+    def servo_seq_start(self, points):
+        if not isinstance(points, list) or not points:
+            return {"ok": False, "error": "points 需为非空数组"}
+        if len(points) > 200:
+            return {"ok": False, "error": "点数过多（≤200）"}
+        parsed = []
+        for i, p in enumerate(points):
+            if not isinstance(p, dict):
+                return {"ok": False, "error": "第 %d 点需为对象" % (i + 1)}
+            try:
+                slot = int(p.get("slot", 2))
+                norm = float(p["norm"])
+                hold = max(0, int(p.get("hold_ms", 0)))
+                interp = max(0, int(p.get("interp_ms", 0)))
+            except (KeyError, TypeError, ValueError) as exc:
+                return {"ok": False, "error": "第 %d 点字段无效：%s" % (i + 1, exc)}
+            if not SERVO_SLOT_MIN <= slot <= SERVO_SLOT_MAX:
+                return {"ok": False, "error": "第 %d 点槽位越界" % (i + 1)}
+            parsed.append({"slot": slot, "norm": max(-1.0, min(1.0, norm)),
+                           "hold_ms": hold, "interp_ms": interp})
+        with self.servo_lock:
+            if self.servo_seq_thread and self.servo_seq_thread.is_alive():
+                return {"ok": False, "error": "已有序列在执行（先停止）"}
+            self.servo_seq_stop.clear()
+            self.servo_progress = {"point": 0, "total": len(parsed)}
+            thread = threading.Thread(target=self._servo_seq_run, args=(parsed,), daemon=True)
+            self.servo_seq_thread = thread
+        thread.start()
+        return {"ok": True, "seq_started": True, "points": len(parsed)}
+
+    def _servo_seq_run(self, points):
+        step = 0.02
+        started = time.time()
+        for idx, p in enumerate(points):
+            if self.servo_seq_stop.is_set():
+                break
+            slot, target = p["slot"], p["norm"]
+            with self.servo_lock:
+                current = self.servo_last.get(slot, 0.0)
+                self.servo_progress = {"point": idx + 1, "total": len(points)}
+            steps = max(1, int(p["interp_ms"] / 1000.0 / step))
+            for s in range(1, steps + 1):
+                if self.servo_seq_stop.is_set():
+                    break
+                v = current + (target - current) * s / steps
+                result = self.link.command(CMD_DO_SET_ACTUATOR,
+                                           self._servo_params(slot, v), attempts=1)
+                if result.get("result") == 0:
+                    with self.servo_lock:
+                        self.servo_last[slot] = v
+                self.stop.wait(step)
+            remain = p["hold_ms"] / 1000.0
+            while remain > 0 and not self.servo_seq_stop.is_set():
+                self.stop.wait(min(remain, 0.1))
+                remain -= 0.1
+        with self.servo_lock:
+            self.servo_progress = {}
+        log_line("舵机序列结束（%d 点，用时 %.1f s%s）" % (
+            len(points), time.time() - started,
+            "，中途停止" if self.servo_seq_stop.is_set() else ""))
 
     # ---- 击发 ----
 
@@ -1251,6 +1367,8 @@ class PwmService:
                     self._send(conn, self.status())
                 elif cmd == "params":
                     self._send(conn, self.handle_params(request))
+                elif cmd == "servo":
+                    self._send(conn, self.servo_handle(request))
                 elif cmd == "ping":
                     self._send(conn, {"ok": True, "pong": True})
                 else:
